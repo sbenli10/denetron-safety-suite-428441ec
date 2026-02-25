@@ -6,6 +6,7 @@ import {
   Settings,
   Shield,
   ShieldAlert,
+  ShieldPlus,
   ChevronLeft,
   ChevronRight,
   LogOut,
@@ -34,6 +35,7 @@ const mainItems = [
   { title: "Form Builder", url: "/form-builder", icon: FileText },
   { title: "AI Reports", url: "/reports", icon: Brain },
   { title: "CAPA (DÖF)", url: "/capa", icon: ShieldAlert },
+  { title: "Bulk CAPA", url: "/bulk-capa", icon: ShieldPlus },
   { title: "Safety Library", url: "/safety-library", icon: BookOpen },
 ];
 

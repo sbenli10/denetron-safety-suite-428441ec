@@ -3,6 +3,7 @@ import { Search, Plus, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { InspectionRow } from "@/components/InspectionRow";
+import { FineKinneyWizard } from "@/components/FineKinneyWizard";
 
 const allInspections = [
   { id: "INS-0421", site: "Warehouse Alpha — Zone B", inspector: "A. Yılmaz", date: "Feb 23, 2026", status: "completed" as const, riskLevel: "low" as const, score: 96 },
@@ -45,6 +46,9 @@ export default function Inspections() {
           </Button>
         </div>
       </div>
+
+      {/* Fine-Kinney Wizard */}
+      <FineKinneyWizard />
 
       {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-3">

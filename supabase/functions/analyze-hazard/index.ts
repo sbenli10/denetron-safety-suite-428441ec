@@ -27,6 +27,8 @@ serve(async (req) => {
 1. "riskScore": one of "Low", "Medium", or "High"
 2. "correctionPlan": a professional, actionable correction plan with numbered steps (3-6 steps)
 3. "justification": a brief 1-2 sentence explanation of the risk score
+4. "complianceScore": a number from 0 to 100 representing how compliant the described situation is with general OHS (Occupational Health & Safety) regulations. 100 means fully compliant, 0 means severe violations. Consider OSHA, ISO 45001, and general workplace safety standards.
+5. "complianceNotes": a brief 1-3 sentence explanation of which OHS regulations are relevant and why the score was given
 
 Respond ONLY with valid JSON, no markdown fences.`;
 

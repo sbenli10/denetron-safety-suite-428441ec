@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Brain, FileText, CheckCircle, Clock, AlertTriangle, Download, Loader2 } from "lucide-react";
+import { Brain, FileText, CheckCircle, Clock, AlertTriangle, Download, Loader2, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { supabase } from "@/integrations/supabase/client";
@@ -10,6 +10,8 @@ interface AiResult {
   riskScore: "Low" | "Medium" | "High";
   correctionPlan: string;
   justification: string;
+  complianceScore: number;
+  complianceNotes: string;
 }
 
 const riskColors: Record<string, string> = {
@@ -118,9 +120,15 @@ export default function Reports() {
     doc.setFont("helvetica", "bold");
     doc.text(`Risk Score: ${aiResult.riskScore}`, 20, y);
     y += 8;
+    doc.text(`OHS Compliance Score: ${aiResult.complianceScore}/100`, 20, y);
+    y += 8;
 
     doc.setFont("helvetica", "normal");
     doc.setFontSize(10);
+    const complianceLines = doc.splitTextToSize(aiResult.complianceNotes, 170);
+    doc.text(complianceLines, 20, y);
+    y += complianceLines.length * 5 + 10;
+
     const justLines = doc.splitTextToSize(aiResult.justification, 170);
     doc.text(justLines, 20, y);
     y += justLines.length * 5 + 10;
@@ -188,12 +196,28 @@ export default function Reports() {
         {/* AI Result */}
         {aiResult && (
           <div className="space-y-4 pt-2 animate-fade-in">
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               <span className={`inline-flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-full ${riskColors[aiResult.riskScore]}`}>
                 <AlertTriangle className="h-4 w-4" />
                 Risk: {aiResult.riskScore}
               </span>
+              <span className={`inline-flex items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-full ${
+                aiResult.complianceScore >= 70 ? "bg-success/15 text-success" :
+                aiResult.complianceScore >= 40 ? "bg-warning/15 text-warning" :
+                "bg-destructive/15 text-destructive"
+              }`}>
+                <ShieldCheck className="h-4 w-4" />
+                OHS Compliance: {aiResult.complianceScore}/100
+              </span>
               <span className="text-xs text-muted-foreground italic">{aiResult.justification}</span>
+            </div>
+
+            <div className="glass-card p-4 space-y-2">
+              <h4 className="text-sm font-semibold text-foreground flex items-center gap-2">
+                <ShieldCheck className="h-4 w-4 text-primary" />
+                OHS Compliance Notes
+              </h4>
+              <p className="text-sm text-muted-foreground leading-relaxed">{aiResult.complianceNotes}</p>
             </div>
 
             <div className="glass-card p-4 space-y-2">

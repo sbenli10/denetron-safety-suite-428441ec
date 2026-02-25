@@ -11,6 +11,7 @@ import Inspections from "./pages/Inspections";
 import FormBuilder from "./pages/FormBuilder";
 import Reports from "./pages/Reports";
 import CAPA from "./pages/CAPA";
+import SafetyLibrary from "./pages/SafetyLibrary";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
 
@@ -36,6 +37,7 @@ const App = () => (
                       <Route path="/form-builder" element={<FormBuilder />} />
                       <Route path="/reports" element={<Reports />} />
                       <Route path="/capa" element={<CAPA />} />
+                      <Route path="/safety-library" element={<SafetyLibrary />} />
                       <Route path="*" element={<NotFound />} />
                     </Routes>
                   </AppLayout>

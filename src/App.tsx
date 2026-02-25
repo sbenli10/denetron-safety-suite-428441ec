@@ -13,6 +13,7 @@ import Reports from "./pages/Reports";
 import CAPA from "./pages/CAPA";
 import BulkCAPA from "./pages/BulkCAPA";
 import SafetyLibrary from "./pages/SafetyLibrary";
+import Settings from "./pages/Settings";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
 
@@ -40,6 +41,7 @@ const App = () => (
                       <Route path="/capa" element={<CAPA />} />
                       <Route path="/bulk-capa" element={<BulkCAPA />} />
                       <Route path="/safety-library" element={<SafetyLibrary />} />
+                      <Route path="/settings" element={<Settings />} />
                       <Route path="*" element={<NotFound />} />
                     </Routes>
                   </AppLayout>

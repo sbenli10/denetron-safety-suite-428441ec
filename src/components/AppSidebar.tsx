@@ -7,9 +7,12 @@ import {
   Shield,
   ShieldAlert,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  LogOut,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
+import { useAuth } from "@/contexts/AuthContext";
+import { useNavigate } from "react-router-dom";
 import {
   Sidebar,
   SidebarContent,
@@ -38,7 +41,14 @@ const bottomItems = [
 
 export function AppSidebar() {
   const { state, toggleSidebar } = useSidebar();
+  const { signOut } = useAuth();
+  const navigate = useNavigate();
   const collapsed = state === "collapsed";
+
+  const handleSignOut = async () => {
+    await signOut();
+    navigate("/auth");
+  };
 
   return (
     <Sidebar collapsible="icon" className="border-r border-sidebar-border">
@@ -105,6 +115,13 @@ export function AppSidebar() {
           className="mt-2 flex items-center justify-center rounded-md p-2 text-muted-foreground hover:bg-sidebar-accent hover:text-foreground transition-colors"
         >
           {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+        </button>
+        <button
+          onClick={handleSignOut}
+          className="flex items-center gap-3 rounded-md px-3 py-2.5 text-sm text-destructive hover:bg-destructive/10 transition-colors"
+        >
+          <LogOut className="h-4 w-4 shrink-0" />
+          {!collapsed && <span>Sign Out</span>}
         </button>
       </SidebarFooter>
     </Sidebar>

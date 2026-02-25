@@ -14,6 +14,89 @@ export type Database = {
   }
   public: {
     Tables: {
+      bulk_capa_entries: {
+        Row: {
+          correction_plan: string | null
+          created_at: string
+          description: string
+          fk_frequency: number | null
+          fk_probability: number | null
+          fk_risk_level: string | null
+          fk_risk_value: number | null
+          fk_severity: number | null
+          id: string
+          justification: string | null
+          risk_score: string | null
+          session_id: string
+        }
+        Insert: {
+          correction_plan?: string | null
+          created_at?: string
+          description: string
+          fk_frequency?: number | null
+          fk_probability?: number | null
+          fk_risk_level?: string | null
+          fk_risk_value?: number | null
+          fk_severity?: number | null
+          id?: string
+          justification?: string | null
+          risk_score?: string | null
+          session_id: string
+        }
+        Update: {
+          correction_plan?: string | null
+          created_at?: string
+          description?: string
+          fk_frequency?: number | null
+          fk_probability?: number | null
+          fk_risk_level?: string | null
+          fk_risk_value?: number | null
+          fk_severity?: number | null
+          id?: string
+          justification?: string | null
+          risk_score?: string | null
+          session_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bulk_capa_entries_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "bulk_capa_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      bulk_capa_sessions: {
+        Row: {
+          created_at: string
+          id: string
+          recipient_email: string | null
+          site_name: string
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          recipient_email?: string | null
+          site_name?: string
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          recipient_email?: string | null
+          site_name?: string
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           avatar_url: string | null

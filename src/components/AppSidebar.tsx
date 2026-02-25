@@ -9,6 +9,7 @@ import {
   ChevronLeft,
   ChevronRight,
   LogOut,
+  BookOpen,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useAuth } from "@/contexts/AuthContext";
@@ -33,6 +34,7 @@ const mainItems = [
   { title: "Form Builder", url: "/form-builder", icon: FileText },
   { title: "AI Reports", url: "/reports", icon: Brain },
   { title: "CAPA (DÖF)", url: "/capa", icon: ShieldAlert },
+  { title: "Safety Library", url: "/safety-library", icon: BookOpen },
 ];
 
 const bottomItems = [

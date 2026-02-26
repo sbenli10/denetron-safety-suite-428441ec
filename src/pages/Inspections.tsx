@@ -35,6 +35,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { uploadInspectionPhoto } from "@/lib/storage";
 import { generateInspectionsPDF } from "@/lib/inspectionPdfExport";
 import { toast } from "sonner";
+import { useLocation } from "react-router-dom";
 
 type InspectionStatus = "completed" | "draft" | "in_progress" | "cancelled";
 type RiskLevel = "low" | "medium" | "high" | "critical";
@@ -80,6 +81,13 @@ export default function Inspections() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [exporting, setExporting] = useState(false);
   const [aiAnalyzing, setAiAnalyzing] = useState(false);
+  const location = useLocation();
+   
+  useEffect(() => {
+    if (location.state?.prefilledNotes) {
+      setNotes(location.state.prefilledNotes);
+    }
+  }, [location.state]);
 
   useEffect(() => {
     fetchInspections();

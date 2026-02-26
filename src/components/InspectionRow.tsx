@@ -1,5 +1,6 @@
 import { AlertCircle, ImageIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { useLocation } from "react-router-dom";
 
 interface InspectionRowProps {
   id: string;
@@ -43,6 +44,8 @@ export function InspectionRow({
       : riskLevel === "high"
       ? "border-l-4 border-l-orange-500"
       : "border-l-4 border-l-border/50";
+
+      
 
   return (
     <div

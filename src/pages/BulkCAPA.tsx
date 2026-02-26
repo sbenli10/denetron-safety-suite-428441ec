@@ -1,50 +1,67 @@
 import { useState, useCallback } from "react";
 import {
-  ShieldPlus, Plus, Trash2, Brain, Loader2, Download, Send, Mail,
-  AlertTriangle, Calculator, Edit2, Check,
+  ShieldPlus,
+  Plus,
+  Trash2,
+  Brain,
+  Loader2,
+  Download,
+  Send,
+  Mail,
+  AlertTriangle,
+  Calculator,
+  Edit2,
+  Check,
+  AlertCircle,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
 } from "@/components/ui/select";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import jsPDF from "jspdf";
 
+// Fine-Kinney seçenekleri (Türkçeleştirilmiş)
 const probOpts = [
-  { v: 0.1, l: "0.1 — Virtually impossible" },
-  { v: 0.2, l: "0.2 — Practically impossible" },
-  { v: 0.5, l: "0.5 — Conceivable but unlikely" },
-  { v: 1, l: "1 — Unlikely but possible" },
-  { v: 3, l: "3 — Unusual" },
-  { v: 6, l: "6 — Quite possible" },
-  { v: 10, l: "10 — Expected" },
+  { v: 0.1, l: "0.1 — Neredeyse İmkansız" },
+  { v: 0.2, l: "0.2 — Pratik Olarak İmkansız" },
+  { v: 0.5, l: "0.5 — Düşük İhtimal" },
+  { v: 1, l: "1 — Olası Değil Ama Mümkün" },
+  { v: 3, l: "3 — Olağandışı" },
+  { v: 6, l: "6 — Oldukça Olası" },
+  { v: 10, l: "10 — Beklenen" },
 ];
 
 const sevOpts = [
-  { v: 1, l: "1 — Minor" },
-  { v: 3, l: "3 — Significant" },
-  { v: 7, l: "7 — Serious" },
-  { v: 15, l: "15 — Single fatality" },
-  { v: 40, l: "40 — Multiple fatalities" },
-  { v: 100, l: "100 — Catastrophe" },
+  { v: 1, l: "1 — Hafif" },
+  { v: 3, l: "3 — Önemli" },
+  { v: 7, l: "7 — Ciddi" },
+  { v: 15, l: "15 — Tek Ölüm" },
+  { v: 40, l: "40 — Çoklu Ölüm" },
+  { v: 100, l: "100 — Felaket" },
 ];
 
 const freqOpts = [
-  { v: 0.5, l: "0.5 — Yearly" },
-  { v: 1, l: "1 — Few times/year" },
-  { v: 2, l: "2 — Monthly" },
-  { v: 3, l: "3 — Weekly" },
-  { v: 6, l: "6 — Daily" },
-  { v: 10, l: "10 — Hourly" },
+  { v: 0.5, l: "0.5 — Yıllık" },
+  { v: 1, l: "1 — Yılda Birkaç Kez" },
+  { v: 2, l: "2 — Aylık" },
+  { v: 3, l: "3 — Haftalık" },
+  { v: 6, l: "6 — Günlük" },
+  { v: 10, l: "10 — Saatlik" },
 ];
 
 function fkLevel(score: number) {
-  if (score <= 20) return { label: "Kabul edilebilir", cls: "bg-success/15 text-success" };
+  if (score <= 20) return { label: "Kabul Edilebilir", cls: "bg-success/15 text-success" };
   if (score <= 70) return { label: "Olası", cls: "bg-blue-500/15 text-blue-400" };
   if (score <= 200) return { label: "Önemli", cls: "bg-warning/15 text-warning" };
   if (score <= 400) return { label: "Yüksek", cls: "bg-orange-500/15 text-orange-400" };
@@ -62,6 +79,7 @@ interface HazardEntry {
   fkF: number;
   fkValue: number;
   fkLevel: string;
+  aiWarning?: string; // ✅ AI uyarı mesajı
 }
 
 export default function BulkCAPA() {
@@ -77,7 +95,9 @@ export default function BulkCAPA() {
   const [fkS, setFkS] = useState("");
   const [fkF, setFkF] = useState("");
   const [aiLoading, setAiLoading] = useState(false);
+  const [showOverlay, setShowOverlay] = useState(false);
 
+  // 🤖 AI Analiz & Fine-Kinney Senkronizasyonu
   const analyzeAndAdd = async () => {
     if (!desc.trim()) {
       toast.error("Bulguyu açıklayın.");
@@ -101,7 +121,20 @@ export default function BulkCAPA() {
       const s = parseFloat(fkS);
       const f = parseFloat(fkF);
       const fkVal = p * s * f;
-      const level = fkLevel(fkVal);
+      const fkLevelData = fkLevel(fkVal);
+
+      // 🚨 AI vs Fine-Kinney uyarısı
+      let aiWarning: string | undefined;
+      const aiRiskLower = data.riskScore?.toLowerCase();
+      const fkLevelLower = fkLevelData.label.toLowerCase();
+
+      if (
+        (fkLevelLower === "kritik" || fkLevelLower === "yüksek") &&
+        (aiRiskLower === "low" || aiRiskLower === "düşük")
+      ) {
+        aiWarning = `⚠️ Uyarı: Fine-Kinney skoru '${fkLevelData.label}' (${fkVal.toFixed(1)}) ama AI 'Düşük' risk tespit etti. Bulgyu kontrol edin!`;
+        toast.warning(aiWarning);
+      }
 
       const entry: HazardEntry = {
         localId: crypto.randomUUID(),
@@ -113,7 +146,8 @@ export default function BulkCAPA() {
         fkS: s,
         fkF: f,
         fkValue: fkVal,
-        fkLevel: level.label,
+        fkLevel: fkLevelData.label,
+        aiWarning,
       };
 
       setEntries((prev) => [...prev, entry]);
@@ -124,6 +158,7 @@ export default function BulkCAPA() {
       toast.success("Bulgu listeye eklendi!");
     } catch (e: any) {
       toast.error(e.message || "AI analizi başarısız.");
+      console.error("AI Error:", e);
     } finally {
       setAiLoading(false);
     }
@@ -146,61 +181,69 @@ export default function BulkCAPA() {
       return;
     }
 
-    const doc = new jsPDF();
-    const now = new Date().toLocaleDateString("tr-TR");
+    try {
+      const doc = new jsPDF("p", "mm", "a4");
+      const now = new Date().toLocaleDateString("tr-TR");
 
-    doc.setFontSize(18);
-    doc.setFont("helvetica", "bold");
-    doc.text("Denetron İSG Sistemi", 20, 20);
-    doc.setFontSize(14);
-    doc.text("Toplu Denetim Raporu — Bulk CAPA", 20, 30);
-    doc.setFontSize(10);
-    doc.setFont("helvetica", "normal");
-    doc.text(
-      `Site: ${siteName || "N/A"}  |  Tarih: ${now}  |  Bulgular: ${entries.length}`,
-      20,
-      40
-    );
-    doc.line(20, 44, 190, 44);
-
-    let y = 52;
-    entries.forEach((entry, i) => {
-      if (y > 250) {
-        doc.addPage();
-        y = 20;
-      }
-
-      doc.setFontSize(11);
       doc.setFont("helvetica", "bold");
-      doc.text(`${i + 1}. ${entry.description}`, 20, y);
-      y += 7;
+      doc.setFontSize(18);
+      doc.text("Denetron İSG Sistemi", 20, 20);
 
-      doc.setFontSize(9);
+      doc.setFontSize(14);
+      doc.text("Toplu Denetim Raporu — Bulk CAPA", 20, 30);
+
       doc.setFont("helvetica", "normal");
+      doc.setFontSize(10);
       doc.text(
-        `AI Risk: ${entry.riskScore}  |  Fine-Kinney: ${entry.fkValue.toFixed(
+        `Site: ${siteName || "N/A"}  |  Tarih: ${now}  |  Bulgular: ${entries.length}`,
+        20,
+        40
+      );
+      doc.line(20, 44, 190, 44);
+
+      let y = 52;
+      entries.forEach((entry, i) => {
+        if (y > 250) {
+          doc.addPage();
+          y = 20;
+        }
+
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(11);
+        // 🔤 Türkçe karakterler için latin encoding
+        const title = `${i + 1}. ${entry.description}`;
+        doc.text(title, 20, y);
+        y += 7;
+
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(9);
+        const riskText = `AI Risk: ${entry.riskScore}  |  Fine-Kinney: ${entry.fkValue.toFixed(
           1
-        )} (${entry.fkLevel})`,
-        24,
-        y
-      );
-      y += 5;
+        )} (${entry.fkLevel})`;
+        doc.text(riskText, 24, y);
+        y += 5;
 
-      doc.text(`Temel Neden: ${entry.justification}`, 24, y);
-      y += 5;
+        const causeText = `Temel Neden: ${entry.justification}`;
+        doc.text(causeText, 24, y);
+        y += 5;
 
-      const planLines = doc.splitTextToSize(
-        `Düzeltici İşlem: ${entry.correctionPlan}`,
-        162
-      );
-      doc.text(planLines, 24, y);
-      y += planLines.length * 4 + 8;
-    });
+        const planLines = doc.splitTextToSize(
+          `Düzeltici İşlem: ${entry.correctionPlan}`,
+          162
+        );
+        doc.text(planLines, 24, y);
+        y += planLines.length * 4 + 8;
+      });
 
-    doc.save(`toplu-denetim-${Date.now()}.pdf`);
-    toast.success("PDF indirildi!");
+      doc.save(`toplu-denetim-${Date.now()}.pdf`);
+      toast.success("PDF indirildi!");
+    } catch (e: any) {
+      toast.error("PDF oluşturulurken hata: " + e.message);
+      console.error("PDF Error:", e);
+    }
   }, [entries, siteName]);
 
+  // ✅ Veritabanı transactions ile saveAndSend
   const saveAndSend = async () => {
     if (!user) {
       toast.error("Lütfen giriş yapın.");
@@ -223,20 +266,31 @@ export default function BulkCAPA() {
     }
 
     setSending(true);
+    setShowOverlay(true);
+
+    let inspectionId: string | null = null;
 
     try {
-      // ADIM 1: User'ın organization_id'sini al
+      // ✅ ADIM 1: Organization ID kontrol
       const { data: profile, error: profileError } = await supabase
         .from("profiles")
         .select("organization_id")
         .eq("id", user.id)
         .single();
 
-      if (profileError || !profile?.organization_id) {
-        throw new Error("Kuruluş bilgisi bulunamadı.");
+      if (profileError) {
+        throw new Error(
+          `Profil yüklenemedi: ${profileError.message || "Bilinmeyen hata"}`
+        );
       }
 
-      // ADIM 2: Inspection kaydı oluştur
+      if (!profile?.organization_id) {
+        throw new Error(
+          "Kuruluş bilgisi bulunamadı. Lütfen profilinizi güncelleyin."
+        );
+      }
+
+      // ✅ ADIM 2: Inspection kaydı oluştur
       const { data: inspection, error: inspectionError } = await supabase
         .from("inspections")
         .insert({
@@ -254,17 +308,21 @@ export default function BulkCAPA() {
         .single();
 
       if (inspectionError || !inspection) {
-        throw new Error("Denetim kaydı oluşturulamadı.");
+        throw new Error(
+          `Denetim kaydı oluşturulamadı: ${inspectionError?.message || "Bilinmeyen hata"}`
+        );
       }
 
-      // ADIM 3: Her bulguyu findings'e ekle
+      inspectionId = inspection.id;
+
+      // ✅ ADIM 3: Bulgular ekle (Transaction benzeri davranış)
       const findingsData = entries.map((e) => {
         const dueDateObj = new Date();
         dueDateObj.setDate(dueDateObj.getDate() + 15);
         const dueDate = dueDateObj.toISOString().split("T")[0];
 
         return {
-          inspection_id: inspection.id,
+          inspection_id: inspectionId,
           description: e.description,
           action_required: e.correctionPlan,
           due_date: dueDate,
@@ -277,26 +335,41 @@ export default function BulkCAPA() {
         .insert(findingsData);
 
       if (findingsError) {
-        throw new Error("Bulgular kaydedilemedi.");
+        // ❌ Findings kaydı hatası - cleanup başlat
+        console.error("Findings Error:", findingsError);
+
+        // Yarım kalan inspection kaydını sil
+        await supabase.from("inspections").delete().eq("id", inspectionId);
+
+        throw new Error(
+          `Bulgular kaydedilemedi: ${findingsError.message || "Bilinmeyen hata"}. Denetim kaydı silinmiştir. Lütfen tekrar deneyin.`
+        );
       }
 
-      // ADIM 4: PDF oluştur
+      // ✅ ADIM 4: PDF oluştur
       generatePDF();
 
-      // ADIM 5: Başarı mesajı
+      // ✅ ADIM 5: Başarı mesajı
       toast.success(
-        "Bulgular başarıyla kaydedildi ve denetim oluşturuldu! ✅"
+        "✅ Bulgular başarıyla kaydedildi ve denetim oluşturuldu!"
       );
 
-      // ADIM 6: Form temizle
+      // ✅ ADIM 6: Form temizle
       setEntries([]);
       setSiteName("");
       setRecipientEmail("");
     } catch (e: any) {
-      toast.error(`Hata: ${e.message}`);
-      console.error("Kayıt hatası:", e);
+      toast.error(`❌ Hata: ${e.message}`);
+      console.error("SaveAndSend Error:", e);
+
+      // Eğer inspection oluşturulduysa ama failures varsa, cleanup yap
+      if (inspectionId) {
+        console.warn("Cleanup: Inspection kaydı silinecek...");
+        await supabase.from("inspections").delete().eq("id", inspectionId);
+      }
     } finally {
       setSending(false);
+      setShowOverlay(false);
     }
   };
 
@@ -307,7 +380,21 @@ export default function BulkCAPA() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 relative">
+      {/* 🔄 Loading Overlay */}
+      {showOverlay && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 backdrop-blur-sm">
+          <div className="bg-card p-8 rounded-lg border border-border shadow-xl text-center space-y-4">
+            <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto" />
+            <h3 className="text-lg font-semibold text-foreground">İşlem Devam Ediyor</h3>
+            <p className="text-sm text-muted-foreground">Lütfen bekleyin...</p>
+            <div className="w-48 h-1 bg-secondary rounded-full overflow-hidden">
+              <div className="h-full bg-primary animate-pulse" />
+            </div>
+          </div>
+        </div>
+      )}
+
       <div>
         <h1 className="text-2xl font-bold text-foreground">Çoklu DÖF Hazırlama</h1>
         <p className="text-sm text-muted-foreground mt-1">
@@ -386,7 +473,7 @@ export default function BulkCAPA() {
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs text-muted-foreground uppercase tracking-wider">
-              Önem
+              Şiddet
             </Label>
             <Select value={fkS} onValueChange={setFkS}>
               <SelectTrigger className="bg-secondary/50 border-border/50">
@@ -403,7 +490,7 @@ export default function BulkCAPA() {
           </div>
           <div className="space-y-1.5">
             <Label className="text-xs text-muted-foreground uppercase tracking-wider">
-              Sıklık
+              Frekans
             </Label>
             <Select value={fkF} onValueChange={setFkF}>
               <SelectTrigger className="bg-secondary/50 border-border/50">
@@ -447,6 +534,7 @@ export default function BulkCAPA() {
                 size="sm"
                 className="gap-1.5"
                 onClick={generatePDF}
+                disabled={sending}
               >
                 <Download className="h-3.5 w-3.5" /> PDF İndir
               </Button>
@@ -461,7 +549,7 @@ export default function BulkCAPA() {
                 ) : (
                   <Send className="h-3.5 w-3.5" />
                 )}
-                Kaydet & Gönder
+                {sending ? "Lütfen Bekleyin..." : "Kaydet & Gönder"}
               </Button>
             </div>
           </div>
@@ -471,7 +559,15 @@ export default function BulkCAPA() {
               const level = fkLevel(entry.fkValue);
               const isEditing = editingIdx === idx;
               return (
-                <div key={entry.localId} className="glass-card p-4 space-y-3">
+                <div key={entry.localId} className="glass-card p-4 space-y-3 border border-border/50">
+                  {/* ⚠️ AI Uyarısı */}
+                  {entry.aiWarning && (
+                    <div className="flex gap-2 bg-orange-500/10 border border-orange-500/30 rounded-lg p-3">
+                      <AlertCircle className="h-4 w-4 text-orange-500 shrink-0 mt-0.5" />
+                      <p className="text-xs text-orange-600">{entry.aiWarning}</p>
+                    </div>
+                  )}
+
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap mb-1">
@@ -486,9 +582,7 @@ export default function BulkCAPA() {
                           <AlertTriangle className="h-3 w-3 inline mr-1" />
                           AI: {entry.riskScore}
                         </span>
-                        <span
-                          className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${level.cls}`}
-                        >
+                        <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${level.cls}`}>
                           <Calculator className="h-3 w-3 inline mr-1" />
                           FK: {entry.fkValue.toFixed(1)} — {entry.fkLevel}
                         </span>

@@ -11,6 +11,7 @@ import {
   ChevronRight,
   LogOut,
   BookOpen,
+  Menu,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useAuth } from "@/contexts/AuthContext";
@@ -30,22 +31,22 @@ import {
 } from "@/components/ui/sidebar";
 
 const mainItems = [
-  { title: "Dashboard", url: "/", icon: LayoutDashboard },
-  { title: "Inspections", url: "/inspections", icon: ClipboardCheck },
-  { title: "Form Builder", url: "/form-builder", icon: FileText },
-  { title: "AI Reports", url: "/reports", icon: Brain },
-  { title: "CAPA (DÖF)", url: "/capa", icon: ShieldAlert },
-  { title: "Bulk CAPA", url: "/bulk-capa", icon: ShieldPlus },
-  { title: "Safety Library", url: "/safety-library", icon: BookOpen },
+  { title: "Panel", url: "/", icon: LayoutDashboard, badge: null },
+  { title: "Denetimler", url: "/inspections", icon: ClipboardCheck, badge: null },
+  { title: "Form Oluşturucu", url: "/form-builder", icon: FileText, badge: null },
+  { title: "AI Raporlar", url: "/reports", icon: Brain, badge: "Beta" },
+  { title: "DÖF (CAPA)", url: "/capa", icon: ShieldAlert, badge: null },
+  { title: "Toplu DÖF", url: "/bulk-capa", icon: ShieldPlus, badge: "Yeni" },
+  { title: "İSG Kütüphanesi", url: "/safety-library", icon: BookOpen, badge: null },
 ];
 
 const bottomItems = [
-  { title: "Settings", url: "/settings", icon: Settings },
+  { title: "Ayarlar", url: "/settings", icon: Settings },
 ];
 
 export function AppSidebar() {
   const { state, toggleSidebar } = useSidebar();
-  const { signOut } = useAuth();
+  const { signOut, user } = useAuth();
   const navigate = useNavigate();
   const collapsed = state === "collapsed";
 
@@ -55,36 +56,71 @@ export function AppSidebar() {
   };
 
   return (
-    <Sidebar collapsible="icon" className="border-r border-sidebar-border">
-      <SidebarHeader className="p-4">
-        <div className="flex items-center gap-3">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg gradient-primary">
-            <Shield className="h-5 w-5 text-foreground" />
+    <Sidebar collapsible="icon" className="border-r border-sidebar-border bg-gradient-to-b from-sidebar-bg to-sidebar-bg/95">
+      {/* Header - Logo & Branding */}
+      <SidebarHeader className="border-b border-sidebar-border/50 p-4">
+        <div className="flex items-center gap-3 group">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500 to-emerald-600 shadow-lg group-hover:shadow-emerald-500/50 transition-shadow">
+            <Shield className="h-5 w-5 text-white" />
           </div>
           {!collapsed && (
-            <div className="flex flex-col">
-              <span className="text-sm font-bold tracking-wide text-foreground">DENETRON</span>
-              <span className="text-[10px] text-muted-foreground">OHS Management</span>
+            <div className="flex flex-col min-w-0">
+              <span className="text-sm font-bold tracking-tight text-foreground">DENETRON</span>
+              <span className="text-[10px] text-muted-foreground truncate">İSG Yönetim Sistemi</span>
             </div>
           )}
         </div>
       </SidebarHeader>
 
-      <SidebarContent className="px-2">
-        <SidebarGroup>
-          <SidebarGroupLabel className="text-[10px] uppercase tracking-widest text-muted-foreground/60 px-3">
-            {!collapsed ? "Main Menu" : ""}
+      {/* Main Content */}
+      <SidebarContent className="px-2 py-4">
+        <SidebarGroup className="gap-3">
+          <SidebarGroupLabel className="text-[11px] uppercase tracking-widest text-muted-foreground/70 px-2 font-semibold">
+            {!collapsed ? "Ana Menü" : ""}
           </SidebarGroupLabel>
           <SidebarGroupContent>
-            <SidebarMenu>
+            <SidebarMenu className="gap-1">
               {mainItems.map((item) => (
+                <SidebarMenuItem key={item.title}>
+                  <SidebarMenuButton asChild tooltip={item.title} className="relative group">
+                    <NavLink
+                      to={item.url}
+                      end={item.url === "/"}
+                      className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-sidebar-foreground transition-all duration-200 hover:bg-sidebar-accent/80 hover:text-sidebar-accent-foreground relative"
+                      activeClassName="bg-emerald-500/20 text-emerald-600 font-medium border-l-2 border-emerald-500"
+                    >
+                      <item.icon className="h-4 w-4 shrink-0" />
+                      <span className="flex-1">{item.title}</span>
+                      {item.badge && !collapsed && (
+                        <span className="ml-auto inline-flex items-center rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 whitespace-nowrap">
+                          {item.badge}
+                        </span>
+                      )}
+                    </NavLink>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        {/* Separator */}
+        <div className="my-2 h-px bg-sidebar-border/50" />
+
+        {/* Tools Section */}
+        <SidebarGroup className="gap-3">
+          <SidebarGroupLabel className="text-[11px] uppercase tracking-widest text-muted-foreground/70 px-2 font-semibold">
+            {!collapsed ? "Araçlar" : ""}
+          </SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu className="gap-1">
+              {bottomItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton asChild tooltip={item.title}>
                     <NavLink
                       to={item.url}
-                      end={item.url === "/"}
-                      className="flex items-center gap-3 rounded-md px-3 py-2.5 text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
-                      activeClassName="bg-sidebar-accent text-primary font-medium"
+                      className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm text-sidebar-foreground transition-all duration-200 hover:bg-sidebar-accent/80 hover:text-sidebar-accent-foreground"
+                      activeClassName="bg-emerald-500/20 text-emerald-600 font-medium border-l-2 border-emerald-500"
                     >
                       <item.icon className="h-4 w-4 shrink-0" />
                       <span>{item.title}</span>
@@ -97,35 +133,37 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
 
-      <SidebarFooter className="px-2 pb-4">
-        <SidebarMenu>
-          {bottomItems.map((item) => (
-            <SidebarMenuItem key={item.title}>
-              <SidebarMenuButton asChild tooltip={item.title}>
-                <NavLink
-                  to={item.url}
-                  className="flex items-center gap-3 rounded-md px-3 py-2.5 text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-accent"
-                  activeClassName="bg-sidebar-accent text-primary font-medium"
-                >
-                  <item.icon className="h-4 w-4 shrink-0" />
-                  <span>{item.title}</span>
-                </NavLink>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          ))}
-        </SidebarMenu>
+      {/* Footer - User & Controls */}
+      <SidebarFooter className="border-t border-sidebar-border/50 px-2 py-3 space-y-2">
+        {/* User Info */}
+        {!collapsed && user && (
+          <div className="px-2 py-3 rounded-lg bg-sidebar-accent/50 border border-sidebar-border/50">
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wide mb-1">Kullanıcı</p>
+            <p className="text-xs font-semibold text-foreground truncate">{user.email}</p>
+          </div>
+        )}
+
+        {/* Toggle Sidebar Button */}
         <button
           onClick={toggleSidebar}
-          className="mt-2 flex items-center justify-center rounded-md p-2 text-muted-foreground hover:bg-sidebar-accent hover:text-foreground transition-colors"
+          className="flex items-center justify-center w-full rounded-lg p-2.5 text-muted-foreground hover:bg-sidebar-accent hover:text-foreground transition-all duration-200 group"
+          title={collapsed ? "Menüyü Aç" : "Menüyü Kapat"}
         >
-          {collapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+          {collapsed ? (
+            <Menu className="h-4 w-4 group-hover:scale-110 transition-transform" />
+          ) : (
+            <ChevronLeft className="h-4 w-4 group-hover:scale-110 transition-transform" />
+          )}
         </button>
+
+        {/* Sign Out Button */}
         <button
           onClick={handleSignOut}
-          className="flex items-center gap-3 rounded-md px-3 py-2.5 text-sm text-destructive hover:bg-destructive/10 transition-colors"
+          className="flex items-center gap-3 w-full rounded-lg px-3 py-2.5 text-sm text-destructive/80 hover:bg-destructive/10 hover:text-destructive transition-all duration-200 font-medium group"
+          title="Çıkış Yap"
         >
-          <LogOut className="h-4 w-4 shrink-0" />
-          {!collapsed && <span>Sign Out</span>}
+          <LogOut className="h-4 w-4 shrink-0 group-hover:scale-110 transition-transform" />
+          {!collapsed && <span>Çıkış Yap</span>}
         </button>
       </SidebarFooter>
     </Sidebar>

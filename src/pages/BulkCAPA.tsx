@@ -47,6 +47,7 @@ import {
 import { saveAs } from "file-saver";
 
 // ✅ INTERFACE DEFINITIONS
+// HazardEntry interface'ine ekle:
 interface HazardEntry {
   id: string;
   description: string;
@@ -56,6 +57,7 @@ interface HazardEntry {
   importance_level: "Normal" | "Yüksek" | "Kritik";
   termin_date: string;
   related_department: string;
+  notification_method: string; // ✅ YENİ ALAN
   media_urls: string[];
   ai_analyzed: boolean;
 }
@@ -96,7 +98,6 @@ const IMPORTANCE_LEVELS = [
   },
 ];
 
-// ✅ SAFE JSON PARSE HELPER
 const safeJsonParse = (jsonText: string): AIAnalysisResult | null => {
   try {
     if (!jsonText || jsonText.trim().length === 0) {
@@ -105,52 +106,87 @@ const safeJsonParse = (jsonText: string): AIAnalysisResult | null => {
 
     let cleaned = jsonText.trim();
 
-    cleaned = cleaned
-      .replace(/^```json\s*\n?/gi, "")
-      .replace(/\n?```\s*$/gi, "")
-      .replace(/^```\s*\n?/gi, "")
-      .replace(/\n?```\s*$/gi, "");
+    // ✅ ```json``` markdownı kaldır
+    cleaned = cleaned.replace(/^```json\n?/i, "").replace(/\n?```$/i, "");
+    cleaned = cleaned.replace(/^```\n?/i, "").replace(/\n?```$/i, "");
 
+    // ✅ KESIK STRING'İ KONTROL ET
+    // Eğer son karakter tırnak değilse (kesik string), tırnak ekle
+    if (!cleaned.trim().endsWith("}")) {
+      // Son field kesik kalmış, kapat
+      if (cleaned.includes('"') && !cleaned.trim().endsWith('"')) {
+        cleaned = cleaned.trim() + '" }';
+      } else {
+        cleaned = cleaned.trim() + " }";
+      }
+    }
+
+    // Smart quotes düzelt
     cleaned = cleaned
       .replace(/[\u2018\u2019]/g, "'")
       .replace(/[\u201C\u201D]/g, '"')
       .replace(/[\u2015\u2013]/g, "-");
 
+    // Eksik braces
     const openBraces = (cleaned.match(/{/g) || []).length;
     const closeBraces = (cleaned.match(/}/g) || []).length;
     if (openBraces > closeBraces) {
       cleaned += "}".repeat(openBraces - closeBraces);
     }
 
+    // Trailing comma
     cleaned = cleaned.replace(/,(\s*[}\]])/g, "$1");
+
+    console.log("🔧 Cleaned JSON:", cleaned.substring(0, 300));
 
     const parsed = JSON.parse(cleaned);
 
-    if (
-      !parsed.description ||
-      !parsed.riskDefinition ||
-      !parsed.correctiveAction ||
-      !parsed.preventiveAction
-    ) {
-      throw new Error("Missing required fields");
-    }
-
-    const validLevels = ["Normal", "Yüksek", "Kritik"];
-    if (!validLevels.includes(parsed.importance_level)) {
-      parsed.importance_level = "Normal";
-    }
-
-    return parsed as AIAnalysisResult;
+    return {
+      description: parsed.description || "Açıklama alınamadı",
+      riskDefinition: parsed.riskDefinition || "Risk tanımı alınamadı",
+      correctiveAction: parsed.correctiveAction || "- İşlem belirtilmedi",
+      preventiveAction: parsed.preventiveAction || "- Önlem belirtilmedi",
+      importance_level: parsed.importance_level || "Normal",
+    } as AIAnalysisResult;
   } catch (error) {
     console.error("❌ JSON Parse Error:", error);
+    console.error("Raw text:", jsonText.substring(0, 300));
     return null;
   }
 };
 
-// ✅ DATA URL TO BUFFER (Image embedding için)
-const dataUrlToBuffer = async (dataUrl: string): Promise<Buffer> => {
-  const base64Data = dataUrl.split(",")[1];
-  return Buffer.from(base64Data, "base64");
+// ✅ DATA URL TO UINT8ARRAY (Buffer yerine)
+const dataUrlToBuffer = (dataUrl: string): Uint8Array => {
+  try {
+    if (!dataUrl || !dataUrl.includes(",")) {
+      throw new Error("Invalid data URL format");
+    }
+
+    // Base64 kısmını al
+    const base64Data = dataUrl.split(",")[1];
+    
+    if (!base64Data) {
+      throw new Error("No base64 data found");
+    }
+
+    // ✅ atob ile decode et
+    const binaryString = atob(base64Data);
+    
+    // ✅ Uint8Array'e çevir
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+      bytes[i] = binaryString.charCodeAt(i);
+    }
+    
+    if (bytes.length === 0) {
+      throw new Error("Empty buffer");
+    }
+
+    return bytes;
+  } catch (error) {
+    console.error("❌ Buffer conversion error:", error);
+    throw error;
+  }
 };
 
 // ✅ MAIN COMPONENT
@@ -178,6 +214,7 @@ export default function BulkCAPA() {
     importance_level: "Normal",
     termin_date: "",
     related_department: "Diğer",
+    notification_method: "E-mail", // ✅ DEFAULT DEĞER
     media_urls: [],
     ai_analyzed: false,
   });
@@ -221,33 +258,38 @@ export default function BulkCAPA() {
         imageData = btoa(binary);
       }
 
-      const enhancedPrompt = `İşyeri güvenliği ve sağlığı (İSG) uzmanı olarak, görseldeki tehlikeleri analiz edin.
+     const enhancedPrompt = `İşyeri güvenliği ve sağlığı (İSG) uzmanı olarak, görseldeki tehlikeleri analiz edin.
 
-⚠️ KRITIK TALIMATLAR - TAM OLARAK UYUN:
+⚠️ KRITIK TALIMATLAR - KESIN OLARAK UYUN:
 - Yanıt SADECE GEÇERLI bir JSON objesi olmalı
-- JSON asla yarıda kesilmemeli - her zaman tamamlanmalı
-- Tüm tırnak işaretleri ve parantezler kapalı olmalı
+- JSON asla yarıda kesilmemeli - her zaman TAMAMLANMALI
+- Tüm tırnak işaretleri ve parantezler KAPATILMALI
 - Markdown YOK, kod blokları YOK, ekstra metin YOK
-- Yanıt { ile başlayıp } ile bitmelidir
+- Yanıt { ile başlayıp } ile BİTMELİDİR
+- "undefined" YAZILMAMALI
+- Tüm alanlar MUTLAKA doldurulmalı - boş bırakmayın
 - Türkçe ve NET cevaplar verin
+- UZUN ve DETAYLı cevaplar verin (en az 2-3 cümle her alan)
 
 EXACTLY şu yapı döndürün:
 
 {
-  "description": "Bulguda gördüğünüz tehlikenin açık ve net açıklaması (2-3 cümle, Türkçe, profesyonel tone)",
-  "riskDefinition": "Bu tehlike neden ciddi ve sonuçları ne olabilir (2-3 cümle, Türkçe, özellikle yaralanma risklerini vurgulayın)",
-  "correctiveAction": "Acil olarak yapılması gereken düzeltici faaliyetler:\n- Birinci madde\n- İkinci madde\n- Üçüncü madde",
-  "preventiveAction": "Bundan sonra bunu önlemek için alınacak önleyici faaliyetler:\n- Birinci madde\n- İkinci madde\n- Üçüncü madde",
+  "description": "Açık, net ve profesyonel bulgu açıklaması (2-3 tam cümle Türkçe)",
+  "riskDefinition": "Riski açıkça tanımlayan, sonuçlarını vurgulayan açıklama (2-3 tam cümle Türkçe)",
+  "correctiveAction": "Hemen yapılması gereken faaliyetler:\n- Madde 1\n- Madde 2\n- Madde 3",
+  "preventiveAction": "İleride önlemek için alınacak faaliyetler:\n- Madde 1\n- Madde 2\n- Madde 3",
   "importance_level": "Normal"
 }
+
+UYARI: Her alan MUTLAKA doldurulmalı. "undefined" veya boş değer YASAK!
 
 Eğer görüntüde İSG riski yoksa:
 
 {
-  "description": "Görüntüde belirgin bir iş güvenliği riski tespit edilmemiştir",
-  "riskDefinition": "Risk yok",
-  "correctiveAction": "Uygulanacak faaliyet yok",
-  "preventiveAction": "Genel iş güvenliği uygulamalarına uyulmalıdır",
+  "description": "Görüntüde belirgin bir iş güvenliği riski tespit edilmemiştir. Çalışma ortamı güvenli görünmektedir.",
+  "riskDefinition": "Acil bir risk bulunmamaktadır.",
+  "correctiveAction": "Uygulanacak özel faaliyet bulunmamaktadır.",
+  "preventiveAction": "Genel iş güvenliği uygulamalarına uyulmalıdır.",
   "importance_level": "Normal"
 }`;
 
@@ -278,7 +320,7 @@ Eğer görüntüde İSG riski yoksa:
               temperature: 0.1,
               top_p: 0.95,
               top_k: 40,
-              max_output_tokens: 1024,
+              max_output_tokens: 4016,
             },
           }),
         }
@@ -536,6 +578,8 @@ Eğer görüntüde İSG riski yoksa:
     };
 
     setEntries([...entries, entry]);
+    // handleAddEntry fonksiyonunda, reset kısmına ekle:
+
     setNewEntry({
       id: "",
       description: "",
@@ -545,6 +589,7 @@ Eğer görüntüde İSG riski yoksa:
       importance_level: "Normal",
       termin_date: "",
       related_department: "Diğer",
+      notification_method: "E-mail", // ✅ RESET
       media_urls: [],
       ai_analyzed: false,
     });
@@ -852,6 +897,39 @@ const generateWordDocument = async () => {
                     children: [
                       new TextRun({
                         text: `${entries.length} bulgu (${entries.filter((e) => e.ai_analyzed).length} AI analiz)`,
+                        size: 20,
+                      }),
+                    ],
+                  }),
+                ],
+              }),
+            ],
+          }),
+          // ✅ BİLDİRİM ŞEKLİ ROW EKLE
+          new TableRow({
+            children: [
+              new TableCell({
+                width: { size: 30, type: WidthType.PERCENTAGE },
+                children: [
+                  new Paragraph({
+                    children: [
+                      new TextRun({
+                        text: "BİLDİRİM ŞEKLİ",
+                        bold: true,
+                        size: 20,
+                      }),
+                    ],
+                  }),
+                ],
+                shading: { fill: "D3D3D3" },
+              }),
+              new TableCell({
+                width: { size: 70, type: WidthType.PERCENTAGE },
+                children: [
+                  new Paragraph({
+                    children: [
+                      new TextRun({
+                        text: newEntry.notification_method || "E-mail",
                         size: 20,
                       }),
                     ],
@@ -1180,132 +1258,145 @@ const generateWordDocument = async () => {
         })
       );
 
-      // ✅ ADD IMAGES ROW IF EXISTS
-      if (entry.media_urls.length > 0) {
-        const imageTableRows: TableRow[] = [];
+      // generateWordDocument fonksiyonunda, FOTOĞRAFLAR bölümünü değiştir:
 
-       for (let imgIdx = 0; imgIdx < entry.media_urls.length; imgIdx += 2) {
-        const cells: TableCell[] = [];
+// ✅ ADD IMAGES ROW IF EXISTS - COMPLETELY FIXED & PROFESSIONAL
+if (entry.media_urls.length > 0) {
+  // ✅ Add images section header FIRST
+  findingTableRows.push(
+    new TableRow({
+      children: [
+        new TableCell({
+          columnSpan: 2,
+          children: [
+            new Paragraph({
+              children: [
+                new TextRun({
+                  text: `FOTOĞRAFLAR (${entry.media_urls.length})`,
+                  bold: true,
+                  size: 20,
+                  color: "FFFFFF",
+                }),
+              ],
+              alignment: AlignmentType.CENTER,
+            }),
+          ],
+          shading: { fill: "000000" },
+          margins: { top: 100, bottom: 100 },
+        }),
+      ],
+    })
+  );
 
-          // --- 1. FOTOĞRAF BLOĞU ---
-       try {
-        const buffer1 = await dataUrlToBuffer(entry.media_urls[imgIdx]);
-        cells.push(
-          new TableCell({
-            width: { size: 50, type: WidthType.PERCENTAGE },
-            children: [
-              new Paragraph({
-                children: [
-                  new ImageRun({
-                    data: buffer1,
-                    transformation: {
-                      width: 180,
-                      height: 180,
-                    },
-                    // 🚀 KRİTİK: Tip tanımı Word'ün dosyayı tanıması için zorunludur
-                    type: "png",
-                  }),
-                ],
-                alignment: AlignmentType.CENTER,
-              }),
-              new Paragraph({
-                children: [
-                  new TextRun({
-                    text: `Foto ${imgIdx + 1}`,
-                    italics: true,
-                    size: 16,
-                  }),
-                ],
-                alignment: AlignmentType.CENTER,
-              }),
-            ],
-            margins: { top: 100, bottom: 100, left: 100, right: 100 },
-          })
-        );
-      } catch (err) {
-        console.error("Image 1 processing error:", err);
-        // Hata durumunda hücreyi boş bırakma, en azından bir metin ekle ki tablo bozulmasın
-        cells.push(new TableCell({ children: [new Paragraph("Resim yüklenemedi")] }));
-      }
-        // --- 2. FOTOĞRAF BLOĞU (VARSA) ---
-        if (imgIdx + 1 < entry.media_urls.length) {
-          try {
-            const buffer2 = await dataUrlToBuffer(entry.media_urls[imgIdx + 1]);
-            cells.push(
-              new TableCell({
-                width: { size: 50, type: WidthType.PERCENTAGE },
-                children: [
-                  new Paragraph({
-                    children: [
-                      new ImageRun({
-                        data: buffer2,
-                        transformation: {
-                          width: 180,
-                          height: 180,
-                        },
-                        type: "png",
-                      }),
-                    ],
-                    alignment: AlignmentType.CENTER,
-                  }),
-                  new Paragraph({
-                    children: [
-                      new TextRun({
-                        text: `Foto ${imgIdx + 2}`,
-                        italics: true,
-                        size: 16,
-                      }),
-                    ],
-                    alignment: AlignmentType.CENTER,
-                  }),
-                ],
-                margins: { top: 100, bottom: 100, left: 100, right: 100 },
-              })
-            );
-          } catch (err) {
-            console.error("Image 2 processing error:", err);
-            cells.push(new TableCell({ children: [new Paragraph("Resim yüklenemedi")] }));
-          }
-        } else {
-          // 🚀 ÖNEMLİ: Eğer ikinci resim yoksa, Word'ün tablo yapısını (2 sütun) korumak için boş hücre ekle
-          cells.push(
+  // ✅ HER FOTOĞRAF İÇİN AYRIY ROW
+  for (let imgIdx = 0; imgIdx < entry.media_urls.length; imgIdx++) {
+    try {
+      const imageUrl = entry.media_urls[imgIdx];
+      const uint8Array = dataUrlToBuffer(imageUrl);
+
+      // ✅ Fotoğraf row
+      findingTableRows.push(
+        new TableRow({
+          children: [
             new TableCell({
-              width: { size: 50, type: WidthType.PERCENTAGE },
-              children: [new Paragraph("")],
-            })
-          );
-        }
-        // Satırı tabloya ekle
-        imageTableRows.push(new TableRow({ children: cells }));
-      }
+              columnSpan: 2,
+              children: [
+                new Paragraph({
+                  children: [
+                    new ImageRun({
+                      data: uint8Array as any,
+                      type: "jpg",
+                      transformation: {
+                          width: 320, // ✅ DÜŞÜRDÜ: 380 → 320
+                        height: 240, // ✅ DÜŞÜRDÜ: 285 → 240
+                      },
+                    }),
+                  ],
+                  alignment: AlignmentType.CENTER,
+                  spacing: { before: 100, after: 100 },
+                }),
+              ],
+              margins: { top: 150, bottom: 80, left: 100, right: 100 },
+              shading: { fill: "FFFFFF" },
+            }),
+          ],
+        })
+      );
 
-        // ✅ Add images section header
-        findingTableRows.push(
-          new TableRow({
-            children: [
-              new TableCell({
-                columnSpan: 2,
-                children: [
-                  new Paragraph({
-                    children: [
-                      new TextRun({
-                        text: `FOTOĞRAFLAR (${entry.media_urls.length})`,
-                        bold: true,
-                        size: 18,
-                      }),
-                    ],
-                    alignment: AlignmentType.CENTER,
-                  }),
-                ],
-                shading: { fill: "D3D3D3" },
-              }),
-            ],
-          })
-        );
+      // ✅ Fotoğraf numarası row
+      findingTableRows.push(
+        new TableRow({
+          children: [
+            new TableCell({
+              columnSpan: 2,
+              children: [
+                new Paragraph({
+                  children: [
+                    new TextRun({
+                      text: `Fotoğraf ${imgIdx + 1}/${entry.media_urls.length}`,
+                      italics: true,
+                      size: 18,
+                      color: "666666",
+                    }),
+                  ],
+                  alignment: AlignmentType.CENTER,
+                  spacing: { after: 80 },
+                }),
+              ],
+              margins: { top: 0, bottom: 120, left: 100, right: 100 },
+              shading: { fill: "F5F5F5" },
+            }),
+          ],
+        })
+      );
+    } catch (err) {
+      console.error(`❌ Image error at index ${imgIdx}:`, err);
 
-        // ✅ Add image rows
-        findingTableRows.push(...imageTableRows);
-      }
+      findingTableRows.push(
+        new TableRow({
+          children: [
+            new TableCell({
+              columnSpan: 2,
+              children: [
+                new Paragraph({
+                  children: [
+                    new TextRun({
+                      text: `Fotoğraf ${imgIdx + 1} yüklenemedi`,
+                      italics: true,
+                      color: "FF0000",
+                      size: 18,
+                    }),
+                  ],
+                  alignment: AlignmentType.CENTER,
+                  spacing: { after: 80 },
+                }),
+              ],
+              margins: { top: 150, bottom: 150, left: 100, right: 100 },
+              shading: { fill: "FFE6E6" },
+            }),
+          ],
+        })
+      );
+    }
+  }
+
+  // ✅ Son boşluk row
+  findingTableRows.push(
+    new TableRow({
+      children: [
+        new TableCell({
+          columnSpan: 2,
+          children: [
+            new Paragraph({
+              children: [new TextRun({ text: "" })],
+              spacing: { after: 100 },
+            }),
+          ],
+        }),
+      ],
+    })
+  );
+}
 
       // Create main table
       const findingTable = new Table({
@@ -1618,7 +1709,7 @@ const generateWordDocument = async () => {
                 Önemlilik Seviyesi
               </Label>
               <Select
-                value={newEntry.importance_level}
+                value={newEntry.importance_level || "Normal"}
                 onValueChange={(value: any) =>
                   setNewEntry({
                     ...newEntry,
@@ -1627,7 +1718,7 @@ const generateWordDocument = async () => {
                 }
               >
                 <SelectTrigger className="bg-secondary/50 border-border/50 h-11">
-                  <SelectValue />
+                  <SelectValue placeholder="Seçiniz" />
                 </SelectTrigger>
                 <SelectContent className="bg-card border-border">
                   {IMPORTANCE_LEVELS.map((level) => (
@@ -1646,7 +1737,7 @@ const generateWordDocument = async () => {
                 İlgili Bölüm
               </Label>
               <Select
-                value={newEntry.related_department}
+                value={newEntry.related_department || "Diğer"}
                 onValueChange={(value) =>
                   setNewEntry({
                     ...newEntry,
@@ -1655,7 +1746,7 @@ const generateWordDocument = async () => {
                 }
               >
                 <SelectTrigger className="bg-secondary/50 border-border/50 h-11">
-                  <SelectValue />
+                  <SelectValue placeholder="Seçiniz" />
                 </SelectTrigger>
                 <SelectContent className="bg-card border-border">
                   {DEPARTMENTS.map((dept) => (
@@ -1685,6 +1776,24 @@ const generateWordDocument = async () => {
                 className="bg-secondary/50 border-border/50 h-11"
               />
             </div>
+
+            {/* ✅ Notification Method - TEXT INPUT */}
+            <div className="space-y-2">
+              <Label className="text-sm font-semibold flex items-center gap-2">
+                📢 Bildirim Şekli
+              </Label>
+              <Input
+                placeholder="Örn: E-mail, SMS, Telefon, Yüz Yüze, vb..."
+                value={newEntry.notification_method || ""}
+                onChange={(e) =>
+                  setNewEntry({
+                    ...newEntry,
+                    notification_method: e.target.value,
+                  })
+                }
+                className="bg-secondary/50 border-border/50 h-11"
+              />
+            </div>
           </div>
 
           {/* ADD BUTTON */}
@@ -1696,7 +1805,6 @@ const generateWordDocument = async () => {
             Bulgayı Ekle
           </Button>
         </div>
-
         {/* ENTRIES LIST */}
         {entries.length > 0 && (
           <div className="space-y-4">
@@ -1738,11 +1846,17 @@ const generateWordDocument = async () => {
                             "tr-TR"
                           )}
                         </span>
+                        // Entries list'te, entry tag'larından sonra ekle (Satır ~1050 civarında):
+
                         {entry.media_urls.length > 0 && (
                           <span className="text-xs px-2 py-1 rounded bg-purple-500/10 text-purple-600">
                             📷 {entry.media_urls.length}
                           </span>
                         )}
+                        {/* ✅ YENİ */}
+                        <span className="text-xs px-2 py-1 rounded bg-green-500/10 text-green-600">
+                          📢 {entry.notification_method || "E-mail"}
+                        </span>
                       </div>
                     </div>
                     <Button

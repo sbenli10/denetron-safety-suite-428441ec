@@ -234,66 +234,72 @@ export type Database = {
       }
 
       // ✅ 5. FINDINGS (Bulgular/DÖF)
-      findings: {
-        Row: {
-          id: string
-          inspection_id: string
-          description: string
-          action_required: string | null
-          due_date: string | null
-          is_resolved: boolean
-          resolved_at: string | null
-          resolution_notes: string | null
-          assigned_to: string | null
-          priority: "low" | "medium" | "high" | "critical"
-          created_at: string
-          updated_at: string
-        }
-        Insert: {
-          id?: string
-          inspection_id: string
-          description: string
-          action_required?: string | null
-          due_date?: string | null
-          is_resolved?: boolean
-          resolved_at?: string | null
-          resolution_notes?: string | null
-          assigned_to?: string | null
-          priority?: "low" | "medium" | "high" | "critical"
-          created_at?: string
-          updated_at?: string
-        }
-        Update: {
-          id?: string
-          inspection_id?: string
-          description?: string
-          action_required?: string | null
-          due_date?: string | null
-          is_resolved?: boolean
-          resolved_at?: string | null
-          resolution_notes?: string | null
-          assigned_to?: string | null
-          priority?: "low" | "medium" | "high" | "critical"
-          created_at?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "findings_inspection_id_fkey"
-            columns: ["inspection_id"]
-            isOneToOne: false
-            referencedRelation: "inspections"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "findings_assigned_to_fkey"
-            columns: ["assigned_to"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          }
-        ]
+      // findings table'ın Row kısmına ekle:
+
+// ✅ 5. FINDINGS (Bulgular/DÖF)
+    findings: {
+      Row: {
+        id: string
+        inspection_id: string
+        description: string
+        action_required: string | null
+        due_date: string | null
+        is_resolved: boolean
+        resolved_at: string | null
+        resolution_notes: string | null
+        assigned_to: string | null
+        priority: "low" | "medium" | "high" | "critical"
+        notification_method: string | null // ✅ YENİ ALAN
+        created_at: string
+        updated_at: string
       }
+      Insert: {
+        id?: string
+        inspection_id: string
+        description: string
+        action_required?: string | null
+        due_date?: string | null
+        is_resolved?: boolean
+        resolved_at?: string | null
+        resolution_notes?: string | null
+        assigned_to?: string | null
+        priority?: "low" | "medium" | "high" | "critical"
+        notification_method?: string | null // ✅ YENİ ALAN
+        created_at?: string
+        updated_at?: string
+      }
+      Update: {
+        id?: string
+        inspection_id?: string
+        description?: string
+        action_required?: string | null
+        due_date?: string | null
+        is_resolved?: boolean
+        resolved_at?: string | null
+        resolution_notes?: string | null
+        assigned_to?: string | null
+        priority?: "low" | "medium" | "high" | "critical"
+        notification_method?: string | null // ✅ YENİ ALAN
+        created_at?: string
+        updated_at?: string
+      }
+      Relationships: [
+        {
+          foreignKeyName: "findings_inspection_id_fkey"
+          columns: ["inspection_id"]
+          isOneToOne: false
+          referencedRelation: "inspections"
+          referencedColumns: ["id"]
+        },
+        {
+          foreignKeyName: "findings_assigned_to_fkey"
+          columns: ["assigned_to"]
+          isOneToOne: false
+          referencedRelation: "users"
+          referencedColumns: ["id"]
+        }
+      ]
+    }
 
       // ✅ 6. INSPECTION_TEMPLATES (Denetim Şablonları)
       inspection_templates: {

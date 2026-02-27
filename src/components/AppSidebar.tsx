@@ -14,6 +14,7 @@ import {
   BookOpen,
   Menu,
   TrendingUp,
+  Building2,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useAuth } from "@/contexts/AuthContext";
@@ -37,6 +38,7 @@ const mainItems = [
   { title: "Panel", url: "/", icon: LayoutDashboard, badge: null },
   { title: "Denetimler", url: "/inspections", icon: ClipboardCheck, badge: null },
   { title: "AI Raporlar", url: "/reports", icon: Brain, badge: "Beta" },
+  { title: "AI Kroki Okuyucu", url: "/blueprint-analyzer", icon: Building2, badge: "Pro" },
   { title: "DÖF Yönetimi", url: "/capa", icon: ShieldAlert, badge: null },
   { title: "Toplu DÖF", url: "/bulk-capa", icon: ShieldPlus, badge: "Yeni" },
   { title: "Risk Sihirbazı", url: "/risk-wizard", icon: TrendingUp, badge: "⭐" },

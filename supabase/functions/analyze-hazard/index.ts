@@ -12,25 +12,73 @@ serve(async (req) => {
   }
 
   try {
-    const { hazardDescription } = await req.json();
-    if (!hazardDescription || typeof hazardDescription !== "string") {
+    const body = await req.json();
+    const hazardDescription = body.hazardDescription || "";
+    const imageUrl = body.imageUrl || null;
+
+    if (!hazardDescription && !imageUrl) {
       return new Response(
-        JSON.stringify({ error: "hazardDescription is required" }),
+        JSON.stringify({ error: "Tehlike açıklaması veya görsel zorunludur." }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
 
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
-    if (!LOVABLE_API_KEY) throw new Error("LOVABLE_API_KEY is not configured");
+    if (!LOVABLE_API_KEY) {
+      throw new Error("LOVABLE_API_KEY ortam değişkeni ayarlanmamış.");
+    }
 
-    const systemPrompt = `You are an EHS (Environment, Health & Safety) expert. Given a safety hazard description, respond with a JSON object containing:
-1. "riskScore": one of "Low", "Medium", or "High"
-2. "correctionPlan": a professional, actionable correction plan with numbered steps (3-6 steps)
-3. "justification": a brief 1-2 sentence explanation of the risk score
-4. "complianceScore": a number from 0 to 100 representing how compliant the described situation is with general OHS (Occupational Health & Safety) regulations. 100 means fully compliant, 0 means severe violations. Consider OSHA, ISO 45001, and general workplace safety standards.
-5. "complianceNotes": a brief 1-3 sentence explanation of which OHS regulations are relevant and why the score was given
+    const systemPrompt = `
+Sen 20 yıllık saha tecrübesine sahip, A Sınıfı İş Güvenliği Uzmanı ve mevzuat danışmanısın. Verilen saha gözlemini, tehlike açıklamasını veya görseli Fine-Kinney metodolojisine göre analiz edeceksin.
 
-Respond ONLY with valid JSON, no markdown fences.`;
+Kriterler:
+1. Olasılık: (0.2, 0.5, 1, 3, 6, 10)
+2. Frekans: (0.5, 1, 2, 3, 6, 10)
+3. Şiddet: (1, 3, 7, 15, 40, 100)
+4. Risk Puanı: Olasılık * Frekans * Şiddet
+5. Risk Seviyesi: "Kabul Edilebilir", "Düşük", "Önemli", "Yüksek", "Kritik"
+6. Yasal Atıf: Doğrudan Türkiye İSG mevzuatından ilgili kanun/yönetmelik.
+
+LÜTFEN ÇIKTIYI SADECE AŞAĞIDAKİ JSON FORMATINDA VER:
+{
+  "hazardDescription": "Teknik tehlike tanımı",
+  "probability": 3,
+  "frequency": 6,
+  "severity": 15,
+  "riskScore": 270,
+  "riskLevel": "Yüksek",
+  "legalReference": "6331 Sayılı Kanun Md. 10",
+  "immediateAction": "Acil müdahale",
+  "preventiveAction": "Kalıcı çözüm",
+  "justification": "Risk skoru gerekçesi"
+}
+`;
+
+    // Mesaj içeriğini hazırlama (Eğer görsel varsa, mesaj dizisini ona göre oluşturuyoruz)
+    let userMessageContent: any[] = [
+      {
+        type: "text",
+        text: `Lütfen şu tehlike durumunu detaylıca analiz et: ${hazardDescription}`,
+      }
+    ];
+
+    if (imageUrl) {
+      userMessageContent.push({
+        type: "image_url",
+        image_url: {
+          url: imageUrl
+        }
+      });
+    }
+
+    const aiPayload = {
+      model: "google/gemini-flash-1.5", // veya "google/gemini-3-flash-preview" (Gateway dökümanına göre)
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userMessageContent },
+      ],
+      response_format: { type: "json_object" } // YENİ: Modelin kesinlikle JSON dönmesini zorlar
+    };
 
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
@@ -38,51 +86,44 @@ Respond ONLY with valid JSON, no markdown fences.`;
         Authorization: `Bearer ${LOVABLE_API_KEY}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        model: "google/gemini-3-flash-preview",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: `Analyze this safety hazard and provide a correction plan:\n\n${hazardDescription}` },
-        ],
-      }),
+      body: JSON.stringify(aiPayload),
     });
 
     if (!response.ok) {
-      if (response.status === 429) {
-        return new Response(JSON.stringify({ error: "Rate limit exceeded. Please try again later." }), {
-          status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      if (response.status === 402) {
-        return new Response(JSON.stringify({ error: "AI credits exhausted. Please add funds." }), {
-          status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      const text = await response.text();
-      console.error("AI gateway error:", response.status, text);
-      throw new Error(`AI gateway error: ${response.status}`);
+      const errorText = await response.text();
+      console.error("AI Gateway Hatası:", response.status, errorText);
+      return new Response(JSON.stringify({ error: `Yapay zeka servisi yanıt vermedi. Hata: ${response.status}` }), {
+        status: response.status,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     const data = await response.json();
-    const content = data.choices?.[0]?.message?.content;
+    const contentText = data.choices?.[0]?.message?.content || "{}";
 
-    let parsed;
+    let parsedResult;
     try {
-      const cleaned = content.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
-      parsed = JSON.parse(cleaned);
-    } catch {
-      console.error("Failed to parse AI response:", content);
-      throw new Error("AI returned invalid JSON");
+      // Çift güvenlik (```json temizliği)
+      const cleaned = contentText.replace(/```json\n?/g, "").replace(/```\n?/g, "").trim();
+      parsedResult = JSON.parse(cleaned);
+    } catch (parseErr) {
+      console.error("JSON Parse Hatası:", contentText);
+      return new Response(JSON.stringify({ error: "Yapay zeka geçerli bir JSON formatı döndüremedi." }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
-    return new Response(JSON.stringify(parsed), {
+    // Başarılı Dönüş
+    return new Response(JSON.stringify(parsedResult), {
+      status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
-  } catch (e) {
-    console.error("analyze-hazard error:", e);
-    return new Response(
-      JSON.stringify({ error: e instanceof Error ? e.message : "Unknown error" }),
-      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-    );
+  } catch (e: any) {
+    console.error("Sunucu İçi Hata:", e);
+    return new Response(JSON.stringify({ error: e.message || "Bilinmeyen bir hata oluştu" }), { 
+      status: 500, 
+      headers: { ...corsHeaders, "Content-Type": "application/json" } 
+    });
   }
 });

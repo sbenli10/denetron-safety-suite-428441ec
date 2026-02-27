@@ -16,6 +16,8 @@ import SafetyLibrary from "./pages/SafetyLibrary";
 import Settings from "./pages/Settings";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
+import RiskAssessmentWizard from "@/components/RiskAssessmentWizard";
+import Profile from "@/pages/Profile";
 
 const queryClient = new QueryClient();
 
@@ -34,11 +36,13 @@ const App = () => (
                 <ProtectedRoute>
                   <AppLayout>
                     <Routes>
+                      <Route path="/profile" element={<Profile />} />
                       <Route path="/" element={<Dashboard />} />
                       <Route path="/inspections" element={<Inspections />} />
                       <Route path="/form-builder" element={<FormBuilder />} />
                       <Route path="/reports" element={<Reports />} />
                       <Route path="/capa" element={<CAPA />} />
+                      <Route path="/risk-wizard" element={<RiskAssessmentWizard />} />
                       <Route path="/bulk-capa" element={<BulkCAPA />} />
                       <Route path="/safety-library" element={<SafetyLibrary />} />
                       <Route path="/settings" element={<Settings />} />

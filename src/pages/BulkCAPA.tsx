@@ -63,6 +63,7 @@ interface HazardEntry {
 }
 
 interface OrganizationData {
+  id: string; // ✅ EKLE
   name: string;
   slug: string;
 }
@@ -189,502 +190,14 @@ const dataUrlToBuffer = (dataUrl: string): Uint8Array => {
   }
 };
 
-// ✅ MAIN COMPONENT
-export default function BulkCAPA() {
-  const navigate = useNavigate();
-  const { user } = useAuth();
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const dropZoneRef = useRef<HTMLDivElement>(null);
-
-  const [entries, setEntries] = useState<HazardEntry[]>([]);
-  const [siteName, setSiteName] = useState("");
-  const [orgData, setOrgData] = useState<OrganizationData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [previewOpen, setPreviewOpen] = useState(false);
-  const [dragActive, setDragActive] = useState(false);
-  const [analyzing, setAnalyzing] = useState(false);
-
-  const [newEntry, setNewEntry] = useState<HazardEntry>({
-    id: "",
-    description: "",
-    riskDefinition: "",
-    correctiveAction: "",
-    preventiveAction: "",
-    importance_level: "Normal",
-    termin_date: "",
-    related_department: "Diğer",
-    notification_method: "E-mail", // ✅ DEFAULT DEĞER
-    media_urls: [],
-    ai_analyzed: false,
-  });
-
-  // ✅ AI IMAGE ANALYSIS
-  const analyzeImageWithAI = async (
-    imageUrl: string
-  ): Promise<AIAnalysisResult | null> => {
-    try {
-      const apiKey = import.meta.env.VITE_GOOGLE_API_KEY;
-      const model = import.meta.env.VITE_GOOGLE_MODEL || "gemini-2.5-flash";
-
-      if (!apiKey) {
-        throw new Error("Google API Key not configured");
-      }
-
-      let imageData: string;
-      let mediaType = "image/jpeg";
-
-      if (imageUrl.startsWith("data:")) {
-        const matches = imageUrl.match(/data:([^;]+);base64,(.+)/);
-        if (!matches) {
-          throw new Error("Invalid data URL format");
-        }
-        mediaType = matches[1];
-        imageData = matches[2];
-      } else {
-        const response = await fetch(imageUrl);
-        if (!response.ok) {
-          throw new Error(`Failed to fetch image: ${response.statusText}`);
-        }
-
-        const blob = await response.blob();
-        mediaType = blob.type || "image/jpeg";
-        const arrayBuffer = await blob.arrayBuffer();
-        const bytes = new Uint8Array(arrayBuffer);
-        let binary = "";
-        for (let i = 0; i < bytes.byteLength; i++) {
-          binary += String.fromCharCode(bytes[i]);
-        }
-        imageData = btoa(binary);
-      }
-
-     const enhancedPrompt = `İşyeri güvenliği ve sağlığı (İSG) uzmanı olarak, görseldeki tehlikeleri analiz edin.
-
-⚠️ KRITIK TALIMATLAR - KESIN OLARAK UYUN:
-- Yanıt SADECE GEÇERLI bir JSON objesi olmalı
-- JSON asla yarıda kesilmemeli - her zaman TAMAMLANMALI
-- Tüm tırnak işaretleri ve parantezler KAPATILMALI
-- Markdown YOK, kod blokları YOK, ekstra metin YOK
-- Yanıt { ile başlayıp } ile BİTMELİDİR
-- "undefined" YAZILMAMALI
-- Tüm alanlar MUTLAKA doldurulmalı - boş bırakmayın
-- Türkçe ve NET cevaplar verin
-- UZUN ve DETAYLı cevaplar verin (en az 2-3 cümle her alan)
-
-EXACTLY şu yapı döndürün:
-
-{
-  "description": "Açık, net ve profesyonel bulgu açıklaması (2-3 tam cümle Türkçe)",
-  "riskDefinition": "Riski açıkça tanımlayan, sonuçlarını vurgulayan açıklama (2-3 tam cümle Türkçe)",
-  "correctiveAction": "Hemen yapılması gereken faaliyetler:\n- Madde 1\n- Madde 2\n- Madde 3",
-  "preventiveAction": "İleride önlemek için alınacak faaliyetler:\n- Madde 1\n- Madde 2\n- Madde 3",
-  "importance_level": "Normal"
-}
-
-UYARI: Her alan MUTLAKA doldurulmalı. "undefined" veya boş değer YASAK!
-
-Eğer görüntüde İSG riski yoksa:
-
-{
-  "description": "Görüntüde belirgin bir iş güvenliği riski tespit edilmemiştir. Çalışma ortamı güvenli görünmektedir.",
-  "riskDefinition": "Acil bir risk bulunmamaktadır.",
-  "correctiveAction": "Uygulanacak özel faaliyet bulunmamaktadır.",
-  "preventiveAction": "Genel iş güvenliği uygulamalarına uyulmalıdır.",
-  "importance_level": "Normal"
-}`;
-
-      const response = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            contents: [
-              {
-                parts: [
-                  {
-                    text: enhancedPrompt,
-                  },
-                  {
-                    inline_data: {
-                      mime_type: mediaType,
-                      data: imageData,
-                    },
-                  },
-                ],
-              },
-            ],
-            generationConfig: {
-              temperature: 0.1,
-              top_p: 0.95,
-              top_k: 40,
-              max_output_tokens: 4016,
-            },
-          }),
-        }
-      );
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        console.error("Gemini API error:", errorData);
-        throw new Error(
-          `Gemini API error: ${errorData.error?.message || response.statusText}`
-        );
-      }
-
-      const result = await response.json();
-      const textContent = result.candidates?.[0]?.content?.parts?.[0]?.text;
-
-      if (!textContent) {
-        throw new Error("No text response from Gemini");
-      }
-
-      console.log("📝 Raw response:", textContent.substring(0, 300));
-
-      const analysis = safeJsonParse(textContent);
-
-      if (!analysis) {
-        throw new Error("Could not parse AI response as JSON");
-      }
-
-      console.log("✅ Successfully parsed:", analysis);
-      return analysis;
-    } catch (error) {
-      console.error("❌ AI Analysis error:", error);
-      return null;
-    }
-  };
-
-  // ✅ FETCH ORGANIZATION DATA
-  useEffect(() => {
-    const fetchOrgData = async () => {
-      if (!user) return;
-
-      try {
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("organization_id")
-          .eq("id", user.id)
-          .single();
-
-        if (profile?.organization_id) {
-          const { data: org } = await supabase
-            .from("organizations")
-            .select("name, slug")
-            .eq("id", profile.organization_id)
-            .single();
-
-          if (org) {
-            setOrgData(org);
-          }
-        }
-      } catch (error) {
-        console.error("Error fetching org data:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchOrgData();
-  }, [user]);
-
-  // ✅ AI ANALYSIS HANDLER
-  const handleAIAnalysis = async () => {
-    if (newEntry.media_urls.length === 0) {
-      toast.error("Lütfen en az bir fotoğraf yükleyin");
-      return;
-    }
-
-    setAnalyzing(true);
-
-    try {
-      toast.info("🤖 Fotoğraflar analiz ediliyor...");
-
-      const analyses: AIAnalysisResult[] = [];
-
-      for (let i = 0; i < newEntry.media_urls.length; i++) {
-        const analysis = await analyzeImageWithAI(newEntry.media_urls[i]);
-        if (analysis) {
-          analyses.push(analysis);
-        }
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-      }
-
-      if (analyses.length === 0) {
-        throw new Error("Fotoğraflar analiz edilemedi");
-      }
-
-      const mergedAnalysis = mergeAnalyses(analyses);
-
-      setNewEntry((prev) => ({
-        ...prev,
-        description: mergedAnalysis.description,
-        riskDefinition: mergedAnalysis.riskDefinition,
-        correctiveAction: mergedAnalysis.correctiveAction,
-        preventiveAction: mergedAnalysis.preventiveAction,
-        importance_level: mergedAnalysis.importance_level,
-        ai_analyzed: true,
-      }));
-
-      toast.success("✅ Fotoğraflar başarıyla analiz edildi!");
-    } catch (error: any) {
-      toast.error(`❌ AI Analizi başarısız: ${error.message}`);
-      console.error("Analysis error:", error);
-    } finally {
-      setAnalyzing(false);
-    }
-  };
-
-  // ✅ MERGE ANALYSES
-  const mergeAnalyses = (analyses: AIAnalysisResult[]): AIAnalysisResult => {
-    const importancePriority = { Kritik: 3, Yüksek: 2, Normal: 1 };
-    const maxImportance = analyses.reduce((max, curr) => {
-      const currPriority = importancePriority[curr.importance_level] || 0;
-      const maxPriority = importancePriority[max.importance_level] || 0;
-      return currPriority > maxPriority ? curr : max;
-    });
-
-    return {
-      description: analyses[0].description,
-      riskDefinition: analyses
-        .map((a, i) => `${i + 1}. ${a.riskDefinition}`)
-        .join("\n"),
-      correctiveAction: analyses
-        .map((a, i) => `${i + 1}. ${a.correctiveAction}`)
-        .join("\n"),
-      preventiveAction: analyses
-        .map((a, i) => `${i + 1}. ${a.preventiveAction}`)
-        .join("\n"),
-      importance_level: maxImportance.importance_level,
-    };
-  };
-
-  // ✅ DRAG & DROP
-  const handleDrag = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    if (e.type === "dragenter" || e.type === "dragover") {
-      setDragActive(true);
-    } else if (e.type === "dragleave") {
-      setDragActive(false);
-    }
-  };
-
-  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDragActive(false);
-
-    const files = e.dataTransfer.files;
-    if (files) {
-      processFiles(files);
-    }
-  };
-
-  // ✅ PROCESS FILES
-  const processFiles = (files: FileList) => {
-    Array.from(files).forEach((file) => {
-      if (!file.type.startsWith("image/")) {
-        toast.error("Lütfen sadece görüntü dosyası seçin");
-        return;
-      }
-
-      if (file.size > 5 * 1024 * 1024) {
-        toast.error("Dosya boyutu 5MB'ı aşamaz");
-        return;
-      }
-
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const dataUrl = event.target?.result as string;
-        setNewEntry((prev) => ({
-          ...prev,
-          media_urls: [...prev.media_urls, dataUrl],
-        }));
-        toast.success("📷 Fotoğraf eklendi");
-      };
-      reader.readAsDataURL(file);
-    });
-  };
-
-  // ✅ HANDLE IMAGE UPLOAD
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files) return;
-    processFiles(files);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
-  };
-
-  // ✅ REMOVE IMAGE
-  const handleRemoveImage = (index: number) => {
-    setNewEntry((prev) => ({
-      ...prev,
-      media_urls: prev.media_urls.filter((_, i) => i !== index),
-      ai_analyzed: false,
-    }));
-  };
-
-  // ✅ CREATE TABLE CELL
-  const createCell = (text: string, isBold = false) => {
-    return new TableCell({
-      children: [
-        new Paragraph({
-          children: [
-            new TextRun({
-              text: text,
-              bold: isBold,
-              size: 20,
-            }),
-          ],
-        }),
-      ],
-    });
-  };
-
-  // ✅ ADD ENTRY
-  const handleAddEntry = () => {
-    if (!newEntry.description.trim()) {
-      toast.error("Lütfen bulgu açıklaması girin");
-      return;
-    }
-
-    if (!newEntry.riskDefinition.trim()) {
-      toast.error("Lütfen risk tanımını girin");
-      return;
-    }
-
-    if (!newEntry.correctiveAction.trim()) {
-      toast.error("Lütfen düzeltici faaliyeti girin");
-      return;
-    }
-
-    if (!newEntry.preventiveAction.trim()) {
-      toast.error("Lütfen önleyici faaliyeti girin");
-      return;
-    }
-
-    if (!newEntry.termin_date) {
-      toast.error("Lütfen termin tarihini seçin");
-      return;
-    }
-
-    const entry: HazardEntry = {
-      ...newEntry,
-      id: `entry-${Date.now()}`,
-    };
-
-    setEntries([...entries, entry]);
-    // handleAddEntry fonksiyonunda, reset kısmına ekle:
-
-    setNewEntry({
-      id: "",
-      description: "",
-      riskDefinition: "",
-      correctiveAction: "",
-      preventiveAction: "",
-      importance_level: "Normal",
-      termin_date: "",
-      related_department: "Diğer",
-      notification_method: "E-mail", // ✅ RESET
-      media_urls: [],
-      ai_analyzed: false,
-    });
-    toast.success("✅ Bulgu eklendi");
-  };
-
-  // ✅ DELETE ENTRY
-  const handleDeleteEntry = (id: string) => {
-    setEntries(entries.filter((e) => e.id !== id));
-    toast.info("Bulgu silindi");
-  };
-
-  // ✅ SAVE AND EXPORT - FIXED (org_id hatası bypass)
-  const handleSaveAndExport = async () => {
-    console.log("🔍 DEBUG:");
-    console.log("- siteName:", siteName);
-    console.log("- siteName.trim():", siteName.trim());
-    console.log("- entries.length:", entries.length);
-    console.log("- saving:", saving);
-    console.log("- Button disabled?", saving || entries.length === 0 || !siteName.trim());
-
-
-    if (!siteName.trim()) {
-      toast.error("Lütfen saha adını girin");
-      return;
-    }
-
-    if (entries.length === 0) {
-      toast.error("Lütfen en az bir bulgu ekleyin");
-      return;
-    }
-
-    setSaving(true);
-
-    try {
-      // ✅ VERITABANI KAYDI (opsiyonel - başarısız olsa bile Word oluştur)
-      if (user) {
-        try {
-          const { data: profile } = await supabase
-            .from("profiles")
-            .select("organization_id")
-            .eq("id", user.id)
-            .single();
-
-          if (profile?.organization_id) {
-            const { data: inspection, error: inspectionError } = await supabase
-              .from("inspections")
-              .insert({
-                org_id: profile.organization_id,
-                user_id: user.id,
-                location_name: siteName,
-                status: "completed",
-                risk_level: "high",
-                created_at: new Date().toISOString(),
-                notes: `Bulk CAPA Formu - ${entries.length} bulgu (AI Analiz)`,
-              })
-              .select()
-              .single();
-
-            if (!inspectionError && inspection) {
-              for (const entry of entries) {
-                await supabase.from("findings").insert({
-                  inspection_id: inspection.id,
-                  description: entry.description,
-                  action_required: entry.correctiveAction,
-                  due_date: entry.termin_date,
-                  priority:
-                    entry.importance_level === "Kritik"
-                      ? "critical"
-                      : entry.importance_level === "Yüksek"
-                      ? "high"
-                      : "medium",
-                });
-              }
-              toast.success("✅ Veriler kaydedildi");
-            }
-          }
-        } catch (dbError) {
-          console.warn("Database save failed, continuing with Word export:", dbError);
-          // Hata olsa bile Word oluşturmaya devam et
-        }
-      }
-
-      // ✅ WORD DOCUMENT OLUŞTUR (Her zaman başarılı olmalı)
-      await generateWordDocument();
-    } catch (error: any) {
-      toast.error(`❌ ${error.message}`);
-      console.error("Error:", error);
-    } finally {
-      setSaving(false);
-    }
-  };
-
- // ✅ GENERATE WORD DOCUMENT - PROFESSIONAL DÖF REPORT WITH IMAGES
-const generateWordDocument = async () => {
+// ✅ GENERATE WORD DOCUMENT - SUPABASE STORAGE'A YÜKLE
+const generateWordDocument = async (
+  entries: HazardEntry[],
+  siteName: string,
+  orgData: OrganizationData | null,
+  user: any,
+  orgId: string
+) => {
   try {
     const today = new Date();
     const dateStr = today.toLocaleDateString("tr-TR", {
@@ -905,7 +418,7 @@ const generateWordDocument = async () => {
               }),
             ],
           }),
-          // ✅ BİLDİRİM ŞEKLİ ROW EKLE
+          // ✅ BİLDİRİM ŞEKLİ ROW
           new TableRow({
             children: [
               new TableCell({
@@ -929,7 +442,7 @@ const generateWordDocument = async () => {
                   new Paragraph({
                     children: [
                       new TextRun({
-                        text: newEntry.notification_method || "E-mail",
+                        text: entries[0]?.notification_method || "E-mail", // ✅ İLK ENTRY'DEN AL
                         size: 20,
                       }),
                     ],
@@ -945,7 +458,7 @@ const generateWordDocument = async () => {
     sections.push(new Paragraph({ children: [new TextRun("")] }));
     sections.push(new Paragraph({ children: [new TextRun("")] }));
 
-    // ✅ FINDINGS WITH IMAGES IN PROFESSIONAL TABLE FORMAT
+    // ✅ FINDINGS WITH IMAGES
     for (let index = 0; index < entries.length; index++) {
       const entry = entries[index];
 
@@ -966,7 +479,6 @@ const generateWordDocument = async () => {
         })
       );
 
-      // ✅ MAIN FINDING TABLE WITH 2 COLUMNS (Left: Text, Right: Images)
       const findingTableRows: TableRow[] = [];
 
       // ROW 1: BULGU AÇIKLAMASI
@@ -1258,147 +770,97 @@ const generateWordDocument = async () => {
         })
       );
 
-      // generateWordDocument fonksiyonunda, FOTOĞRAFLAR bölümünü değiştir:
+      // ✅ FOTOĞRAFLAR
+      if (entry.media_urls.length > 0) {
+        findingTableRows.push(
+          new TableRow({
+            children: [
+              new TableCell({
+                columnSpan: 2,
+                children: [
+                  new Paragraph({
+                    children: [
+                      new TextRun({
+                        text: `FOTOĞRAFLAR (${entry.media_urls.length})`,
+                        bold: true,
+                        size: 20,
+                        color: "FFFFFF",
+                      }),
+                    ],
+                    alignment: AlignmentType.CENTER,
+                  }),
+                ],
+                shading: { fill: "000000" },
+                margins: { top: 100, bottom: 100 },
+              }),
+            ],
+          })
+        );
 
-// ✅ ADD IMAGES ROW IF EXISTS - COMPLETELY FIXED & PROFESSIONAL
-if (entry.media_urls.length > 0) {
-  // ✅ Add images section header FIRST
-  findingTableRows.push(
-    new TableRow({
-      children: [
-        new TableCell({
-          columnSpan: 2,
-          children: [
-            new Paragraph({
-              children: [
-                new TextRun({
-                  text: `FOTOĞRAFLAR (${entry.media_urls.length})`,
-                  bold: true,
-                  size: 20,
-                  color: "FFFFFF",
-                }),
-              ],
-              alignment: AlignmentType.CENTER,
-            }),
-          ],
-          shading: { fill: "000000" },
-          margins: { top: 100, bottom: 100 },
-        }),
-      ],
-    })
-  );
+        for (let imgIdx = 0; imgIdx < entry.media_urls.length; imgIdx++) {
+          try {
+            const imageUrl = entry.media_urls[imgIdx];
+            const uint8Array = dataUrlToBuffer(imageUrl);
 
-  // ✅ HER FOTOĞRAF İÇİN AYRIY ROW
-  for (let imgIdx = 0; imgIdx < entry.media_urls.length; imgIdx++) {
-    try {
-      const imageUrl = entry.media_urls[imgIdx];
-      const uint8Array = dataUrlToBuffer(imageUrl);
+            findingTableRows.push(
+              new TableRow({
+                children: [
+                  new TableCell({
+                    columnSpan: 2,
+                    children: [
+                      new Paragraph({
+                        children: [
+                          new ImageRun({
+                            data: uint8Array as any,
+                            type: "jpg",
+                            transformation: {
+                              width: 320,
+                              height: 240,
+                            },
+                          }),
+                        ],
+                        alignment: AlignmentType.CENTER,
+                        spacing: { before: 100, after: 100 },
+                      }),
+                    ],
+                    margins: { top: 150, bottom: 80, left: 100, right: 100 },
+                    shading: { fill: "FFFFFF" },
+                  }),
+                ],
+              })
+            );
 
-      // ✅ Fotoğraf row
-      findingTableRows.push(
-        new TableRow({
-          children: [
-            new TableCell({
-              columnSpan: 2,
-              children: [
-                new Paragraph({
-                  children: [
-                    new ImageRun({
-                      data: uint8Array as any,
-                      type: "jpg",
-                      transformation: {
-                          width: 320, // ✅ DÜŞÜRDÜ: 380 → 320
-                        height: 240, // ✅ DÜŞÜRDÜ: 285 → 240
-                      },
-                    }),
-                  ],
-                  alignment: AlignmentType.CENTER,
-                  spacing: { before: 100, after: 100 },
-                }),
-              ],
-              margins: { top: 150, bottom: 80, left: 100, right: 100 },
-              shading: { fill: "FFFFFF" },
-            }),
-          ],
-        })
-      );
+            findingTableRows.push(
+              new TableRow({
+                children: [
+                  new TableCell({
+                    columnSpan: 2,
+                    children: [
+                      new Paragraph({
+                        children: [
+                          new TextRun({
+                            text: `Fotoğraf ${imgIdx + 1}/${entry.media_urls.length}`,
+                            italics: true,
+                            size: 18,
+                            color: "666666",
+                          }),
+                        ],
+                        alignment: AlignmentType.CENTER,
+                        spacing: { after: 80 },
+                      }),
+                    ],
+                    margins: { top: 0, bottom: 120, left: 100, right: 100 },
+                    shading: { fill: "F5F5F5" },
+                  }),
+                ],
+              })
+            );
+          } catch (err) {
+            console.error(`❌ Image error at index ${imgIdx}:`, err);
+          }
+        }
+      }
 
-      // ✅ Fotoğraf numarası row
-      findingTableRows.push(
-        new TableRow({
-          children: [
-            new TableCell({
-              columnSpan: 2,
-              children: [
-                new Paragraph({
-                  children: [
-                    new TextRun({
-                      text: `Fotoğraf ${imgIdx + 1}/${entry.media_urls.length}`,
-                      italics: true,
-                      size: 18,
-                      color: "666666",
-                    }),
-                  ],
-                  alignment: AlignmentType.CENTER,
-                  spacing: { after: 80 },
-                }),
-              ],
-              margins: { top: 0, bottom: 120, left: 100, right: 100 },
-              shading: { fill: "F5F5F5" },
-            }),
-          ],
-        })
-      );
-    } catch (err) {
-      console.error(`❌ Image error at index ${imgIdx}:`, err);
-
-      findingTableRows.push(
-        new TableRow({
-          children: [
-            new TableCell({
-              columnSpan: 2,
-              children: [
-                new Paragraph({
-                  children: [
-                    new TextRun({
-                      text: `Fotoğraf ${imgIdx + 1} yüklenemedi`,
-                      italics: true,
-                      color: "FF0000",
-                      size: 18,
-                    }),
-                  ],
-                  alignment: AlignmentType.CENTER,
-                  spacing: { after: 80 },
-                }),
-              ],
-              margins: { top: 150, bottom: 150, left: 100, right: 100 },
-              shading: { fill: "FFE6E6" },
-            }),
-          ],
-        })
-      );
-    }
-  }
-
-  // ✅ Son boşluk row
-  findingTableRows.push(
-    new TableRow({
-      children: [
-        new TableCell({
-          columnSpan: 2,
-          children: [
-            new Paragraph({
-              children: [new TextRun({ text: "" })],
-              spacing: { after: 100 },
-            }),
-          ],
-        }),
-      ],
-    })
-  );
-}
-
-      // Create main table
       const findingTable = new Table({
         width: { size: 100, type: WidthType.PERCENTAGE },
         rows: findingTableRows,
@@ -1423,14 +885,575 @@ if (entry.media_urls.length > 0) {
       ],
     });
 
-    // ✅ Generate and download
+    // ✅ Generate blob
     const blob = await Packer.toBlob(doc);
+
+    // ✅ LOCAL İNDİR
     saveAs(blob, `DÖF_Raporu_${siteName}_${today.getTime()}.docx`);
+
+    // ✅ SUPABASE STORAGE'A YÜKLE
+    const fileName = `dof-reports/${orgId}/${siteName}_${today.toISOString()}.docx`;
+
+    const { error: uploadError } = await supabase.storage
+      .from("dof-reports")
+      .upload(fileName, blob, {
+        contentType:
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        upsert: false,
+      });
+
+    if (uploadError) {
+      console.warn("⚠️ Upload warning:", uploadError);
+      toast.warning("⚠️ Dosya indirildi ama arşivlenemiyor");
+    } else {
+      // ✅ PUBLIC URL AL
+      const { data } = supabase.storage
+        .from("dof-reports")
+        .getPublicUrl(fileName);
+
+      // ✅ DATABASE'E KAYDET
+      const { error: dbError } = await supabase.from("reports").insert({
+        org_id: orgId,
+        user_id: user?.id,
+        title: `DÖF Raporu - ${siteName}`,
+        report_type: "inspection",
+        generated_at: today.toISOString(),
+        export_format: "docx",
+        file_url: data.publicUrl,
+        content: {
+          entries_count: entries.length,
+          ai_analyzed_count: entries.filter((e) => e.ai_analyzed).length,
+          location: siteName,
+        },
+      });
+
+      if (dbError) {
+        console.warn("⚠️ Database save warning:", dbError);
+      } else {
+        toast.success("✅ Rapor kaydedildi ve arşivlendi!");
+      }
+    }
 
     toast.success("✅ Profesyonel DÖF Raporu başarıyla indirildi!");
   } catch (error: any) {
-    console.error("Word generation error:", error);
-    toast.error(`❌ Word oluşturulamadı: ${error.message}`);
+    console.error("❌ Word generation error:", error);
+    toast.error(`❌ Hata: ${error.message}`);
+  }
+};
+
+// ✅ MAIN COMPONENT
+export default function BulkCAPA() {
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const dropZoneRef = useRef<HTMLDivElement>(null);
+  const [entries, setEntries] = useState<HazardEntry[]>([]);
+  const [siteName, setSiteName] = useState("");
+  const [orgData, setOrgData] = useState<OrganizationData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [dragActive, setDragActive] = useState(false);
+  const [analyzing, setAnalyzing] = useState(false);
+
+  const [newEntry, setNewEntry] = useState<HazardEntry>({
+    id: "",
+    description: "",
+    riskDefinition: "",
+    correctiveAction: "",
+    preventiveAction: "",
+    importance_level: "Normal",
+    termin_date: "",
+    related_department: "Diğer",
+    notification_method: "E-mail", // ✅ DEFAULT DEĞER
+    media_urls: [],
+    ai_analyzed: false,
+  });
+
+  // ✅ AI IMAGE ANALYSIS
+  const analyzeImageWithAI = async (
+    imageUrl: string
+  ): Promise<AIAnalysisResult | null> => {
+    try {
+      const apiKey = import.meta.env.VITE_GOOGLE_API_KEY;
+      const model = import.meta.env.VITE_GOOGLE_MODEL || "gemini-2.5-flash";
+
+      if (!apiKey) {
+        throw new Error("Google API Key not configured");
+      }
+
+      let imageData: string;
+      let mediaType = "image/jpeg";
+
+      if (imageUrl.startsWith("data:")) {
+        const matches = imageUrl.match(/data:([^;]+);base64,(.+)/);
+        if (!matches) {
+          throw new Error("Invalid data URL format");
+        }
+        mediaType = matches[1];
+        imageData = matches[2];
+      } else {
+        const response = await fetch(imageUrl);
+        if (!response.ok) {
+          throw new Error(`Failed to fetch image: ${response.statusText}`);
+        }
+
+        const blob = await response.blob();
+        mediaType = blob.type || "image/jpeg";
+        const arrayBuffer = await blob.arrayBuffer();
+        const bytes = new Uint8Array(arrayBuffer);
+        let binary = "";
+        for (let i = 0; i < bytes.byteLength; i++) {
+          binary += String.fromCharCode(bytes[i]);
+        }
+        imageData = btoa(binary);
+      }
+
+     const enhancedPrompt = `İşyeri güvenliği ve sağlığı (İSG) uzmanı olarak, görseldeki tehlikeleri analiz edin.
+
+⚠️ KRITIK TALIMATLAR - KESIN OLARAK UYUN:
+- Yanıt SADECE GEÇERLI bir JSON objesi olmalı
+- JSON asla yarıda kesilmemeli - her zaman TAMAMLANMALI
+- Tüm tırnak işaretleri ve parantezler KAPATILMALI
+- Markdown YOK, kod blokları YOK, ekstra metin YOK
+- Yanıt { ile başlayıp } ile BİTMELİDİR
+- "undefined" YAZILMAMALI
+- Tüm alanlar MUTLAKA doldurulmalı - boş bırakmayın
+- Türkçe ve NET cevaplar verin
+- UZUN ve DETAYLı cevaplar verin (en az 2-3 cümle her alan)
+
+EXACTLY şu yapı döndürün:
+
+{
+  "description": "Açık, net ve profesyonel bulgu açıklaması (2-3 tam cümle Türkçe)",
+  "riskDefinition": "Riski açıkça tanımlayan, sonuçlarını vurgulayan açıklama (2-3 tam cümle Türkçe)",
+  "correctiveAction": "Hemen yapılması gereken faaliyetler:\n- Madde 1\n- Madde 2\n- Madde 3",
+  "preventiveAction": "İleride önlemek için alınacak faaliyetler:\n- Madde 1\n- Madde 2\n- Madde 3",
+  "importance_level": "Normal"
+}
+
+UYARI: Her alan MUTLAKA doldurulmalı. "undefined" veya boş değer YASAK!
+
+Eğer görüntüde İSG riski yoksa:
+
+{
+  "description": "Görüntüde belirgin bir iş güvenliği riski tespit edilmemiştir. Çalışma ortamı güvenli görünmektedir.",
+  "riskDefinition": "Acil bir risk bulunmamaktadır.",
+  "correctiveAction": "Uygulanacak özel faaliyet bulunmamaktadır.",
+  "preventiveAction": "Genel iş güvenliği uygulamalarına uyulmalıdır.",
+  "importance_level": "Normal"
+}`;
+
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            contents: [
+              {
+                parts: [
+                  {
+                    text: enhancedPrompt,
+                  },
+                  {
+                    inline_data: {
+                      mime_type: mediaType,
+                      data: imageData,
+                    },
+                  },
+                ],
+              },
+            ],
+            generationConfig: {
+              temperature: 0.1,
+              top_p: 0.95,
+              top_k: 40,
+              max_output_tokens: 4016,
+            },
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        console.error("Gemini API error:", errorData);
+        throw new Error(
+          `Gemini API error: ${errorData.error?.message || response.statusText}`
+        );
+      }
+
+      const result = await response.json();
+      const textContent = result.candidates?.[0]?.content?.parts?.[0]?.text;
+
+      if (!textContent) {
+        throw new Error("No text response from Gemini");
+      }
+
+      console.log("📝 Raw response:", textContent.substring(0, 300));
+
+      const analysis = safeJsonParse(textContent);
+
+      if (!analysis) {
+        throw new Error("Could not parse AI response as JSON");
+      }
+
+      console.log("✅ Successfully parsed:", analysis);
+      return analysis;
+    } catch (error) {
+      console.error("❌ AI Analysis error:", error);
+      return null;
+    }
+  };
+
+  // ✅ FETCH ORGANIZATION DATA
+  useEffect(() => {
+    const fetchOrgData = async () => {
+      if (!user) return;
+
+      try {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("organization_id")
+          .eq("id", user.id)
+          .single();
+
+        if (profile?.organization_id) {
+          const { data: org } = await supabase
+            .from("organizations")
+            .select("id, name, slug") // ✅ id EKLE
+            .eq("id", profile.organization_id)
+            .single();
+
+          if (org) {
+            setOrgData(org); // ✅ Artık id var
+          }
+        }
+      } catch (error) {
+        console.error("Error fetching org data:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchOrgData();
+  }, [user]);
+  // ✅ AI ANALYSIS HANDLER
+  const handleAIAnalysis = async () => {
+    if (newEntry.media_urls.length === 0) {
+      toast.error("Lütfen en az bir fotoğraf yükleyin");
+      return;
+    }
+
+    setAnalyzing(true);
+
+    try {
+      toast.info("🤖 Fotoğraflar analiz ediliyor...");
+
+      const analyses: AIAnalysisResult[] = [];
+
+      for (let i = 0; i < newEntry.media_urls.length; i++) {
+        const analysis = await analyzeImageWithAI(newEntry.media_urls[i]);
+        if (analysis) {
+          analyses.push(analysis);
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+
+      if (analyses.length === 0) {
+        throw new Error("Fotoğraflar analiz edilemedi");
+      }
+
+      const mergedAnalysis = mergeAnalyses(analyses);
+
+      setNewEntry((prev) => ({
+        ...prev,
+        description: mergedAnalysis.description,
+        riskDefinition: mergedAnalysis.riskDefinition,
+        correctiveAction: mergedAnalysis.correctiveAction,
+        preventiveAction: mergedAnalysis.preventiveAction,
+        importance_level: mergedAnalysis.importance_level,
+        ai_analyzed: true,
+      }));
+
+      toast.success("✅ Fotoğraflar başarıyla analiz edildi!");
+    } catch (error: any) {
+      toast.error(`❌ AI Analizi başarısız: ${error.message}`);
+      console.error("Analysis error:", error);
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  // ✅ MERGE ANALYSES
+  const mergeAnalyses = (analyses: AIAnalysisResult[]): AIAnalysisResult => {
+    const importancePriority = { Kritik: 3, Yüksek: 2, Normal: 1 };
+    const maxImportance = analyses.reduce((max, curr) => {
+      const currPriority = importancePriority[curr.importance_level] || 0;
+      const maxPriority = importancePriority[max.importance_level] || 0;
+      return currPriority > maxPriority ? curr : max;
+    });
+
+    return {
+      description: analyses[0].description,
+      riskDefinition: analyses
+        .map((a, i) => `${i + 1}. ${a.riskDefinition}`)
+        .join("\n"),
+      correctiveAction: analyses
+        .map((a, i) => `${i + 1}. ${a.correctiveAction}`)
+        .join("\n"),
+      preventiveAction: analyses
+        .map((a, i) => `${i + 1}. ${a.preventiveAction}`)
+        .join("\n"),
+      importance_level: maxImportance.importance_level,
+    };
+  };
+
+  // ✅ DRAG & DROP
+  const handleDrag = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === "dragenter" || e.type === "dragover") {
+      setDragActive(true);
+    } else if (e.type === "dragleave") {
+      setDragActive(false);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+
+    const files = e.dataTransfer.files;
+    if (files) {
+      processFiles(files);
+    }
+  };
+
+  // ✅ PROCESS FILES
+  const processFiles = (files: FileList) => {
+    Array.from(files).forEach((file) => {
+      if (!file.type.startsWith("image/")) {
+        toast.error("Lütfen sadece görüntü dosyası seçin");
+        return;
+      }
+
+      if (file.size > 5 * 1024 * 1024) {
+        toast.error("Dosya boyutu 5MB'ı aşamaz");
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const dataUrl = event.target?.result as string;
+        setNewEntry((prev) => ({
+          ...prev,
+          media_urls: [...prev.media_urls, dataUrl],
+        }));
+        toast.success("📷 Fotoğraf eklendi");
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  // ✅ HANDLE IMAGE UPLOAD
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+    processFiles(files);
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  };
+
+  // ✅ REMOVE IMAGE
+  const handleRemoveImage = (index: number) => {
+    setNewEntry((prev) => ({
+      ...prev,
+      media_urls: prev.media_urls.filter((_, i) => i !== index),
+      ai_analyzed: false,
+    }));
+  };
+
+  // ✅ CREATE TABLE CELL
+  const createCell = (text: string, isBold = false) => {
+    return new TableCell({
+      children: [
+        new Paragraph({
+          children: [
+            new TextRun({
+              text: text,
+              bold: isBold,
+              size: 20,
+            }),
+          ],
+        }),
+      ],
+    });
+  };
+
+  // ✅ ADD ENTRY
+  const handleAddEntry = () => {
+    if (!newEntry.description.trim()) {
+      toast.error("Lütfen bulgu açıklaması girin");
+      return;
+    }
+
+    if (!newEntry.riskDefinition.trim()) {
+      toast.error("Lütfen risk tanımını girin");
+      return;
+    }
+
+    if (!newEntry.correctiveAction.trim()) {
+      toast.error("Lütfen düzeltici faaliyeti girin");
+      return;
+    }
+
+    if (!newEntry.preventiveAction.trim()) {
+      toast.error("Lütfen önleyici faaliyeti girin");
+      return;
+    }
+
+    if (!newEntry.termin_date) {
+      toast.error("Lütfen termin tarihini seçin");
+      return;
+    }
+
+    const entry: HazardEntry = {
+      ...newEntry,
+      id: `entry-${Date.now()}`,
+    };
+
+    setEntries([...entries, entry]);
+
+    setNewEntry({
+      id: "",
+      description: "",
+      riskDefinition: "",
+      correctiveAction: "",
+      preventiveAction: "",
+      importance_level: "Normal",
+      termin_date: "",
+      related_department: "Diğer",
+      notification_method: "E-mail", 
+      media_urls: [],
+      ai_analyzed: false,
+    });
+    toast.success("✅ Bulgu eklendi");
+  };
+
+  // ✅ DELETE ENTRY
+  const handleDeleteEntry = (id: string) => {
+    setEntries(entries.filter((e) => e.id !== id));
+    toast.info("Bulgu silindi");
+  };
+
+
+const handleSaveAndExport = async () => {
+  if (!siteName.trim()) {
+    toast.error("Lütfen saha adını girin");
+    return;
+  }
+
+  if (entries.length === 0) {
+    toast.error("Lütfen en az bir bulgu ekleyin");
+    return;
+  }
+
+  setSaving(true);
+
+  try {
+    if (user) {
+      try {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("organization_id")
+          .eq("id", user.id)
+          .single();
+
+        if (profile?.organization_id) {
+          const { data: inspection, error: inspectionError } = await supabase
+            .from("inspections")
+            .insert({
+              org_id: profile.organization_id,
+              user_id: user.id,
+              location_name: siteName,
+              status: "completed",
+              risk_level: "high",
+              created_at: new Date().toISOString(),
+              notes: `Bulk CAPA Formu - ${entries.length} bulgu (AI Analiz)`,
+            })
+            .select()
+            .single();
+
+          if (!inspectionError && inspection) {
+            for (const entry of entries) {
+              await supabase.from("findings").insert({
+                inspection_id: inspection.id,
+                description: entry.description,
+                action_required: entry.correctiveAction,
+                due_date: entry.termin_date,
+                priority:
+                  entry.importance_level === "Kritik"
+                    ? "critical"
+                    : entry.importance_level === "Yüksek"
+                    ? "high"
+                    : "medium",
+                notification_method: entry.notification_method,
+              });
+            }
+            toast.success("✅ Veriler kaydedildi");
+          }
+        }
+      } catch (dbError) {
+        console.warn("Database save failed, continuing with Word export:", dbError);
+      }
+    }
+
+    if (orgData && orgData.id) {
+      await generateWordDocument(
+        entries,
+        siteName,
+        orgData,
+        user,
+        orgData.id
+      );
+      
+      // ✅ FORMU TEMIZLE
+      setEntries([]);
+      setSiteName("");
+      setNewEntry({
+        id: "",
+        description: "",
+        riskDefinition: "",
+        correctiveAction: "",
+        preventiveAction: "",
+        importance_level: "Normal",
+        termin_date: "",
+        related_department: "Diğer",
+        notification_method: "E-mail",
+        media_urls: [],
+        ai_analyzed: false,
+      });
+      
+      // ✅ TOAST VE YÖNLENDIR
+      toast.success("✅ DÖF Raporu başarıyla oluşturuldu!");
+      
+      // 2 saniye sonra Reports sayfasına git
+      setTimeout(() => {
+        navigate("/inspections");
+      }, 2000);
+    } else {
+      toast.error("❌ Organization data not available");
+    }
+  } catch (error: any) {
+    console.error("❌ Error:", error);
+    toast.error(`❌ Hata: ${error.message}`);
+  } finally {
+    setSaving(false);
   }
 };
 
@@ -1468,6 +1491,21 @@ if (entry.media_urls.length > 0) {
             onChange={(e) => setSiteName(e.target.value)}
             className="bg-secondary/50 border-border/50 h-11"
           />
+          
+          {/* ✅ UYARI MESAJI */}
+          {entries.length > 0 && !siteName.trim() && (
+            <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 flex gap-3">
+              <AlertCircle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-semibold text-amber-700">
+                  ⚠️ Saha Adı Gerekli
+                </p>
+                <p className="text-xs text-amber-600 leading-relaxed mt-1">
+                  "Kaydet ve Word İndir" butonunu etkinleştirmek için saha/tesis adını girmelisiniz.
+                </p>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* NEW ENTRY FORM */}
@@ -1846,8 +1884,7 @@ if (entry.media_urls.length > 0) {
                             "tr-TR"
                           )}
                         </span>
-                        // Entries list'te, entry tag'larından sonra ekle (Satır ~1050 civarında):
-
+                        
                         {entry.media_urls.length > 0 && (
                           <span className="text-xs px-2 py-1 rounded bg-purple-500/10 text-purple-600">
                             📷 {entry.media_urls.length}
@@ -1887,12 +1924,12 @@ if (entry.media_urls.length > 0) {
           </Button>
           <Button
             onClick={handleSaveAndExport}
-            disabled={
-              saving || 
-              entries.length === 0 || 
-              !siteName.trim() // ✅ BURASI ÖNEMLİ - .trim() ekle
-            }
-            className="gap-2 flex-1 gradient-primary border-0 text-foreground font-semibold h-11"
+            disabled={saving || entries.length === 0 || siteName.trim() === ""}
+            className={`gap-2 flex-1 border-0 text-foreground font-semibold h-11 ${
+              saving || entries.length === 0 || siteName.trim() === ""
+                ? "bg-gray-500 cursor-not-allowed opacity-50"
+                : "gradient-primary"
+            }`}
           >
             {saving ? (
               <>

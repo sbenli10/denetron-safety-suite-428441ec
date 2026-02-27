@@ -19,6 +19,7 @@ import NotFound from "./pages/NotFound";
 import RiskAssessmentWizard from "@/components/RiskAssessmentWizard";
 import Profile from "@/pages/Profile";
 import BlueprintAnalyzer from "@/pages/BlueprintAnalyzer";
+import ADEPWizard from "@/pages/ADEPWizard";
 
 const queryClient = new QueryClient();
 
@@ -37,6 +38,7 @@ const App = () => (
                 <ProtectedRoute>
                   <AppLayout>
                     <Routes>
+                      <Route path="/adep-wizard" element={<ADEPWizard />} />
                       <Route path="/blueprint-analyzer" element={<BlueprintAnalyzer />} />
                       <Route path="/profile" element={<Profile />} />
                       <Route path="/" element={<Dashboard />} />

@@ -15,6 +15,7 @@ import {
   Menu,
   TrendingUp,
   Building2,
+  Flame,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useAuth } from "@/contexts/AuthContext";
@@ -43,6 +44,7 @@ const mainItems = [
   { title: "Toplu DÖF", url: "/bulk-capa", icon: ShieldPlus, badge: "Yeni" },
   { title: "Risk Sihirbazı", url: "/risk-wizard", icon: TrendingUp, badge: "⭐" },
   { title: "İSG Kütüphanesi", url: "/safety-library", icon: BookOpen, badge: null },
+  { title: "ADEP Sihirbazı", url: "/adep-wizard", icon: Flame, badge: "Yeni" }
 ];
 
 const bottomItems = [

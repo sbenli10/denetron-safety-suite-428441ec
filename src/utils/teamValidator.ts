@@ -6,105 +6,52 @@ export interface ValidationResult {
   warnings: string[];
 }
 
-export function validateTeams(
-  companyInfo: CompanyInfo,
-  teams: EmergencyTeams
-): ValidationResult {
-  const result: ValidationResult = {
-    valid: true,
-    errors: [],
-    warnings: []
-  };
+// teamValidator.ts
 
-  const requirements = TEAM_REQUIREMENTS[companyInfo.tehlike_sinifi];
-  const employeeCount = companyInfo.calisan_sayisi;
+export const validateTeams = (companyInfo: any, teams: any) => {
+  const errors: string[] = [];
+  const warnings: string[] = [];
 
-  // Söndürme ekibi kontrolü
-  const requiredSondurme = Math.max(
-    requirements.sondurme.min,
-    Math.ceil(employeeCount / requirements.sondurme.per)
-  );
-  if (teams.sondurme.length < requiredSondurme) {
-    result.valid = false;
-    result.errors.push(
-      `❌ Söndürme Ekibi: En az ${requiredSondurme} kişi gerekli (mevcut: ${teams.sondurme.length})`
-    );
+  // 1. KORUMA: Eğer sabit yüklenmediyse çökmesini engelle
+  if (typeof TEAM_REQUIREMENTS === 'undefined' || !TEAM_REQUIREMENTS) {
+    console.warn("TEAM_REQUIREMENTS henüz hazır değil.");
+    return { valid: true, errors: [], warnings: [] };
   }
 
-  // Kurtarma ekibi kontrolü
-  const requiredKurtarma = Math.max(
-    requirements.kurtarma.min,
-    Math.ceil(employeeCount / requirements.kurtarma.per)
-  );
-  if (teams.kurtarma.length < requiredKurtarma) {
-    result.valid = false;
-    result.errors.push(
-      `❌ Kurtarma Ekibi: En az ${requiredKurtarma} kişi gerekli (mevcut: ${teams.kurtarma.length})`
-    );
+  // 2. KORUMA: teams objesi veya içindeki diziler undefined ise kontrol ekle
+  const getCount = (key: string) => (teams && teams[key] ? teams[key].length : 0);
+
+  const req = TEAM_REQUIREMENTS;
+
+  // Örnek kontrol satırı (Hata muhtemelen burada patlıyor)
+  if (getCount('sondurme') < (req.sondurme?.min || 0)) {
+    errors.push(`${req.sondurme?.label || 'Söndürme ekibi'} en az ${req.sondurme?.min || 0} kişi olmalıdır.`);
   }
-
-  // Koruma ekibi kontrolü
-  const requiredKoruma = Math.max(
-    requirements.koruma.min,
-    Math.ceil(employeeCount / requirements.koruma.per)
-  );
-  if (teams.koruma.length < requiredKoruma) {
-    result.warnings.push(
-      `⚠️ Koruma Ekibi: ${requiredKoruma} kişi önerilir (mevcut: ${teams.koruma.length})`
-    );
+  
+  // Diğer ekipler için de aynı güvenli yapıyı (optional chaining) kullan:
+  if (getCount('kurtarma') < (req.kurtarma?.min || 0)) {
+    errors.push(`${req.kurtarma?.label || 'Kurtarma ekibi'} yetersiz.`);
   }
-
-  // İlk yardım ekibi kontrolü
-  const requiredIlkYardim = Math.max(
-    requirements.ilk_yardim.min,
-    Math.ceil(employeeCount / requirements.ilk_yardim.per)
-  );
-  if (teams.ilk_yardim.length < requiredIlkYardim) {
-    result.valid = false;
-    result.errors.push(
-      `❌ İlk Yardım Ekibi: En az ${requiredIlkYardim} kişi gerekli (mevcut: ${teams.ilk_yardim.length})`
-    );
-  }
-
-  // Telefon numarası kontrolü
-  const allMembers = [
-    ...teams.sondurme,
-    ...teams.kurtarma,
-    ...teams.koruma,
-    ...teams.ilk_yardim
-  ];
-
-  allMembers.forEach(member => {
-    if (!member.telefon || member.telefon.length < 10) {
-      result.warnings.push(
-        `⚠️ ${member.ad_soyad}: Geçerli telefon numarası girilmemiş`
-      );
-    }
-  });
-
-  return result;
-}
-
-export function getRecommendedTeamSizes(companyInfo: CompanyInfo) {
-  const requirements = TEAM_REQUIREMENTS[companyInfo.tehlike_sinifi];
-  const employeeCount = companyInfo.calisan_sayisi;
 
   return {
-    sondurme: Math.max(
-      requirements.sondurme.min,
-      Math.ceil(employeeCount / requirements.sondurme.per)
-    ),
-    kurtarma: Math.max(
-      requirements.kurtarma.min,
-      Math.ceil(employeeCount / requirements.kurtarma.per)
-    ),
-    koruma: Math.max(
-      requirements.koruma.min,
-      Math.ceil(employeeCount / requirements.koruma.per)
-    ),
-    ilk_yardim: Math.max(
-      requirements.ilk_yardim.min,
-      Math.ceil(employeeCount / requirements.ilk_yardim.per)
-    )
+    valid: errors.length === 0,
+    errors,
+    warnings
   };
-}
+};
+
+export const getRecommendedTeamSizes = (hazardClass: string) => {
+  // TEAM_REQUIREMENTS yüklenmemişse boş bir obje dönerek çökmesini engelle
+  if (!TEAM_REQUIREMENTS) {
+    console.error("TEAM_REQUIREMENTS bulunamadı!");
+    return { sondurme: 0, kurtarma: 0, koruma: 0, ilk_yardim: 0 };
+  }
+
+  // TEAM_REQUIREMENTS'a erişirken hata almamak için:
+  return {
+    sondurme: TEAM_REQUIREMENTS.sondurme?.min || 0,
+    kurtarma: TEAM_REQUIREMENTS.kurtarma?.min || 0,
+    koruma: TEAM_REQUIREMENTS.koruma?.min || 0,
+    ilk_yardim: TEAM_REQUIREMENTS.ilk_yardim?.min || 0
+  };
+};

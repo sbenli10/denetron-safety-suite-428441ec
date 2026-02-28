@@ -1,3 +1,4 @@
+//src\pages\BulkCAPA.tsx
 import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -1375,6 +1376,7 @@ const handleSaveAndExport = async () => {
           .single();
 
         if (profile?.organization_id) {
+          // BulkCAPA.tsx içinde handleSaveAndExport fonksiyonu
           const { data: inspection, error: inspectionError } = await supabase
             .from("inspections")
             .insert({
@@ -1383,18 +1385,25 @@ const handleSaveAndExport = async () => {
               location_name: siteName,
               status: "completed",
               risk_level: "high",
-              created_at: new Date().toISOString(),
+              media_urls: entries.flatMap(e => e.media_urls),
+              // ✅ YENİ ALANLAR
               notes: `Bulk CAPA Formu - ${entries.length} bulgu (AI Analiz)`,
+              risk_definition: entries.map((e, i) => `${i + 1}. ${e.riskDefinition}`).join('\n\n'),
+              corrective_action: entries.map((e, i) => `${i + 1}. ${e.correctiveAction}`).join('\n\n'),
+              preventive_action: entries.map((e, i) => `${i + 1}. ${e.preventiveAction}`).join('\n\n'),
+              created_at: new Date().toISOString(),
             })
             .select()
             .single();
-
           if (!inspectionError && inspection) {
             for (const entry of entries) {
               await supabase.from("findings").insert({
                 inspection_id: inspection.id,
+                user_id: user.id,
                 description: entry.description,
                 action_required: entry.correctiveAction,
+                risk_definition: entry.riskDefinition, // ✅ YENİ
+                preventive_action: entry.preventiveAction, // ✅ YENİ
                 due_date: entry.termin_date,
                 priority:
                   entry.importance_level === "Kritik"

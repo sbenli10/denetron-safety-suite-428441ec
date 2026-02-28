@@ -20,6 +20,8 @@ import RiskAssessmentWizard from "@/components/RiskAssessmentWizard";
 import Profile from "@/pages/Profile";
 import BlueprintAnalyzer from "@/pages/BlueprintAnalyzer";
 import ADEPWizard from "@/pages/ADEPWizard";
+import AnnualPlans from "@/pages/AnnualPlans";
+import CompanyManager from "@/pages/CompanyManager";
 
 const queryClient = new QueryClient();
 
@@ -38,6 +40,8 @@ const App = () => (
                 <ProtectedRoute>
                   <AppLayout>
                     <Routes>
+                      <Route path="/companies" element={<CompanyManager />} />
+                      <Route path="/annual-plans" element={<AnnualPlans />} />
                       <Route path="/adep-wizard" element={<ADEPWizard />} />
                       <Route path="/blueprint-analyzer" element={<BlueprintAnalyzer />} />
                       <Route path="/profile" element={<Profile />} />

@@ -16,6 +16,8 @@ import {
   Calendar,
   User,
   FileText,
+  X,
+  Image as ImageIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -54,6 +56,8 @@ interface CAPARecord {
   status: CAPAStatus;
   priority: "Düşük" | "Orta" | "Yüksek" | "Kritik";
   notes?: string;
+  media_urls?: string[]; // ✅ YENİ
+  source?: string; // ✅ YENİ (kaynak bilgisi)
   created_at: string;
   updated_at: string;
 }
@@ -81,6 +85,8 @@ export default function CAPA() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [filterStatus, setFilterStatus] = useState("all");
   const [searchText, setSearchText] = useState("");
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [detailRecord, setDetailRecord] = useState<CAPARecord | null>(null);
 
   // Form state
   const [nonConformity, setNonConformity] = useState("");
@@ -91,12 +97,12 @@ export default function CAPA() {
   const [priority, setPriority] = useState<"Düşük" | "Orta" | "Yüksek" | "Kritik">("Orta");
   const [notes, setNotes] = useState("");
 
-  // Fetch organization ve DÖF'leri yükle
+  // ✅ Fetch records (hem capa_records hem findings)
   useEffect(() => {
     fetchRecords();
   }, [user]);
 
-  // AI Raporları sayfasından gelen veriyi doldur
+  // ✅ AI Raporları'ndan gelen veriyi doldur
   useEffect(() => {
     if (location.state?.aiData) {
       const { description, plan, justification, risk } = location.state.aiData;
@@ -104,7 +110,6 @@ export default function CAPA() {
       setCorrectiveAction(plan || "");
       setRootCause(justification || "");
 
-      // Risk seviyesini priority'ye çevir
       if (risk === "High") setPriority("Kritik");
       else if (risk === "Medium") setPriority("Yüksek");
       else setPriority("Orta");
@@ -117,28 +122,105 @@ export default function CAPA() {
   const fetchRecords = async () => {
     if (!user) return;
 
+    setLoading(true);
     try {
+      console.log("🔍 Fetching records for user:", user.id);
+
+      // 1. Profile ve Organization ID bilgisini al
       const { data: profile } = await supabase
         .from("profiles")
         .select("organization_id")
         .eq("id", user.id)
-        .single();
+        .maybeSingle();
 
-      if (!profile?.organization_id) {
-        throw new Error("Organization not found");
-      }
+      const organizationId = profile?.organization_id || user.id;
 
-      const { data, error } = await supabase
+      // 2. Normal CAPA kayıtlarını çek
+      const { data: capaData, error: capaError } = await supabase
         .from("capa_records")
         .select("*")
-        .eq("org_id", profile.organization_id)
+        .eq("user_id", user.id)
         .order("created_at", { ascending: false });
 
-      if (error) throw error;
-      setRecords((data as CAPARecord[]) || []);
-    } catch (error) {
-      console.error("Error fetching records:", error);
-      toast.error("DÖF'ler yüklenemedi");
+      if (capaError && capaError.code !== 'PGRST116') throw capaError;
+
+     const capaRecords: CAPARecord[] = (capaData || []).map(record => {
+      const rawRecord = record as any; 
+      
+      return {
+        ...record,
+        status: record.status as CAPAStatus,
+        priority: record.priority as "Düşük" | "Orta" | "Yüksek" | "Kritik",
+        source: "capa",
+        media_urls: rawRecord.media_urls || [], 
+        notes: record.notes || ""
+      };
+    });
+      const { data: findingsData, error: findingsError } = await supabase
+        .from("findings")
+        .select(`
+          *,
+          inspection:inspections!inner(
+            id,
+            location_name,
+            user_id,
+            media_urls,
+            notes,
+            risk_definition,
+            corrective_action,
+            preventive_action
+          )
+        `)
+        .eq("inspection.user_id", user.id)
+        .order("created_at", { ascending: false });
+
+      // Findings'i CAPARecord'a çevir
+      const findingsAsCapa: CAPARecord[] = (findingsData || []).map(f => {
+        const inspection = (f as any).inspection;
+        
+        return {
+          id: f.id,
+          org_id: profile?.organization_id || user.id,
+          user_id: f.user_id || user.id,
+          non_conformity: f.description,
+          root_cause: inspection?.risk_definition || "Bulk CAPA'dan otomatik oluşturuldu", // ✅ YENİ
+          corrective_action: inspection?.corrective_action || f.action_required || "Belirtilmemiş", // ✅ YENİ
+          assigned_person: f.assigned_to || "Atanmamış",
+          deadline: f.due_date || new Date().toISOString().split('T')[0],
+          status: f.is_resolved ? "Tamamlandı" : "Açık" as CAPAStatus,
+          priority: (
+            f.priority === "critical" ? "Kritik" :
+            f.priority === "high" ? "Yüksek" :
+            f.priority === "medium" ? "Orta" : "Düşük"
+          ) as "Düşük" | "Orta" | "Yüksek" | "Kritik",
+          notes: [
+            `📍 Konum: ${inspection?.location_name || "Bilinmiyor"}`,
+            `📋 Kaynak: Toplu DÖF`,
+            `📷 Fotoğraf: ${inspection?.media_urls?.length || 0} adet`,
+            `🔧 Önleyici: ${inspection?.preventive_action?.substring(0, 100) || "Yok"}...`, // ✅ YENİ
+            inspection?.notes || "",
+            f.resolution_notes || ""
+          ].filter(Boolean).join("\n"),
+          media_urls: inspection?.media_urls || [],
+          source: "findings",
+          created_at: f.created_at,
+          updated_at: f.created_at
+        };
+      });
+
+      // 4. İki farklı kaynaktan gelen verileri birleştir
+      const allRecords = [...capaRecords, ...findingsAsCapa];
+
+      console.log(`✅ İşlem Tamamlandı: ${capaRecords.length} Standart, ${findingsAsCapa.length} Toplu DÖF yüklendi.`);
+
+      setRecords(allRecords);
+      
+      if (allRecords.length === 0) {
+        toast.info("Henüz DÖF kaydı bulunamadı.");
+      }
+    } catch (error: any) {
+      console.error("💥 CAPA Yükleme Hatası:", error);
+      toast.error(`Veriler çekilirken bir sorun oluştu: ${error.message}`);
     } finally {
       setLoading(false);
     }
@@ -155,36 +237,56 @@ export default function CAPA() {
         .from("profiles")
         .select("organization_id")
         .eq("id", user?.id)
-        .single();
+        .maybeSingle();
 
-      if (!profile?.organization_id) {
-        throw new Error("Organization not found");
-      }
+      const orgId = profile?.organization_id || user?.id;
 
       if (editingId) {
-        // ✅ UPDATE
-        const { error } = await supabase
-          .from("capa_records")
-          .update({
-            non_conformity: nonConformity,
-            root_cause: rootCause,
-            corrective_action: correctiveAction,
-            assigned_person: assignedPerson,
-            deadline: deadline,
-            priority: priority,
-            notes: notes,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", editingId);
+        // ✅ UPDATE - Hangi tablodan geldiğini kontrol et
+        const record = records.find(r => r.id === editingId);
+        
+        if (record?.source === "findings") {
+          // Findings tablosunu güncelle
+          const { error } = await supabase
+            .from("findings")
+            .update({
+              description: nonConformity,
+              action_required: correctiveAction,
+              due_date: deadline,
+              priority: priority === "Kritik" ? "critical" : 
+                       priority === "Yüksek" ? "high" : 
+                       priority === "Orta" ? "medium" : "low",
+              resolution_notes: notes,
+            })
+            .eq("id", editingId);
 
-        if (error) throw error;
+          if (error) throw error;
+        } else {
+          // CAPA records tablosunu güncelle
+          const { error } = await supabase
+            .from("capa_records")
+            .update({
+              non_conformity: nonConformity,
+              root_cause: rootCause,
+              corrective_action: correctiveAction,
+              assigned_person: assignedPerson,
+              deadline: deadline,
+              priority: priority,
+              notes: notes,
+              updated_at: new Date().toISOString(),
+            })
+            .eq("id", editingId);
+
+          if (error) throw error;
+        }
+        
         toast.success("✅ DÖF güncellendi");
       } else {
-        // ✅ CREATE
+        // ✅ CREATE - Sadece capa_records'a ekle
         const { error } = await supabase
           .from("capa_records")
           .insert({
-            org_id: profile.organization_id,
+            org_id: orgId,
             user_id: user?.id,
             non_conformity: nonConformity,
             root_cause: rootCause,
@@ -213,6 +315,7 @@ export default function CAPA() {
 
       fetchRecords();
     } catch (error: any) {
+      console.error("Submit error:", error);
       toast.error(error.message || "İşlem başarısız");
     }
   };
@@ -233,34 +336,63 @@ export default function CAPA() {
     if (!confirm("Bu DÖF kaydını silmek istediğinize emin misiniz?")) return;
 
     try {
-      const { error } = await supabase
-        .from("capa_records")
-        .delete()
-        .eq("id", id);
+      const record = records.find(r => r.id === id);
+      
+      if (record?.source === "findings") {
+        const { error } = await supabase
+          .from("findings")
+          .delete()
+          .eq("id", id);
 
-      if (error) throw error;
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from("capa_records")
+          .delete()
+          .eq("id", id);
+
+        if (error) throw error;
+      }
+      
       setRecords(records.filter((r) => r.id !== id));
+      setDetailsOpen(false);
+      setDetailRecord(null);
       toast.success("✅ DÖF silindi");
     } catch (error: any) {
-      toast.error("Silme işlemi başarısız");
+      console.error("Delete error:", error);
+      toast.error("❌ Silme işlemi başarısız");
     }
   };
 
   const updateStatus = async (id: string, status: CAPAStatus) => {
     try {
-      const { error } = await supabase
-        .from("capa_records")
-        .update({
-          status: status,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", id);
+      const record = records.find(r => r.id === id);
+      
+      if (record?.source === "findings") {
+        const { error } = await supabase
+          .from("findings")
+          .update({
+            is_resolved: status === "Tamamlandı",
+          })
+          .eq("id", id);
 
-      if (error) throw error;
+        if (error) throw error;
+      } else {
+        const { error } = await supabase
+          .from("capa_records")
+          .update({
+            status: status,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", id);
+
+        if (error) throw error;
+      }
 
       setRecords(records.map((r) => (r.id === id ? { ...r, status } : r)));
       toast.success(`✅ Durum güncellendi: ${status}`);
-    } catch (error) {
+    } catch (error: any) {
+      console.error("Update status error:", error);
       toast.error("Durum güncellenemedi");
     }
   };
@@ -526,9 +658,36 @@ export default function CAPA() {
                   const priorCfg = priorityConfig[record.priority];
 
                   return (
-                    <tr key={record.id} className={isOverdue ? "bg-red-500/5" : ""}>
-                      <td className="px-4 py-3 font-mono text-primary">{record.id}</td>
-                      <td className="px-4 py-3 max-w-[200px] truncate">{record.non_conformity}</td>
+                    <tr 
+                      key={record.id} 
+                      className={`${isOverdue ? "bg-red-500/5" : ""} cursor-pointer hover:bg-secondary/30 transition-colors`}
+                      onClick={() => {
+                        setDetailRecord(record);
+                        setDetailsOpen(true);
+                      }}
+                    >
+                      <td className="px-4 py-3">
+                        <div className="flex flex-col gap-1">
+                          <span className="font-mono text-primary text-xs">
+                            {record.id.substring(0, 8)}...
+                          </span>
+                          {record.source === "findings" && (
+                            <span className="text-[10px] px-2 py-0.5 rounded bg-purple-500/10 text-purple-600 border border-purple-500/20 w-fit">
+                              📋 Toplu DÖF
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3 max-w-[200px]">
+                        <div className="flex items-center gap-2">
+                          <span className="truncate">{record.non_conformity}</span>
+                          {record.media_urls && record.media_urls.length > 0 && (
+                            <span className="shrink-0 inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-blue-500/10 text-blue-600 border border-blue-500/20">
+                              📷 {record.media_urls.length}
+                            </span>
+                          )}
+                        </div>
+                      </td>
                       <td className="px-4 py-3">{record.assigned_person}</td>
                       <td className={`px-4 py-3 ${isOverdue ? "text-red-600 font-bold" : ""}`}>
                         {record.deadline} {isOverdue && "⚠️"}
@@ -538,8 +697,11 @@ export default function CAPA() {
                           {priorCfg.icon} {record.priority}
                         </span>
                       </td>
-                      <td className="px-4 py-3">
-                        <Select value={record.status} onValueChange={(v) => updateStatus(record.id, v as CAPAStatus)}>
+                      <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                        <Select 
+                          value={record.status} 
+                          onValueChange={(v) => updateStatus(record.id, v as CAPAStatus)}
+                        >
                           <SelectTrigger className="w-[140px]">
                             <SelectValue />
                           </SelectTrigger>
@@ -550,11 +712,14 @@ export default function CAPA() {
                           </SelectContent>
                         </Select>
                       </td>
-                      <td className="px-4 py-3 text-right space-x-2">
+                      <td className="px-4 py-3 text-right space-x-2" onClick={(e) => e.stopPropagation()}>
                         <Button
                           size="sm"
                           variant="outline"
-                          onClick={() => handleEdit(record)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleEdit(record);
+                          }}
                           className="gap-2"
                         >
                           <Edit2 className="h-3 w-3" />
@@ -562,7 +727,10 @@ export default function CAPA() {
                         <Button
                           size="sm"
                           variant="ghost"
-                          onClick={() => handleDelete(record.id)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDelete(record.id);
+                          }}
                           className="text-destructive hover:text-destructive"
                         >
                           <Trash2 className="h-3 w-3" />
@@ -573,6 +741,199 @@ export default function CAPA() {
                 })}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* ✅ DETAILS MODAL */}
+      {detailsOpen && detailRecord && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-card rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto border border-primary/20">
+            {/* HEADER */}
+            <div className="sticky top-0 bg-gradient-to-r from-primary to-primary/80 p-6 flex items-center justify-between z-10">
+              <div>
+                <h2 className="text-xl font-bold text-primary-foreground flex items-center gap-2">
+                  📋 DÖF Detayları
+                  {detailRecord.source === "findings" && (
+                    <span className="text-xs px-2 py-1 rounded bg-white/20 border border-white/30">
+                      Toplu DÖF
+                    </span>
+                  )}
+                </h2>
+                <p className="text-sm text-primary-foreground/80 mt-1">
+                  ID: {detailRecord.id.substring(0, 8)}...
+                </p>
+              </div>
+              <button
+                onClick={() => setDetailsOpen(false)}
+                className="p-2 hover:bg-primary-foreground/20 rounded-lg transition-colors"
+              >
+                <X className="h-5 w-5 text-primary-foreground" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-6">
+              {/* STATUS & PRIORITY */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className={`p-4 rounded-lg border ${statusConfig[detailRecord.status].color}`}>
+                  <p className="text-xs text-muted-foreground mb-1">Durum</p>
+                  <p className="font-bold">{statusConfig[detailRecord.status].icon} {detailRecord.status}</p>
+                </div>
+                <div className={`p-4 rounded-lg border ${priorityConfig[detailRecord.priority].color}`}>
+                  <p className="text-xs text-muted-foreground mb-1">Öncelik</p>
+                  <p className="font-bold">{priorityConfig[detailRecord.priority].icon} {detailRecord.priority}</p>
+                </div>
+              </div>
+
+              {/* INFO GRID */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="glass-card p-4 border border-border/50 space-y-1">
+                  <p className="text-xs text-muted-foreground flex items-center gap-2">
+                    <AlertTriangle className="h-4 w-4" /> Uygunsuzluk
+                  </p>
+                  <p className="font-semibold text-sm">{detailRecord.non_conformity}</p>
+                </div>
+                <div className="glass-card p-4 border border-border/50 space-y-1">
+                  <p className="text-xs text-muted-foreground flex items-center gap-2">
+                    <User className="h-4 w-4" /> Sorumlu
+                  </p>
+                  <p className="font-semibold text-sm">{detailRecord.assigned_person}</p>
+                </div>
+                <div className="glass-card p-4 border border-border/50 space-y-1">
+                  <p className="text-xs text-muted-foreground flex items-center gap-2">
+                    <Calendar className="h-4 w-4" /> Son Tarih
+                  </p>
+                  <p className="font-semibold text-sm">{detailRecord.deadline}</p>
+                </div>
+                <div className="glass-card p-4 border border-border/50 space-y-1">
+                  <p className="text-xs text-muted-foreground flex items-center gap-2">
+                    <Clock className="h-4 w-4" /> Oluşturulma
+                  </p>
+                  <p className="font-semibold text-sm">
+                    {new Date(detailRecord.created_at).toLocaleDateString("tr-TR")}
+                  </p>
+                </div>
+              </div>
+
+              {/* KÖK NEDEN */}
+              <div className="glass-card p-4 border border-border/50 space-y-2">
+                <p className="text-sm font-semibold flex items-center gap-2">
+                  🔍 Kök Neden
+                </p>
+                <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+                  {detailRecord.root_cause}
+                </p>
+              </div>
+
+              {/* DÜZELTICI FAALIYET */}
+              <div className="glass-card p-4 border border-border/50 space-y-2">
+                <p className="text-sm font-semibold flex items-center gap-2">
+                  🔧 Düzeltici Faaliyet
+                </p>
+                <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+                  {detailRecord.corrective_action}
+                </p>
+              </div>
+
+              {/* NOTES */}
+              {detailRecord.notes && (
+                <div className="glass-card p-4 border border-border/50 space-y-2">
+                  <p className="text-sm font-semibold flex items-center gap-2">
+                    <FileText className="h-4 w-4" /> Notlar
+                  </p>
+                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">
+                    {detailRecord.notes}
+                  </p>
+                </div>
+              )}
+              {/* ✅ FOTOĞRAFLAR - BASE64 DESTEĞI */}
+              {detailRecord.media_urls && detailRecord.media_urls.length > 0 && (
+                <div>
+                  <p className="text-sm font-semibold mb-3 flex items-center gap-2">
+                    <ImageIcon className="h-4 w-4" />
+                    Fotoğraflar ({detailRecord.media_urls.length})
+                  </p>
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                    {detailRecord.media_urls.map((url, idx) => {
+                      // ✅ Base64 veya HTTP URL kontrolü
+                      const isBase64 = url.startsWith('data:image');
+                      const isHttpUrl = url.startsWith('http');
+                      
+                      // Geçersiz URL'leri atla
+                      if (!isBase64 && !isHttpUrl) {
+                        console.warn(`Invalid image URL at index ${idx}:`, url.substring(0, 50));
+                        return null;
+                      }
+
+                      return (
+                        <div
+                          key={idx}
+                          className="group relative rounded-lg overflow-hidden border border-border/50 hover:border-primary/50 transition-colors cursor-pointer"
+                          onClick={() => {
+                            // ✅ Base64 ise yeni sekmede aç
+                            if (isBase64) {
+                              const win = window.open();
+                              if (win) {
+                                win.document.write(`<img src="${url}" style="max-width:100%;height:auto;" />`);
+                              }
+                            } else {
+                              window.open(url, '_blank');
+                            }
+                          }}
+                        >
+                          <img
+                            src={url}
+                            alt={`Fotoğraf ${idx + 1}`}
+                            className="w-full h-48 object-cover group-hover:scale-105 transition-transform"
+                            onError={(e) => {
+                              // Hata durumunda placeholder göster
+                              (e.target as HTMLImageElement).src = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="200" height="200"%3E%3Crect fill="%23ddd" width="200" height="200"/%3E%3Ctext fill="%23999" x="50%25" y="50%25" text-anchor="middle" dy=".3em"%3EYüklenemedi%3C/text%3E%3C/svg%3E';
+                            }}
+                          />
+                          <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
+                            <Eye className="h-8 w-8 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                          </div>
+                          <p className="absolute bottom-2 right-2 text-xs font-semibold bg-black/70 text-white px-2 py-1 rounded">
+                            {idx + 1}/{detailRecord.media_urls.length}
+                          </p>
+                          {/* ✅ Base64 Badge */}
+                          {isBase64 && (
+                            <p className="absolute top-2 left-2 text-[9px] font-semibold bg-purple-600 text-white px-2 py-1 rounded">
+                              BASE64
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* ACTIONS */}
+              <div className="flex gap-3 pt-4 border-t border-border">
+                <Button
+                  variant="outline"
+                  className="flex-1 gap-2"
+                  onClick={() => {
+                    handleEdit(detailRecord);
+                    setDetailsOpen(false);
+                  }}
+                >
+                  <Edit2 className="h-4 w-4" />
+                  Düzenle
+                </Button>
+                <Button
+                  variant="ghost"
+                  className="flex-1 gap-2 text-destructive hover:text-destructive hover:bg-destructive/10"
+                  onClick={() => {
+                    handleDelete(detailRecord.id);
+                  }}
+                >
+                  <Trash2 className="h-4 w-4" />
+                  Sil
+                </Button>
+              </div>
+            </div>
           </div>
         </div>
       )}

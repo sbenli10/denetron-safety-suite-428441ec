@@ -15,7 +15,8 @@ import BoardMeetingForm from "@/pages/BoardMeetingForm";
 import BoardMeetingView from "@/pages/BoardMeetingView";
 import BoardMeetingsGuide from "@/pages/BoardMeetingsGuide";
 import NotificationCenter from "@/pages/NotificationCenter";
-
+import AuthCallback from '@/pages/AuthCallback';
+import Index from '@/pages/Index';
 // ============================================
 // CORE PAGES
 // ============================================
@@ -130,6 +131,14 @@ const App = () => (
                   </Suspense>
                 }
               />
+              <Route
+                path="/auth/callback"
+                element={
+                  <Suspense fallback={<PageLoader />}>
+                    <AuthCallback />
+                  </Suspense>
+                }
+              />
 
               {/* ============================================ */}
               {/* PROTECTED ROUTES */}
@@ -162,6 +171,10 @@ const App = () => (
                           <Route path="/risk-wizard" element={<RiskAssessmentWizard />} />
                           <Route path="/risk-editor" element={<RiskAssessmentEditor />} />
 
+                          {/* ============================================ */}
+                          {/* ISG BOT */}
+                          {/* ============================================ */}
+                          <Route path="/" element={<Index />} />
                           <Route path="/isg-bot" element={<ISGBot />} />
                           <Route path="/isg-bot/:tab" element={<ISGBot />} />
                           <Route path="/docs/isg-bot-setup" element={<ISGBotSetup />} />

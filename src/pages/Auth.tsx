@@ -1,3 +1,4 @@
+//src\pages\Auth.tsx
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -108,175 +109,201 @@ export default function Auth() {
     return password.length >= 8;
   };
 
-  // ✅ LOGIN HANDLER
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
+ // ✅ LOGIN HANDLER
+const handleLogin = async (e: React.FormEvent) => {
+  e.preventDefault();
 
-    if (!validateEmail(formData.email)) {
-      toast.error("❌ Geçerli bir e-posta adresi girin");
-      return;
+  if (!validateEmail(formData.email)) {
+    toast.error("❌ Geçerli bir e-posta adresi girin");
+    return;
+  }
+
+  if (!formData.password) {
+    toast.error("❌ Şifre gerekli");
+    return;
+  }
+
+  setLoading(true);
+
+  try {
+    console.log("🔐 Signing in...");
+
+    // Check if this is extension callback
+    const urlParams = new URLSearchParams(window.location.search);
+    const isExtension = urlParams.get('ext') === 'true';
+
+    // 1. Sign in
+    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+      email: formData.email,
+      password: formData.password,
+    });
+
+    if (authError) {
+      if (authError.message.includes("Invalid login credentials")) {
+        throw new Error("E-posta veya şifre hatalı");
+      }
+      if (authError.message.includes("Email not confirmed")) {
+        setMode("wait");
+        setVerifyEmail(formData.email);
+        toast.info("📧 E-postanızı doğrulayın");
+        return;
+      }
+      throw new Error(authError.message);
     }
 
-    if (!formData.password) {
-      toast.error("❌ Şifre gerekli");
-      return;
+    if (!authData?.user?.id) {
+      throw new Error("Giriş başarısız");
     }
 
-    setLoading(true);
+    console.log("✅ Auth successful, checking 2FA...");
 
-    try {
-      console.log("🔐 Signing in...");
+    // 2. Check if user has 2FA enabled
+    const { data: factors } = await supabase.auth.mfa.listFactors();
 
-      // 1. Sign in
-      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-        email: formData.email,
-        password: formData.password,
-      });
+    if (factors && factors.totp && factors.totp.length > 0) {
+      const totpFactor = factors.totp[0];
 
-      if (authError) {
-        if (authError.message.includes("Invalid login credentials")) {
-          throw new Error("E-posta veya şifre hatalı");
-        }
-        if (authError.message.includes("Email not confirmed")) {
-          setMode("wait");
-          setVerifyEmail(formData.email);
-          toast.info("📧 E-postanızı doğrulayın");
-          return;
-        }
-        throw new Error(authError.message);
-      }
+      // 3. Check if device is trusted
+      const deviceTrusted = await isDeviceTrusted(authData.user.id);
 
-      if (!authData?.user?.id) {
-        throw new Error("Giriş başarısız");
-      }
-
-      console.log("✅ Auth successful, checking 2FA...");
-
-      // 2. Check if user has 2FA enabled
-      const { data: factors } = await supabase.auth.mfa.listFactors();
-
-      if (factors && factors.totp && factors.totp.length > 0) {
-        const totpFactor = factors.totp[0];
-
-        // 3. Check if device is trusted
-        const deviceTrusted = await isDeviceTrusted(authData.user.id);
-
-        if (deviceTrusted) {
-          console.log("💚 Device trusted, skipping 2FA");
-          toast.success("✅ Giriş başarılı!", {
-            description: "Güvenilir cihaz",
-          });
-
-          // Update last login
-          await supabase
-            .from("profiles")
-            .update({ last_login_at: new Date().toISOString() })
-            .eq("id", authData.user.id);
-
-          navigate("/");
-          return;
-        }
-
-        // 4. Device not trusted, require 2FA
-        console.log("🔐 Device not trusted, creating challenge...");
-
-        const { data: challengeData, error: challengeError } = await supabase.auth.mfa.challenge({
-          factorId: totpFactor.id,
+      if (deviceTrusted) {
+        console.log("💚 Device trusted, skipping 2FA");
+        toast.success("✅ Giriş başarılı!", {
+          description: "Güvenilir cihaz",
         });
 
-        if (challengeError) throw challengeError;
-
-        console.log("✅ Challenge created");
-
-        setFactorId(totpFactor.id);
-        setChallengeId(challengeData.id);
-        setPendingUserId(authData.user.id);
-        setMode("mfa");
-
-        toast.info("🔐 2FA Kodu Gerekli", {
-          description: "Yeni cihaz tespit edildi",
-        });
-      } else {
-        // No 2FA, direct login
-        console.log("✅ No 2FA, redirecting...");
-
+        // Update last login
         await supabase
           .from("profiles")
           .update({ last_login_at: new Date().toISOString() })
           .eq("id", authData.user.id);
 
-        toast.success("✅ Giriş başarılı!");
-        navigate("/");
+        // ✅ Check extension redirect
+        if (isExtension) {
+          navigate('/auth/callback?ext=true');
+        } else {
+          navigate('/');
+        }
+        return;
       }
-    } catch (error: any) {
-      console.error("❌ Login error:", error);
-      toast.error(`❌ ${error.message}`);
-    } finally {
-      setLoading(false);
-    }
-  };
 
-  // ✅ VERIFY 2FA
-  const handleVerify2FA = async (e: React.FormEvent) => {
-    e.preventDefault();
+      // 4. Device not trusted, require 2FA
+      console.log("🔐 Device not trusted, creating challenge...");
 
-    if (!mfaCode || mfaCode.length !== 6) {
-      toast.error("❌ 6 haneli kod girin");
-      return;
-    }
-
-    if (!factorId || !challengeId) {
-      toast.error("❌ 2FA verisi eksik");
-      return;
-    }
-
-    setLoading(true);
-
-    try {
-      console.log("🔐 Verifying 2FA...");
-
-      const { data, error } = await supabase.auth.mfa.verify({
-        factorId,
-        challengeId,
-        code: mfaCode,
+      const { data: challengeData, error: challengeError } = await supabase.auth.mfa.challenge({
+        factorId: totpFactor.id,
       });
 
-      if (error) throw error;
+      if (challengeError) throw challengeError;
 
-      console.log("✅ 2FA verified");
+      console.log("✅ Challenge created");
 
-      // Trust device if checked
-      if (trustDevice && pendingUserId) {
-        console.log("💚 Trusting device...");
-        await trustCurrentDevice(pendingUserId);
-        toast.success("✅ Cihaz güvenilir olarak işaretlendi");
-      }
+      setFactorId(totpFactor.id);
+      setChallengeId(challengeData.id);
+      setPendingUserId(authData.user.id);
+      setMode("mfa");
 
-      // Update last login
-      if (data.user) {
-        await supabase
-          .from("profiles")
-          .update({ last_login_at: new Date().toISOString() })
-          .eq("id", data.user.id);
-      }
+      toast.info("🔐 2FA Kodu Gerekli", {
+        description: "Yeni cihaz tespit edildi",
+      });
+    } else {
+      // No 2FA, direct login
+      console.log("✅ No 2FA, redirecting...");
+
+      await supabase
+        .from("profiles")
+        .update({ last_login_at: new Date().toISOString() })
+        .eq("id", authData.user.id);
 
       toast.success("✅ Giriş başarılı!");
-      navigate("/");
-    } catch (error: any) {
-      console.error("❌ 2FA error:", error);
-
-      let errorMessage = "Doğrulama başarısız";
-      if (error.message?.includes("Invalid code")) {
-        errorMessage = "Geçersiz kod";
-      } else if (error.message?.includes("expired")) {
-        errorMessage = "Kod süresi doldu";
+      
+      // ✅ Check extension redirect
+      if (isExtension) {
+        navigate('/auth/callback?ext=true');
+      } else {
+        navigate('/');
       }
-
-      toast.error(`❌ ${errorMessage}`);
-    } finally {
-      setLoading(false);
     }
-  };
+  } catch (error: any) {
+    console.error("❌ Login error:", error);
+    toast.error(`❌ ${error.message}`);
+  } finally {
+    setLoading(false);
+  }
+};
+
+  // ✅ VERIFY 2FA
+  // ✅ VERIFY 2FA
+const handleVerify2FA = async (e: React.FormEvent) => {
+  e.preventDefault();
+
+  if (!mfaCode || mfaCode.length !== 6) {
+    toast.error("❌ 6 haneli kod girin");
+    return;
+  }
+
+  if (!factorId || !challengeId) {
+    toast.error("❌ 2FA verisi eksik");
+    return;
+  }
+
+  setLoading(true);
+
+  try {
+    console.log("🔐 Verifying 2FA...");
+
+    // Check if this is extension callback
+    const urlParams = new URLSearchParams(window.location.search);
+    const isExtension = urlParams.get('ext') === 'true';
+
+    const { data, error } = await supabase.auth.mfa.verify({
+      factorId,
+      challengeId,
+      code: mfaCode,
+    });
+
+    if (error) throw error;
+
+    console.log("✅ 2FA verified");
+
+    // Trust device if checked
+    if (trustDevice && pendingUserId) {
+      console.log("💚 Trusting device...");
+      await trustCurrentDevice(pendingUserId);
+      toast.success("✅ Cihaz güvenilir olarak işaretlendi");
+    }
+
+    // Update last login
+    if (data.user) {
+      await supabase
+        .from("profiles")
+        .update({ last_login_at: new Date().toISOString() })
+        .eq("id", data.user.id);
+    }
+
+    toast.success("✅ Giriş başarılı!");
+    
+    // ✅ Check extension redirect
+    if (isExtension) {
+      navigate('/auth/callback?ext=true');
+    } else {
+      navigate('/');
+    }
+  } catch (error: any) {
+    console.error("❌ 2FA error:", error);
+
+    let errorMessage = "Doğrulama başarısız";
+    if (error.message?.includes("Invalid code")) {
+      errorMessage = "Geçersiz kod";
+    } else if (error.message?.includes("expired")) {
+      errorMessage = "Kod süresi doldu";
+    }
+
+    toast.error(`❌ ${errorMessage}`);
+  } finally {
+    setLoading(false);
+  }
+};
 
   // ✅ REGISTER HANDLER
   const handleRegister = async (e: React.FormEvent) => {

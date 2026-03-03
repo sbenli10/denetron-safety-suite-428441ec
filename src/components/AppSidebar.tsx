@@ -18,6 +18,7 @@ import {
   Calendar,
   Users,
   Target,
+  Bot,
   ChevronDown,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
@@ -74,59 +75,70 @@ export function AppSidebar() {
     }
   };
 
-  // ✅ Hiyerarşik Gruplandırma
-  const menuGroups = [
-    {
-      label: "GENEL",
-      icon: LayoutDashboard,
-      items: [
-        { title: "Panel", url: "/", icon: LayoutDashboard, badge: null },
-        { title: "Profilim", url: "/profile", icon: User, badge: null },
-      ]
-    },
-    {
-      label: "FİRMA YÖNETİMİ",
-      icon: Building2,
-      items: [
-        { title: "Firmalar", url: "/companies", icon: Building2, badge: null },
-        { title: "Denetimler", url: "/inspections", icon: ClipboardCheck, badge: null },
-        { 
-          title: "Kurul Toplantıları", 
-          url: "/board-meetings", 
-          icon: Users, 
-          badge: draftMeetingsCount > 0 ? draftMeetingsCount : null 
-        }
-      ]
-    },
-    {
-      label: "RİSK & GÜVENLİK",
-      icon: ShieldAlert,
-      items: [
-        { title: "Risk Sihirbazı", url: "/risk-wizard", icon: TrendingUp, badge: "AI" },
-        { title: "Klasik Risk Editörü", url: "/risk-editor", icon: FileText, badge: "NEW" },
-        { title: "DÖF Yönetimi", url: "/capa", icon: ShieldAlert, badge: null },
-        { title: "DÖF Oluştur", url: "/bulk-capa", icon: ShieldPlus, badge: null },
-        { title: "Acil Durum Planı", url: "/adep-wizard", icon: Flame, badge: null },
-        { title: "ADEP Planlarım", url: "/adep-plans", icon: FileText, badge: null },
-      ]
-    },
-    {
-      label: "YAPAY ZEKA ARAÇLARI",
-      icon: Brain,
-      items: [
-        { title: "AI Raporlar", url: "/reports", icon: Brain, badge: "Beta" },
-        { title: "AI Kroki Okuyucu", url: "/blueprint-analyzer", icon: Target, badge: "Pro" },
-      ]
-    },
-    {
-      label: "PLANLAMA & RAPORLAMA",
-      icon: Calendar,
-      items: [
-        { title: "Yıllık Planlar", url: "/annual-plans", icon: Calendar, badge: null },
-        { title: "İSG Kütüphanesi", url: "/safety-library", icon: BookOpen, badge: null },
-      ]
-    }
-  ];
+  /// ✅ Hiyerarşik Gruplandırma
+const menuGroups = [
+  {
+    label: "GENEL",
+    icon: LayoutDashboard,
+    items: [
+      { title: "Panel", url: "/", icon: LayoutDashboard, badge: null },
+      { title: "Profilim", url: "/profile", icon: User, badge: null },
+    ],
+  },
+  {
+    label: "FİRMA YÖNETİMİ",
+    icon: Building2,
+    items: [
+      { title: "Firmalar", url: "/companies", icon: Building2, badge: null },
+      { title: "Denetimler", url: "/inspections", icon: ClipboardCheck, badge: null },
+      {
+        title: "Kurul Toplantıları",
+        url: "/board-meetings",
+        icon: Users,
+        badge: draftMeetingsCount > 0 ? draftMeetingsCount : null,
+      },
+    ],
+  },
+  {
+    label: "RİSK & GÜVENLİK",
+    icon: ShieldAlert,
+    items: [
+      { title: "Risk Sihirbazı", url: "/risk-wizard", icon: TrendingUp, badge: "AI" },
+      { title: "Klasik Risk Editörü", url: "/risk-editor", icon: FileText, badge: "NEW" },
+      { title: "DÖF Yönetimi", url: "/capa", icon: ShieldAlert, badge: null },
+      { title: "DÖF Oluştur", url: "/bulk-capa", icon: ShieldPlus, badge: null },
+      { title: "Acil Durum Planı", url: "/adep-wizard", icon: Flame, badge: null },
+      { title: "ADEP Planlarım", url: "/adep-plans", icon: FileText, badge: null },
+    ],
+  },
+  {
+    label: "YAPAY ZEKA ARAÇLARI",
+    icon: Brain,
+    items: [
+      { title: "AI Raporlar", url: "/reports", icon: Brain, badge: "Beta" },
+      { title: "AI Kroki Okuyucu", url: "/blueprint-analyzer", icon: Target, badge: "Pro" },
+    ],
+  },
+  {
+    // ✅ DÜZELTİLDİ
+    label: "İSG BOT",
+    icon: Bot,
+    items: [
+      { title: "Dashboard", url: "/isg-bot", icon: Bot, badge: "NEW" },
+      { title: "Denetime Hazır mıyım?", url: "/isg-bot?tab=audit", icon: ClipboardCheck, badge: null },
+      { title: "Compliance Raporu", url: "/isg-bot?tab=compliance", icon: Shield, badge: null },
+      { title: "Risk Analizi", url: "/isg-bot?tab=risk", icon: TrendingUp, badge: null },
+    ],
+  },
+  {
+    label: "PLANLAMA & RAPORLAMA",
+    icon: Calendar,
+    items: [
+      { title: "Yıllık Planlar", url: "/annual-plans", icon: Calendar, badge: null },
+      { title: "İSG Kütüphanesi", url: "/safety-library", icon: BookOpen, badge: null },
+    ],
+  },
+];
 
   const bottomItems = [
     { title: "Ayarlar", url: "/settings", icon: Settings },

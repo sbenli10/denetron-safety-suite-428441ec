@@ -31,6 +31,8 @@ const Profile = lazy(() => import("./pages/Profile"));
 const CompanyManager = lazy(() => import("./pages/CompanyManager"));
 const Auth = lazy(() => import("./pages/Auth"));
 const NotFound = lazy(() => import("./pages/NotFound"));
+const ISGBotSetup = lazy(() => import("@/pages/ISGBotSetup"));
+const ISGBot = lazy(() => import("@/pages/ISGBot"));
 
 // ============================================
 // RISK ASSESSMENT
@@ -159,6 +161,9 @@ const App = () => (
                           <Route path="/risk-assessments/:id" element={<RiskAssessments />} />
                           <Route path="/risk-wizard" element={<RiskAssessmentWizard />} />
                           <Route path="/risk-editor" element={<RiskAssessmentEditor />} />
+
+                          <Route path="/isg-bot" element={<ISGBot />} />
+                          <Route path="/isg-bot/:tab" element={<ISGBot />} />
 
                           {/* ============================================ */}
                           {/* FINDINGS */}

@@ -2,14 +2,17 @@ import * as XLSX from 'xlsx';
 import type { Employee } from '@/types/companies';
 
 export interface ParsedEmployee {
-  tc_number?: string;
   first_name: string;
   last_name: string;
+  tc_number?: string | null;
   job_title: string;
-  department?: string;
-  start_date: string;
-  phone?: string;
-  email?: string;
+  department?: string | null;
+  start_date?: string | null;
+  employment_type?: string | null; // ✅ Eklendi
+  birth_date?: string | null; // ✅ Eklendi
+  gender?: string | null; // ✅ Eklendi
+  email?: string | null;
+  phone?: string | null;
 }
 
 export function parseEmployeeExcel(file: File): Promise<ParsedEmployee[]> {

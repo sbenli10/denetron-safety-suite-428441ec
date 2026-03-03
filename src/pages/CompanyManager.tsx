@@ -4,7 +4,10 @@ import {
   ChevronRight, ChevronLeft, CheckCircle2, Upload,
   Download, Trash2, Edit, Eye, Search, Filter,
   Factory, Briefcase, HardHat, AlertTriangle,
-  X, Check, ChevronsUpDown
+  X, Check, ChevronsUpDown,
+  Mail,
+  Phone,
+  MapPin
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,13 +26,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -80,8 +76,11 @@ const SECTOR_TEMPLATES = [
   }
 ];
 
+
+
 export default function CompanyManager() {
   const { user } = useAuth();
+  const [viewingCompany, setViewingCompany] = useState<Company | null>(null);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
@@ -106,6 +105,8 @@ export default function CompanyManager() {
     employee_count: 0
   });
 
+  
+
   // ✅ NACE Combobox State
   const [naceOpen, setNaceOpen] = useState(false);
   const [naceSearchQuery, setNaceSearchQuery] = useState("");
@@ -118,6 +119,8 @@ export default function CompanyManager() {
   // Step 3: Çalışan Yükleme
   const [employeeFile, setEmployeeFile] = useState<File | null>(null);
   const [parsedEmployees, setParsedEmployees] = useState<ParsedEmployee[]>([]);
+  const [editingCompanyId, setEditingCompanyId] = useState<string | null>(null); // ✅ BU SATIRI EKLE
+  
 
   // ✅ Load Companies
   useEffect(() => {
@@ -127,18 +130,101 @@ export default function CompanyManager() {
     }
   }, [user]);
 
+
+  // ============================================
+// HANDLER FONKSİYONLARI (loadCompanies'den ÖNCE)
+// ============================================
+
+const handleViewCompany = (companyId: string) => {
+  const company = companies.find(c => c.id === companyId);
+  if (company) {
+    setViewingCompany(company);
+  }
+};
+  const handleEditCompany = (company: Company) => {
+    // Form'u doldur
+    setFormData({
+      company_name: company.company_name,
+      tax_number: company.tax_number,
+      nace_code: company.nace_code,
+      hazard_class: company.hazard_class,
+      industry_sector: company.industry_sector || "",
+      address: company.address || "",
+      city: company.city || "",
+      phone: company.phone || "",
+      email: company.email || "",
+      employee_count: company.employee_count || 0,
+    });
+
+    // NACE seçiliyse göster
+    const nace = NACE_DATABASE.find(n => n.code === company.nace_code);
+    if (nace) {
+      setSelectedNACE(nace);
+    }
+
+    // Template'i ayarla
+    if (company.industry_sector) {
+      setSelectedTemplate(company.industry_sector);
+    }
+
+    // Edit mode için company ID'yi sakla
+    setEditingCompanyId(company.id);
+
+    // Wizard'ı aç
+    setWizardOpen(true);
+    setCurrentStep(1);
+  };
+
+  const handleDeleteCompany = async (companyId: string, companyName: string) => {
+    if (!confirm(`"${companyName}" firmasını silmek istediğinize emin misiniz?\n\n⚠️ Bu işlem geri alınamaz ve tüm ilişkili veriler (çalışanlar, risk değerlendirmeleri) silinecektir!`)) {
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from("companies")
+        .delete()
+        .eq("id", companyId);
+
+      if (error) throw error;
+
+      toast.success(`✅ "${companyName}" firması silindi`);
+      loadCompanies(); // Listeyi yenile
+    } catch (error: any) {
+      console.error("Delete company error:", error);
+      toast.error(`❌ Firma silinemedi: ${error.message}`);
+    }
+  };
+
+  
+
   const loadCompanies = async () => {
     try {
+      setLoading(true); // Yükleme durumunu başlat
+      
       const { data, error } = await supabase
         .from("companies")
         .select("*")
-        .eq("owner_id", user?.id)
+        .eq("user_id", user?.id)
         .eq("is_active", true)
         .order("created_at", { ascending: false });
 
       if (error) throw error;
-      setCompanies((data as Company[]) || []);
+
+      // Hata Veren Satırın Çözümü: 
+      // Veritabanı sütunlarını kodundaki 'Company' tipine haritalıyoruz (mapping)
+      const mappedData = (data || []).map((item: any) => ({
+        ...item,
+        owner_id: item.user_id,        // user_id -> owner_id
+        company_name: item.name,      // name -> company_name
+        nace_code: item.industry || "", // industry -> nace_code (varsayılan değerle)
+        hazard_class: "Az Tehlikeli"   // Eksik olan hazard_class için varsayılan değer
+      }));
+
+      setCompanies(mappedData as Company[]); // Artık güvenle cast edebilirsin
+      
     } catch (e: any) {
+      console.error("❌ Veri çekme hatası:", e.message);
       toast.error(`Firmalar yüklenemedi: ${e.message}`);
     } finally {
       setLoading(false);
@@ -196,80 +282,173 @@ export default function CompanyManager() {
     }
   };
 
-    const handleSaveCompany = async () => {
-    // Validation
-    if (!formData.company_name || !formData.tax_number || !formData.nace_code) {
-        toast.error("Lütfen zorunlu alanları doldurun");
-        return;
-    }
+  const handleSaveCompany = async () => {
+  // Validasyon
+  if (!formData.company_name || !formData.tax_number || !formData.nace_code) {
+    toast.error("Lütfen zorunlu alanları doldurun");
+    return;
+  }
 
-    if (formData.tax_number.length !== 10 && formData.tax_number.length !== 11) {
-        toast.error("Vergi numarası 10 veya 11 haneli olmalıdır");
-        return;
-    }
+  if (formData.tax_number.length !== 10 && formData.tax_number.length !== 11) {
+    toast.error("Vergi numarası 10 veya 11 haneli olmalıdır");
+    return;
+  }
 
-    setSaving(true);
+  setSaving(true);
 
-    try {
-        // Risk template ID'sini al
-        const template = riskTemplates.find(t => t.industry_sector === selectedTemplate);
-        
-        // ✅ JSON-safe dönüşüm
-        const employeesJson = JSON.parse(JSON.stringify(parsedEmployees));
-        
-        // RPC Fonksiyonunu Çağır
-        const { data, error } = await supabase.rpc('create_company_with_data', {
-        p_owner_id: user?.id,
-        p_company_data: {
-            company_name: formData.company_name,
-            tax_number: formData.tax_number,
-            nace_code: formData.nace_code,
-            hazard_class: formData.hazard_class,
-            industry_sector: formData.industry_sector,
-            address: formData.address,
-            city: formData.city,
-            phone: formData.phone,
-            email: formData.email,
-            employee_count: parsedEmployees.length || formData.employee_count
-        },
-        p_risk_template_id: template?.id || null,
-        p_employees: employeesJson
-        });
 
-        if (error) throw error;
+  try {
+    const template = riskTemplates.find((t) => t.industry_sector === selectedTemplate);
 
-        // ✅ Type assertion
-        const result = data as {
-        success: boolean;
-        error?: string;
-        company_id?: string;
-        inserted_risks?: number;
-        inserted_employees?: number;
-        };
+    // ✅ Çalışan verilerini hazırla
+    const employeesJson = parsedEmployees.map((emp) => ({
+      first_name: emp.first_name || "",
+      last_name: emp.last_name || "",
+      tc_number: emp.tc_number || null,
+      job_title: emp.job_title || "Belirtilmemiş",
+      department: emp.department || null,
+      start_date: emp.start_date || new Date().toISOString().split("T")[0],
+      employment_type: emp.employment_type || "Süresiz",
+      birth_date: emp.birth_date || null,
+      gender: emp.gender || null,
+      email: emp.email || null,
+      phone: emp.phone || null,
+    }));
 
-        if (!result.success) {
-        throw new Error(result.error || "Bilinmeyen hata");
+    // ✅ BU LOG'U EKLE (employeesJson tanımlandıktan sonra)
+    console.log("📋 TC Numbers:", employeesJson.map(e => ({
+      name: `${e.first_name} ${e.last_name}`,
+      tc: e.tc_number,
+      type: typeof e.tc_number,
+      length: e.tc_number?.length
+    })));
+
+    console.log("📋 Employees to save:", employeesJson);
+
+    // ============================================
+    // EDIT MODE KONTROLÜ
+    // ============================================
+    if (editingCompanyId) {
+      // 1. Firma bilgilerini güncelle
+      const { error: companyError } = await supabase
+        .from("companies")
+        .update({
+          name: formData.company_name,
+          tax_number: formData.tax_number,
+          industry: formData.nace_code,
+          address: formData.address,
+          phone: formData.phone,
+          email: formData.email,
+          employee_count: employeesJson.length || formData.employee_count,
+        })
+        .eq("id", editingCompanyId);
+
+      if (companyError) throw companyError;
+
+      // ✅ 2. Çalışanları ekle (varsa)
+      if (employeesJson.length > 0) {
+        const employeesToInsert = employeesJson.map(emp => ({
+          ...emp,
+          company_id: editingCompanyId,
+          is_active: true,
+        }));
+
+        const { error: employeesError } = await supabase
+          .from("employees")
+          .insert(employeesToInsert);
+
+        if (employeesError) {
+          console.error("❌ Employees insert error:", employeesError);
+          throw employeesError;
         }
 
-        // Başarılı
-        toast.success("🎉 Firma başarıyla kaydedildi!", {
-        description: `${result.inserted_risks || 0} risk, ${result.inserted_employees || 0} çalışan eklendi`
-        });
+        console.log(`✅ ${employeesJson.length} çalışan eklendi`);
+      }
 
-        setWizardOpen(false);
-        resetWizard();
-        loadCompanies();
+      toast.success("✅ Firma güncellendi!", {
+        description: employeesJson.length > 0 
+          ? `${employeesJson.length} çalışan eklendi`
+          : "Firma bilgileri güncellendi"
+      });
 
-    } catch (e: unknown) {
-        const error = e as Error;
-        console.error(error);
-        toast.error(`❌ Kaydetme hatası: ${error.message}`);
-    } finally {
-        setSaving(false);
+      setWizardOpen(false);
+      setEditingCompanyId(null);
+      resetWizard();
+      loadCompanies();
+      return;
     }
+
+    // ============================================
+    // YENİ FİRMA EKLEME
+    // ============================================
+    console.log("📤 Sending to RPC:", {
+      p_owner_id: user?.id,
+      p_company_data: {
+        company_name: formData.company_name,
+        tax_number: formData.tax_number,
+        nace_code: formData.nace_code,
+        hazard_class: formData.hazard_class,
+        industry_sector: formData.industry_sector,
+        address: formData.address,
+        phone: formData.phone,
+        email: formData.email,
+        employee_count: employeesJson.length || formData.employee_count,
+      },
+      p_risk_template_id: template?.id || null,
+      p_employees: employeesJson,
+    });
+
+    const { data, error } = await supabase.rpc("create_company_with_data", {
+      p_owner_id: user?.id,
+      p_company_data: {
+        company_name: formData.company_name,
+        tax_number: formData.tax_number,
+        nace_code: formData.nace_code,
+        hazard_class: formData.hazard_class,
+        industry_sector: formData.industry_sector,
+        address: formData.address,
+        phone: formData.phone,
+        email: formData.email,
+        employee_count: employeesJson.length || formData.employee_count,
+      },
+      p_risk_template_id: template?.id || null,
+      p_employees: employeesJson,
+    });
+
+    if (error) {
+      console.error("❌ RPC Error:", error);
+      throw error;
+    }
+
+    console.log("✅ RPC Response:", data);
+
+    const result = data as {
+      success: boolean;
+      error?: string;
+      company_id?: string;
+      inserted_risks?: number;
+      inserted_employees?: number;
     };
 
-  // ✅ Wizard Reset
+    if (!result.success) {
+      throw new Error(result.error || "Bilinmeyen hata");
+    }
+
+    toast.success("🎉 Firma başarıyla kaydedildi!", {
+      description: `${result.inserted_risks || 0} risk, ${result.inserted_employees || 0} çalışan eklendi`,
+    });
+
+    setWizardOpen(false);
+    resetWizard();
+    loadCompanies();
+  } catch (e: unknown) {
+    const error = e as Error;
+    console.error("❌ Kaydetme Hatası:", error);
+    toast.error(`❌ Kaydetme hatası: ${error.message}`);
+  } finally {
+    setSaving(false);
+  }
+};
   const resetWizard = () => {
     setCurrentStep(1);
     setFormData({
@@ -289,6 +468,7 @@ export default function CompanyManager() {
     setSelectedTemplate("");
     setEmployeeFile(null);
     setParsedEmployees([]);
+    setEditingCompanyId(null); // ✅ BU SATIRI EKLE
   };
 
   // ✅ Wizard Navigation
@@ -682,7 +862,9 @@ export default function CompanyManager() {
           </DialogTrigger>
           <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>Yeni Firma Kayıt Sihirbazı</DialogTitle>
+              <DialogTitle>
+                {editingCompanyId ? "Firma Düzenle" : "Yeni Firma Kayıt Sihirbazı"} {/* ✅ DEĞİŞTİR */}
+              </DialogTitle>
               <DialogDescription>
                 3 adımda firma kaydı oluşturun
               </DialogDescription>
@@ -944,13 +1126,36 @@ export default function CompanyManager() {
                     <TableCell>{company.city || "-"}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
-                        <Button size="icon" variant="ghost">
+                        {/* Görüntüle */}
+                        <Button 
+                          size="icon" 
+                          variant="ghost"
+                          onClick={() => handleViewCompany(company.id)} // ✅ EKLE
+                          className="hover:bg-blue-500/10 hover:text-blue-500"
+                          title="Görüntüle"
+                        >
                           <Eye className="h-4 w-4" />
                         </Button>
-                        <Button size="icon" variant="ghost">
+
+                        {/* Düzenle */}
+                        <Button 
+                          size="icon" 
+                          variant="ghost"
+                          onClick={() => handleEditCompany(company)} // ✅ EKLE
+                          className="hover:bg-yellow-500/10 hover:text-yellow-500"
+                          title="Düzenle"
+                        >
                           <Edit className="h-4 w-4" />
                         </Button>
-                        <Button size="icon" variant="ghost" className="text-destructive">
+
+                        {/* Sil */}
+                        <Button 
+                          size="icon" 
+                          variant="ghost"
+                          onClick={() => handleDeleteCompany(company.id, company.company_name)} // ✅ EKLE
+                          className="text-destructive hover:bg-red-500/10"
+                          title="Sil"
+                        >
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
@@ -962,6 +1167,97 @@ export default function CompanyManager() {
           )}
         </CardContent>
       </Card>
-    </div>
+
+      {/* View Modal */}
+{viewingCompany && (
+  <Dialog open={!!viewingCompany} onOpenChange={() => setViewingCompany(null)}>
+    <DialogContent className="max-w-2xl">
+      <DialogHeader>
+        <DialogTitle className="flex items-center gap-2">
+          <Building2 className="h-5 w-5 text-primary" />
+          {viewingCompany.company_name}
+        </DialogTitle>
+      </DialogHeader>
+
+      <div className="space-y-4">
+        {/* Temel Bilgiler */}
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <Label className="text-muted-foreground">Vergi No</Label>
+            <p className="font-mono font-semibold mt-1">{viewingCompany.tax_number}</p>
+          </div>
+
+          <div>
+            <Label className="text-muted-foreground">NACE</Label>
+            <Badge variant="outline" className="mt-1">{viewingCompany.nace_code}</Badge>
+          </div>
+
+          <div>
+            <Label className="text-muted-foreground">Tehlike Sınıfı</Label>
+            <Badge className={cn(
+              "mt-1",
+              viewingCompany.hazard_class === "Çok Tehlikeli" && "bg-red-100 text-red-700",
+              viewingCompany.hazard_class === "Tehlikeli" && "bg-orange-100 text-orange-700",
+              viewingCompany.hazard_class === "Az Tehlikeli" && "bg-green-100 text-green-700"
+            )}>
+              {viewingCompany.hazard_class}
+            </Badge>
+          </div>
+
+          <div>
+              <Label className="text-muted-foreground">Çalışan Sayısı</Label>
+              <p className="flex items-center gap-2 mt-1">
+                <Users className="h-4 w-4 text-primary" />
+                <span className="font-semibold">{viewingCompany.employee_count}</span>
+              </p>
+            </div>
+          </div>
+
+              {/* İletişim */}
+              {(viewingCompany.address || viewingCompany.phone || viewingCompany.email) && (
+                <div className="pt-4 border-t space-y-3">
+                  <Label className="text-muted-foreground">İletişim Bilgileri</Label>
+                  
+                  {viewingCompany.address && (
+                    <div className="flex items-start gap-2 text-sm">
+                      <MapPin className="h-4 w-4 text-primary mt-0.5" />
+                      <span>{viewingCompany.address}</span>
+                    </div>
+                  )}
+
+                  {viewingCompany.phone && (
+                    <div className="flex items-center gap-2 text-sm">
+                      <Phone className="h-4 w-4 text-primary" />
+                      <span className="font-mono">{viewingCompany.phone}</span>
+                    </div>
+                  )}
+
+                  {viewingCompany.email && (
+                    <div className="flex items-center gap-2 text-sm">
+                      <Mail className="h-4 w-4 text-primary" />
+                      <span>{viewingCompany.email}</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Aksiyonlar */}
+              <div className="flex gap-2 pt-4 border-t">
+                <Button onClick={() => {
+                  setViewingCompany(null);
+                  handleEditCompany(viewingCompany);
+                }}>
+                  <Edit className="h-4 w-4 mr-2" />
+                  Düzenle
+                </Button>
+                <Button variant="outline" onClick={() => setViewingCompany(null)}>
+                  Kapat
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+    </div>    
   );
 }

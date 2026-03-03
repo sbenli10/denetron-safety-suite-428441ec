@@ -4,25 +4,26 @@ import {
   Eye,
   EyeOff,
   Loader2,
-  AlertCircle,
   CheckCircle2,
   Shield,
   Building2,
   Mail,
   Lock,
   User,
-  ArrowRight,
-  RefreshCw,
-  Clock,
   Info,
+  Clock,
+  RefreshCw,
+  CheckCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { isDeviceTrusted, trustCurrentDevice } from "@/utils/deviceFingerprint";
 
-type AuthMode = "login" | "register" | "verify" | "wait";
+type AuthMode = "login" | "register" | "wait" | "mfa";
 
 interface FormData {
   email: string;
@@ -37,7 +38,6 @@ export default function Auth() {
   const [mode, setMode] = useState<AuthMode>("login");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [resendCountdown, setResendCountdown] = useState(0);
 
   const [formData, setFormData] = useState<FormData>({
@@ -50,7 +50,14 @@ export default function Auth() {
 
   const [verifyEmail, setVerifyEmail] = useState("");
 
-  // ✅ Check if user already logged in
+  // ✅ 2FA States
+  const [mfaCode, setMfaCode] = useState("");
+  const [factorId, setFactorId] = useState<string | null>(null);
+  const [challengeId, setChallengeId] = useState<string | null>(null);
+  const [trustDevice, setTrustDevice] = useState(false);
+  const [pendingUserId, setPendingUserId] = useState<string | null>(null);
+
+  // ✅ Check if already logged in
   useEffect(() => {
     const checkUser = async () => {
       const { data } = await supabase.auth.getSession();
@@ -61,26 +68,20 @@ export default function Auth() {
     checkUser();
   }, [navigate]);
 
-  // ✅ Email confirmation URL'den token çek
+  // ✅ Email confirmation handler
   useEffect(() => {
     const handleEmailConfirmation = async () => {
       const hash = window.location.hash;
       if (hash.includes("type=signup")) {
-        setMode("verify");
-        // Otomatik doğrula
-        const { error } = await supabase.auth.verifyOtp({
-          type: "signup",
-          token: hash.split("token=")[1],
-          email: formData.email,
-        });
-
-        if (!error) {
-          toast.success("✅ E-posta doğrulandı! Giriş yapılıyor...");
-          setTimeout(() => navigate("/"), 2000);
-        }
+        toast.info("📧 E-posta doğrulanıyor...");
+        // Supabase otomatik handle eder, sadece yönlendir
+        setTimeout(() => {
+          toast.success("✅ E-posta doğrulandı! Giriş yapabilirsiniz.");
+          setMode("login");
+          window.location.hash = ""; // Clear hash
+        }, 2000);
       }
     };
-
     handleEmailConfirmation();
   }, []);
 
@@ -92,16 +93,13 @@ export default function Auth() {
     }
   }, [resendCountdown]);
 
-  // ✅ Form input handler
+  // ✅ Form handler
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
+    setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  // ✅ Validation helpers
+  // ✅ Validation
   const validateEmail = (email: string): boolean => {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
   };
@@ -110,7 +108,7 @@ export default function Auth() {
     return password.length >= 8;
   };
 
-  // ✅ Login Handler
+  // ✅ LOGIN HANDLER
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -124,24 +122,25 @@ export default function Auth() {
       return;
     }
 
-    setIsSubmitting(true);
+    setLoading(true);
 
     try {
-      // 1️⃣ Auth login
-      const { data: authData, error: authError } =
-        await supabase.auth.signInWithPassword({
-          email: formData.email,
-          password: formData.password,
-        });
+      console.log("🔐 Signing in...");
+
+      // 1. Sign in
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+        email: formData.email,
+        password: formData.password,
+      });
 
       if (authError) {
         if (authError.message.includes("Invalid login credentials")) {
-          throw new Error("E-posta veya şifre yanlış");
+          throw new Error("E-posta veya şifre hatalı");
         }
         if (authError.message.includes("Email not confirmed")) {
           setMode("wait");
           setVerifyEmail(formData.email);
-          toast.info("📧 E-postanız henüz doğrulanmamış. Lütfen e-postanızdaki linke tıklayın.");
+          toast.info("📧 E-postanızı doğrulayın");
           return;
         }
         throw new Error(authError.message);
@@ -151,34 +150,135 @@ export default function Auth() {
         throw new Error("Giriş başarısız");
       }
 
-      // 2️⃣ Verify profile exists
-      const { data: profile, error: profileError } = await supabase
-        .from("profiles")
-        .select("id, organization_id, role")
-        .eq("id", authData.user.id)
-        .single();
+      console.log("✅ Auth successful, checking 2FA...");
 
-      if (profileError || !profile) {
-        await supabase.auth.signOut();
-        throw new Error("Kullanıcı profili bulunamadı. Lütfen kayıt olun.");
+      // 2. Check if user has 2FA enabled
+      const { data: factors } = await supabase.auth.mfa.listFactors();
+
+      if (factors && factors.totp && factors.totp.length > 0) {
+        const totpFactor = factors.totp[0];
+
+        // 3. Check if device is trusted
+        const deviceTrusted = await isDeviceTrusted(authData.user.id);
+
+        if (deviceTrusted) {
+          console.log("💚 Device trusted, skipping 2FA");
+          toast.success("✅ Giriş başarılı!", {
+            description: "Güvenilir cihaz",
+          });
+
+          // Update last login
+          await supabase
+            .from("profiles")
+            .update({ last_login_at: new Date().toISOString() })
+            .eq("id", authData.user.id);
+
+          navigate("/");
+          return;
+        }
+
+        // 4. Device not trusted, require 2FA
+        console.log("🔐 Device not trusted, creating challenge...");
+
+        const { data: challengeData, error: challengeError } = await supabase.auth.mfa.challenge({
+          factorId: totpFactor.id,
+        });
+
+        if (challengeError) throw challengeError;
+
+        console.log("✅ Challenge created");
+
+        setFactorId(totpFactor.id);
+        setChallengeId(challengeData.id);
+        setPendingUserId(authData.user.id);
+        setMode("mfa");
+
+        toast.info("🔐 2FA Kodu Gerekli", {
+          description: "Yeni cihaz tespit edildi",
+        });
+      } else {
+        // No 2FA, direct login
+        console.log("✅ No 2FA, redirecting...");
+
+        await supabase
+          .from("profiles")
+          .update({ last_login_at: new Date().toISOString() })
+          .eq("id", authData.user.id);
+
+        toast.success("✅ Giriş başarılı!");
+        navigate("/");
+      }
+    } catch (error: any) {
+      console.error("❌ Login error:", error);
+      toast.error(`❌ ${error.message}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ✅ VERIFY 2FA
+  const handleVerify2FA = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!mfaCode || mfaCode.length !== 6) {
+      toast.error("❌ 6 haneli kod girin");
+      return;
+    }
+
+    if (!factorId || !challengeId) {
+      toast.error("❌ 2FA verisi eksik");
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      console.log("🔐 Verifying 2FA...");
+
+      const { data, error } = await supabase.auth.mfa.verify({
+        factorId,
+        challengeId,
+        code: mfaCode,
+      });
+
+      if (error) throw error;
+
+      console.log("✅ 2FA verified");
+
+      // Trust device if checked
+      if (trustDevice && pendingUserId) {
+        console.log("💚 Trusting device...");
+        await trustCurrentDevice(pendingUserId);
+        toast.success("✅ Cihaz güvenilir olarak işaretlendi");
       }
 
-      // 3️⃣ Update last login
-      await supabase
-        .from("profiles")
-        .update({ last_login_at: new Date().toISOString() })
-        .eq("id", authData.user.id);
+      // Update last login
+      if (data.user) {
+        await supabase
+          .from("profiles")
+          .update({ last_login_at: new Date().toISOString() })
+          .eq("id", data.user.id);
+      }
 
       toast.success("✅ Giriş başarılı!");
       navigate("/");
     } catch (error: any) {
-      toast.error(`❌ ${error.message}`);
+      console.error("❌ 2FA error:", error);
+
+      let errorMessage = "Doğrulama başarısız";
+      if (error.message?.includes("Invalid code")) {
+        errorMessage = "Geçersiz kod";
+      } else if (error.message?.includes("expired")) {
+        errorMessage = "Kod süresi doldu";
+      }
+
+      toast.error(`❌ ${errorMessage}`);
     } finally {
-      setIsSubmitting(false);
+      setLoading(false);
     }
   };
 
-  // ✅ Register Handler
+  // ✅ REGISTER HANDLER
   const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -188,11 +288,11 @@ export default function Auth() {
       return;
     }
     if (!validateEmail(formData.email)) {
-      toast.error("❌ Geçerli bir e-posta adresi girin");
+      toast.error("❌ Geçerli e-posta girin");
       return;
     }
     if (!validatePassword(formData.password)) {
-      toast.error("❌ Şifre en az 8 karakter olmalıdır");
+      toast.error("❌ Şifre en az 8 karakter olmalı");
       return;
     }
     if (formData.password !== formData.passwordConfirm) {
@@ -204,12 +304,11 @@ export default function Auth() {
       return;
     }
 
-    setIsSubmitting(true);
+    setLoading(true);
     let organizationId: string | null = null;
-    let userId: string | null = null;
 
     try {
-      // 1️⃣ Create organization
+      // 1. Create organization
       const orgSlug = formData.orgName
         .toLowerCase()
         .trim()
@@ -222,92 +321,73 @@ export default function Auth() {
           name: formData.orgName.trim(),
           slug: orgSlug,
           country: "Türkiye",
-          created_at: new Date().toISOString(),
         })
         .select("id")
         .single();
 
-      if (orgError) {
-        throw new Error(`Organizasyon oluşturulamadı: ${orgError.message}`);
-      }
+      if (orgError) throw new Error(`Organizasyon oluşturulamadı: ${orgError.message}`);
 
       organizationId = orgData.id;
-      toast.info("✓ Organizasyon oluşturuldu");
+      console.log("✅ Organization created:", organizationId);
 
-      // 2️⃣ Create auth user (EMAIL CONFIRMATION GÖNDERILECEK)
-      const { data: authData, error: authError } = await supabase.auth.signUp(
-        {
-          email: formData.email.trim(),
-          password: formData.password,
-          options: {
-            data: {
-              full_name: formData.fullName.trim(),
-            },
-            // Email confirmation otomatik gönderilir
+      // 2. Create auth user
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: formData.email.trim(),
+        password: formData.password,
+        options: {
+          data: {
+            full_name: formData.fullName.trim(),
           },
-        }
-      );
+        },
+      });
 
       if (authError) {
-        // Cleanup: Delete organization
-        await supabase
-          .from("organizations")
-          .delete()
-          .eq("id", organizationId);
-
-        throw new Error(`Auth hatası: ${authError.message}`);
+        // Cleanup
+        await supabase.from("organizations").delete().eq("id", organizationId);
+        throw new Error(`Hesap oluşturulamadı: ${authError.message}`);
       }
 
       if (!authData?.user?.id) {
-        // Cleanup: Delete organization
-        await supabase
-          .from("organizations")
-          .delete()
-          .eq("id", organizationId);
-
-        throw new Error("Kullanıcı ID alınamadı");
+        await supabase.from("organizations").delete().eq("id", organizationId);
+        throw new Error("Kullanıcı oluşturulamadı");
       }
 
-      userId = authData.user.id;
-      toast.info("✓ Hesap oluşturuldu");
+      console.log("✅ User created:", authData.user.id);
 
-      // 3️⃣ Create profile
-      const { error: profileError } = await supabase
-        .from("profiles")
-        .insert({
-          id: userId,
-          organization_id: organizationId,
-          full_name: formData.fullName.trim(),
-          email: formData.email.trim(),
-          role: "admin",
-          is_active: true,
-          created_at: new Date().toISOString(),
-        });
+      // 3. Create profile
+      const { error: profileError } = await supabase.from("profiles").insert({
+        id: authData.user.id,
+        organization_id: organizationId,
+        full_name: formData.fullName.trim(),
+        email: formData.email.trim(),
+        role: "admin",
+        is_active: true,
+      });
 
       if (profileError) {
-        // Cleanup: Delete organization
-        await supabase
-          .from("organizations")
-          .delete()
-          .eq("id", organizationId);
-
-        throw new Error(`Profil kaydı başarısız: ${profileError.message}`);
+        await supabase.from("organizations").delete().eq("id", organizationId);
+        throw new Error(`Profil oluşturulamadı: ${profileError.message}`);
       }
 
-      // 4️⃣ Show verification screen
+      console.log("✅ Profile created");
+
+      // 4. Show verification screen
       setVerifyEmail(formData.email);
       setMode("wait");
 
-      toast.success("✅ Kayıt başarılı! E-postanızı kontrol edin.");
+      toast.success("✅ Kayıt başarılı!", {
+        description: "E-postanızı kontrol edin",
+      });
     } catch (error: any) {
-      toast.error(error.message || "❌ Kayıt başarısız");
+      console.error("❌ Register error:", error);
+      toast.error(error.message);
     } finally {
-      setIsSubmitting(false);
+      setLoading(false);
     }
   };
 
-  // ✅ Resend confirmation email
-    const handleResendEmail = async () => {
+  // ✅ Resend email
+  const handleResendEmail = async () => {
     try {
       const { error } = await supabase.auth.resend({
         type: "signup",
@@ -317,471 +397,340 @@ export default function Auth() {
       if (error) throw error;
 
       setResendCountdown(60);
-      toast.success("✅ Doğrulama e-postası yeniden gönderildi");
+      toast.success("✅ E-posta yeniden gönderildi");
     } catch (error: any) {
       toast.error(`❌ ${error.message}`);
     }
   };
 
-  const fillDemoCredentials = () => {
-    setFormData((prev) => ({
-      ...prev,
-      email: "demo@denetron.com",
-      password: "demo123456",
-    }));
-    setMode("login");
-    toast.info("✓ Demo bilgileri dolduruldu");
-  };
-
   // ==================== RENDER ====================
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-secondary/30 to-background flex items-center justify-center p-4">
-      <div className="w-full max-w-md space-y-8 animate-fade-in">
-        {/* 🎨 Header */}
-        <div className="text-center space-y-4">
-          <div className="flex h-16 w-16 items-center justify-center rounded-2xl gradient-primary mx-auto shadow-lg shadow-primary/20">
-            <Shield className="h-8 w-8 text-foreground" />
+    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 flex items-center justify-center p-4">
+      <div className="w-full max-w-md space-y-6">
+        {/* Header */}
+        <div className="text-center space-y-3">
+          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-purple-600 to-blue-600 mx-auto shadow-xl">
+            <Shield className="h-8 w-8 text-white" />
           </div>
           <div>
-            <h1 className="text-4xl font-bold tracking-tight text-foreground">
-              DENETRON
-            </h1>
-            <p className="text-sm text-muted-foreground mt-2">
-              🛡️ AI Destekli İSG Yönetim Sistemi
-            </p>
+            <h1 className="text-3xl font-bold text-white">DENETRON</h1>
+            <p className="text-sm text-slate-400 mt-1">AI Destekli İSG Yönetim Sistemi</p>
           </div>
         </div>
 
-        {/* 📋 Auth Card */}
-        <div className="glass-card p-8 space-y-6 border border-primary/20 shadow-xl">
-          {/* LOGIN MODU */}
+        {/* Card */}
+        <div className="bg-slate-900/50 backdrop-blur border border-slate-800 rounded-xl p-6 shadow-2xl">
+          {/* LOGIN */}
           {mode === "login" && (
             <>
-              {/* Tab Buttons */}
-              <div className="flex gap-2 bg-secondary/50 p-1.5 rounded-lg">
+              <div className="flex gap-2 bg-slate-800/50 p-1 rounded-lg mb-6">
                 <button
-                  onClick={() => {
-                    setMode("login");
-                    setFormData({
-                      email: "",
-                      password: "",
-                      passwordConfirm: "",
-                      fullName: "",
-                      orgName: "",
-                    });
-                  }}
-                  className="flex-1 py-2.5 px-4 rounded-md font-semibold text-sm transition-all bg-primary text-primary-foreground shadow-lg"
+                  onClick={() => setMode("login")}
+                  className="flex-1 py-2 rounded-md font-medium text-sm bg-gradient-to-r from-purple-600 to-blue-600 text-white"
                 >
-                  🔑 Giriş Yap
+                  Giriş Yap
                 </button>
                 <button
-                  onClick={() => {
-                    setMode("register");
-                    setFormData({
-                      email: "",
-                      password: "",
-                      passwordConfirm: "",
-                      fullName: "",
-                      orgName: "",
-                    });
-                  }}
-                  className="flex-1 py-2.5 px-4 rounded-md font-semibold text-sm transition-all text-muted-foreground hover:text-foreground"
+                  onClick={() => setMode("register")}
+                  className="flex-1 py-2 rounded-md font-medium text-sm text-slate-400 hover:text-white"
                 >
-                  📝 Kayıt Ol
+                  Kayıt Ol
                 </button>
               </div>
 
-              {/* Form */}
-              <form onSubmit={handleLogin} className="space-y-5">
-                <div className="text-center space-y-1">
-                  <h2 className="text-xl font-bold text-foreground">
-                    Hesabınıza Giriş Yapın
-                  </h2>
-                  <p className="text-xs text-muted-foreground">
-                    E-posta ve şifrenizle devam edin
-                  </p>
-                </div>
-
-                {/* Email */}
-                <div className="space-y-2.5">
-                  <Label className="text-sm font-semibold text-foreground flex items-center gap-2">
-                    <Mail className="h-4 w-4 text-primary" />
-                    E-posta Adresi
+              <form onSubmit={handleLogin} className="space-y-4">
+                <div className="space-y-2">
+                  <Label className="text-white flex items-center gap-2">
+                    <Mail className="h-4 w-4 text-blue-400" />
+                    E-posta
                   </Label>
                   <Input
                     type="email"
                     name="email"
-                    placeholder="ornek@sirket.com"
                     value={formData.email}
                     onChange={handleInputChange}
-                    className="bg-secondary/50 border-border/50 h-11"
-                    disabled={isSubmitting}
+                    placeholder="ornek@email.com"
+                    className="bg-slate-800 border-slate-700 text-white"
+                    disabled={loading}
                     required
                   />
                 </div>
 
-                {/* Password */}
-                <div className="space-y-2.5">
-                  <Label className="text-sm font-semibold text-foreground flex items-center gap-2">
-                    <Lock className="h-4 w-4 text-primary" />
+                <div className="space-y-2">
+                  <Label className="text-white flex items-center gap-2">
+                    <Lock className="h-4 w-4 text-blue-400" />
                     Şifre
                   </Label>
                   <div className="relative">
                     <Input
                       type={showPassword ? "text" : "password"}
                       name="password"
-                      placeholder="••••••••"
                       value={formData.password}
                       onChange={handleInputChange}
-                      className="bg-secondary/50 border-border/50 h-11 pr-11"
-                      disabled={isSubmitting}
+                      placeholder="••••••••"
+                      className="bg-slate-800 border-slate-700 text-white pr-10"
+                      disabled={loading}
                       required
                     />
                     <button
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
                     >
-                      {showPassword ? (
-                        <EyeOff className="h-4 w-4" />
-                      ) : (
-                        <Eye className="h-4 w-4" />
-                      )}
+                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </button>
                   </div>
                 </div>
 
-                {/* Info Box */}
-                <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-3 flex gap-2">
-                  <Info className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />
-                  <p className="text-xs text-blue-600 leading-relaxed">
-                    E-postanız henüz doğrulanmamışsa, giriş yapamayacaksınız. Lütfen e-postanızda gelen doğrulama linkine tıklayın.
-                  </p>
-                </div>
-
-                {/* Submit Button */}
                 <Button
                   type="submit"
-                  disabled={isSubmitting}
-                  className="w-full h-11 gap-2 gradient-primary border-0 text-foreground font-semibold"
+                  disabled={loading}
+                  className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
                 >
-                  {isSubmitting ? (
+                  {loading ? (
                     <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                       Giriş yapılıyor...
                     </>
                   ) : (
-                    <>
-                      <CheckCircle2 className="h-4 w-4" />
-                      Giriş Yap
-                    </>
+                    "Giriş Yap"
                   )}
                 </Button>
               </form>
-
-              {/* Divider */}
-              <div className="relative">
-                <div className="absolute inset-0 flex items-center">
-                  <div className="w-full border-t border-border/50"></div>
-                </div>
-                <div className="relative flex justify-center text-xs">
-                  <span className="bg-card px-2 text-muted-foreground">veya</span>
-                </div>
-              </div>
-
-              {/* Demo Button */}
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full h-11"
-                onClick={fillDemoCredentials}
-                disabled={isSubmitting}
-              >
-                👥 Demo Hesabı Kullan
-              </Button>
             </>
           )}
 
-          {/* REGISTER MODU */}
+          {/* REGISTER */}
           {mode === "register" && (
             <>
-              {/* Tab Buttons */}
-              <div className="flex gap-2 bg-secondary/50 p-1.5 rounded-lg">
+              <div className="flex gap-2 bg-slate-800/50 p-1 rounded-lg mb-6">
                 <button
-                  onClick={() => {
-                    setMode("login");
-                    setFormData({
-                      email: "",
-                      password: "",
-                      passwordConfirm: "",
-                      fullName: "",
-                      orgName: "",
-                    });
-                  }}
-                  className="flex-1 py-2.5 px-4 rounded-md font-semibold text-sm transition-all text-muted-foreground hover:text-foreground"
+                  onClick={() => setMode("login")}
+                  className="flex-1 py-2 rounded-md font-medium text-sm text-slate-400 hover:text-white"
                 >
-                  🔑 Giriş Yap
+                  Giriş Yap
                 </button>
                 <button
-                  onClick={() => {
-                    setMode("register");
-                    setFormData({
-                      email: "",
-                      password: "",
-                      passwordConfirm: "",
-                      fullName: "",
-                      orgName: "",
-                    });
-                  }}
-                  className="flex-1 py-2.5 px-4 rounded-md font-semibold text-sm transition-all bg-primary text-primary-foreground shadow-lg"
+                  onClick={() => setMode("register")}
+                  className="flex-1 py-2 rounded-md font-medium text-sm bg-gradient-to-r from-purple-600 to-blue-600 text-white"
                 >
-                  📝 Kayıt Ol
+                  Kayıt Ol
                 </button>
               </div>
 
-              {/* Form */}
-              <form onSubmit={handleRegister} className="space-y-3.5 max-h-[500px] overflow-y-auto pr-2">
-                <div className="text-center space-y-1">
-                  <h2 className="text-xl font-bold text-foreground">
-                    Yeni Hesap Oluşturun
-                  </h2>
-                  <p className="text-xs text-muted-foreground">
-                    İSG Yönetim Sisteminizi başlatın
-                  </p>
-                </div>
-
-                {/* Full Name */}
+              <form onSubmit={handleRegister} className="space-y-3">
                 <div className="space-y-2">
-                  <Label className="text-sm font-semibold text-foreground flex items-center gap-2">
-                    <User className="h-4 w-4 text-primary" />
-                    Ad-Soyad
+                  <Label className="text-white flex items-center gap-2">
+                    <User className="h-4 w-4 text-blue-400" />
+                    Ad Soyad
                   </Label>
                   <Input
                     type="text"
                     name="fullName"
-                    placeholder="Ahmet Yılmaz"
                     value={formData.fullName}
                     onChange={handleInputChange}
-                    className="bg-secondary/50 border-border/50 h-10 text-sm"
-                    disabled={isSubmitting}
+                    className="bg-slate-800 border-slate-700 text-white"
+                    disabled={loading}
                     required
                   />
                 </div>
 
-                {/* Email */}
                 <div className="space-y-2">
-                  <Label className="text-sm font-semibold text-foreground flex items-center gap-2">
-                    <Mail className="h-4 w-4 text-primary" />
-                    E-posta Adresi
+                  <Label className="text-white flex items-center gap-2">
+                    <Mail className="h-4 w-4 text-blue-400" />
+                    E-posta
                   </Label>
                   <Input
                     type="email"
                     name="email"
-                    placeholder="ahmet@sirket.com"
                     value={formData.email}
                     onChange={handleInputChange}
-                    className="bg-secondary/50 border-border/50 h-10 text-sm"
-                    disabled={isSubmitting}
+                    className="bg-slate-800 border-slate-700 text-white"
+                    disabled={loading}
                     required
                   />
                 </div>
 
-                {/* Organization */}
                 <div className="space-y-2">
-                  <Label className="text-sm font-semibold text-foreground flex items-center gap-2">
-                    <Building2 className="h-4 w-4 text-primary" />
-                    Şirket/Organizasyon Adı
+                  <Label className="text-white flex items-center gap-2">
+                    <Building2 className="h-4 w-4 text-blue-400" />
+                    Şirket/Organizasyon
                   </Label>
                   <Input
                     type="text"
                     name="orgName"
-                    placeholder="ABC İnşaat Ltd. Şti."
                     value={formData.orgName}
                     onChange={handleInputChange}
-                    className="bg-secondary/50 border-border/50 h-10 text-sm"
-                    disabled={isSubmitting}
+                    className="bg-slate-800 border-slate-700 text-white"
+                    disabled={loading}
                     required
                   />
                 </div>
 
-                {/* Password */}
                 <div className="space-y-2">
-                  <Label className="text-sm font-semibold text-foreground flex items-center gap-2">
-                    <Lock className="h-4 w-4 text-primary" />
+                  <Label className="text-white flex items-center gap-2">
+                    <Lock className="h-4 w-4 text-blue-400" />
                     Şifre (min. 8 karakter)
                   </Label>
-                  <div className="relative">
-                    <Input
-                      type={showPassword ? "text" : "password"}
-                      name="password"
-                      placeholder="••••••••"
-                      value={formData.password}
-                      onChange={handleInputChange}
-                      className="bg-secondary/50 border-border/50 h-10 pr-10 text-sm"
-                      disabled={isSubmitting}
-                      required
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                    >
-                      {showPassword ? (
-                        <EyeOff className="h-4 w-4" />
-                      ) : (
-                        <Eye className="h-4 w-4" />
-                      )}
-                    </button>
-                  </div>
+                  <Input
+                    type={showPassword ? "text" : "password"}
+                    name="password"
+                    value={formData.password}
+                    onChange={handleInputChange}
+                    className="bg-slate-800 border-slate-700 text-white"
+                    disabled={loading}
+                    required
+                  />
                 </div>
 
-                {/* Confirm Password */}
                 <div className="space-y-2">
-                  <Label className="text-sm font-semibold text-foreground flex items-center gap-2">
-                    <Lock className="h-4 w-4 text-primary" />
-                    Şifreyi Onayla
+                  <Label className="text-white flex items-center gap-2">
+                    <Lock className="h-4 w-4 text-blue-400" />
+                    Şifre Tekrar
                   </Label>
                   <Input
                     type={showPassword ? "text" : "password"}
                     name="passwordConfirm"
-                    placeholder="••••••••"
                     value={formData.passwordConfirm}
                     onChange={handleInputChange}
-                    className="bg-secondary/50 border-border/50 h-10 text-sm"
-                    disabled={isSubmitting}
+                    className="bg-slate-800 border-slate-700 text-white"
+                    disabled={loading}
                     required
                   />
                 </div>
 
-                {/* Submit Button */}
                 <Button
                   type="submit"
-                  disabled={isSubmitting}
-                  className="w-full h-11 gap-2 gradient-primary border-0 text-foreground font-semibold"
+                  disabled={loading}
+                  className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
                 >
-                  {isSubmitting ? (
+                  {loading ? (
                     <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      İşleniyor...
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Kayıt ediliyor...
                     </>
                   ) : (
-                    <>
-                      <CheckCircle2 className="h-4 w-4" />
-                      Hesap Oluştur
-                    </>
+                    "Hesap Oluştur"
                   )}
                 </Button>
-
-                {/* Info Box */}
-                <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-3 flex gap-2">
-                  <Info className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />
-                  <p className="text-xs text-blue-600 leading-relaxed">
-                    Kayıt olduktan sonra e-postanıza bir doğrulama linki gönderilecek. Hesabı aktifleştirmek için lütfen linke tıklayın.
-                  </p>
-                </div>
               </form>
             </>
           )}
 
-          {/* E-POSTA DOĞRULAMA BEKLEME MODU */}
+          {/* MFA */}
+          {mode === "mfa" && (
+            <form onSubmit={handleVerify2FA} className="space-y-6">
+              <div className="text-center">
+                <div className="h-16 w-16 rounded-full bg-gradient-to-br from-purple-600 to-blue-600 flex items-center justify-center mx-auto mb-4">
+                  <Shield className="h-8 w-8 text-white" />
+                </div>
+                <h2 className="text-xl font-bold text-white">2FA Doğrulama</h2>
+                <p className="text-sm text-slate-400 mt-1">
+                  Google Authenticator'dan kodu girin
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-white">Doğrulama Kodu</Label>
+                <Input
+                  type="text"
+                  value={mfaCode}
+                  onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                  placeholder="123456"
+                  className="text-center text-2xl tracking-widest font-mono bg-slate-800 border-slate-700 text-white"
+                  maxLength={6}
+                  autoFocus
+                  disabled={loading}
+                />
+                <p className="text-xs text-slate-400 text-center">{mfaCode.length}/6</p>
+              </div>
+
+              <div className="flex items-center space-x-2 p-3 bg-slate-800/50 rounded-lg">
+                <Checkbox
+                  id="trust"
+                  checked={trustDevice}
+                  onCheckedChange={(checked) => setTrustDevice(checked as boolean)}
+                />
+                <label htmlFor="trust" className="text-sm text-white cursor-pointer flex-1">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="h-4 w-4 text-green-500" />
+                    Bu cihazı 30 gün güvenilir olarak işaretle
+                  </div>
+                </label>
+              </div>
+
+              <div className="space-y-2">
+                <Button
+                  type="submit"
+                  disabled={loading || mfaCode.length !== 6}
+                  className="w-full bg-gradient-to-r from-purple-600 to-blue-600"
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Doğrulanıyor...
+                    </>
+                  ) : (
+                    "Doğrula ve Giriş Yap"
+                  )}
+                </Button>
+
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => {
+                    setMode("login");
+                    setMfaCode("");
+                    setTrustDevice(false);
+                  }}
+                  className="w-full text-slate-400"
+                >
+                  Geri Dön
+                </Button>
+              </div>
+            </form>
+          )}
+
+          {/* WAIT */}
           {mode === "wait" && (
             <div className="space-y-6">
-              {/* Success Icon */}
-              <div className="flex justify-center">
-                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-success/20">
-                  <CheckCircle2 className="h-8 w-8 text-success" />
-                </div>
+              <div className="text-center">
+                <CheckCircle2 className="h-16 w-16 text-green-500 mx-auto mb-4" />
+                <h2 className="text-xl font-bold text-white">E-postanızı Kontrol Edin</h2>
+                <p className="text-sm text-slate-400 mt-2">{verifyEmail}</p>
               </div>
 
-              {/* Message */}
-              <div className="text-center space-y-3">
-                <h2 className="text-2xl font-bold text-foreground">
-                  E-postanızı Kontrol Edin
-                </h2>
-                <p className="text-sm text-muted-foreground">
-                  <strong>{verifyEmail}</strong> adresine bir doğrulama e-postası gönderdik.
-                </p>
-              </div>
-
-              {/* Steps */}
-              <div className="space-y-3 bg-secondary/30 rounded-lg p-4">
-                <div className="flex gap-3">
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-bold">
-                    1
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-foreground">
-                      E-postanızı açın
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      DENETRON'dan gelen e-postayı bulun
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex gap-3">
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-bold">
-                    2
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-foreground">
-                      Doğrulama linkine tıklayın
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      "E-postanızı doğrulayın" butonuna tıklayın
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex gap-3">
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground text-xs font-bold">
-                    3
-                  </div>
-                  <div>
-                    <p className="text-sm font-semibold text-foreground">
-                      Giriş yapın
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Doğrulama tamamlandıktan sonra giriş yapabileceksiniz
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Warning Box */}
               <div className="bg-orange-500/10 border border-orange-500/30 rounded-lg p-3 flex gap-2">
                 <Clock className="h-4 w-4 text-orange-500 shrink-0 mt-0.5" />
-                <p className="text-xs text-orange-600 leading-relaxed">
-                  E-posta birkaç dakika içinde ulaşmalıdır. Spam klasörünü de kontrol edin.
+                <p className="text-xs text-orange-400">
+                  E-posta birkaç dakika içinde ulaşmalı. Spam klasörünü kontrol edin.
                 </p>
               </div>
 
-              {/* Resend Button */}
               <Button
                 onClick={handleResendEmail}
                 disabled={resendCountdown > 0}
                 variant="outline"
-                className="w-full h-11 gap-2"
+                className="w-full"
               >
                 {resendCountdown > 0 ? (
                   <>
-                    <Clock className="h-4 w-4" />
+                    <Clock className="h-4 w-4 mr-2" />
                     E-postayı yeniden gönder ({resendCountdown}s)
                   </>
                 ) : (
                   <>
-                    <RefreshCw className="h-4 w-4" />
+                    <RefreshCw className="h-4 w-4 mr-2" />
                     E-postayı Yeniden Gönder
                   </>
                 )}
               </Button>
 
-              {/* Back to Login */}
               <Button
                 onClick={() => setMode("login")}
                 variant="ghost"
-                className="w-full h-11"
+                className="w-full text-slate-400"
               >
                 ← Giriş Sayfasına Dön
               </Button>
@@ -789,16 +738,10 @@ export default function Auth() {
           )}
         </div>
 
-        {/* 📱 Footer */}
-        <div className="text-center space-y-2">
-          <p className="text-xs text-muted-foreground">
-            © 2026 Denetron. Tüm hakları saklıdır.
-          </p>
-          <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground/60">
-            <Shield className="h-3 w-3" />
-            <span>Güvenli ve Şifreli Bağlantı</span>
-          </div>
-        </div>
+        {/* Footer */}
+        <p className="text-center text-xs text-slate-500">
+          © 2026 Denetron. Tüm hakları saklıdır.
+        </p>
       </div>
     </div>
   );

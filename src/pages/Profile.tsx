@@ -5,8 +5,6 @@ import {
   AlertTriangle,
   FileText,
   Clipboard,
-  MessageSquare,
-  HelpCircle,
   Settings,
   LogOut,
   RefreshCw,
@@ -21,14 +19,13 @@ import {
   Edit2,
   Save,
   X,
-  Check,
-  Award,
-  Calendar,
-  Lock,
+  CheckCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
@@ -52,18 +49,16 @@ interface StatsData {
   companies: number;
   employees: number;
   risks: number;
-  notes: number;
-  reports: number;
+  inspections: number;
+  assessments: number;
 }
 
-type TabType = "overview" | "companies" | "employees" | "risks" | "reports";
+type TabType = "overview" | "activity" | "security";
 
 const tabs: Array<{ id: TabType; label: string; icon: string }> = [
   { id: "overview", label: "Genel Bakış", icon: "📊" },
-  { id: "companies", label: "Firmalar", icon: "🏢" },
-  { id: "employees", label: "Çalışanlar", icon: "👥" },
-  { id: "risks", label: "Risklerim", icon: "⚠️" },
-  { id: "reports", label: "Raporlar", icon: "📋" },
+  { id: "activity", label: "Aktiviteler", icon: "📈" },
+  { id: "security", label: "Güvenlik", icon: "🔒" },
 ];
 
 const statItems = [
@@ -77,7 +72,7 @@ const statItems = [
   },
   {
     key: "employees",
-    label: "Çalışanlarım",
+    label: "Çalışanlar",
     icon: Users,
     color: "from-emerald-500/20 to-emerald-600/20",
     textColor: "text-emerald-400",
@@ -85,34 +80,28 @@ const statItems = [
   },
   {
     key: "risks",
-    label: "Risklerim",
+    label: "Risk Maddeleri",
     icon: AlertTriangle,
     color: "from-orange-500/20 to-orange-600/20",
     textColor: "text-orange-400",
     borderColor: "border-orange-500/30",
   },
   {
-    key: "notes",
-    label: "Notlarım",
+    key: "inspections",
+    label: "Denetimlerim",
     icon: FileText,
     color: "from-purple-500/20 to-purple-600/20",
     textColor: "text-purple-400",
     borderColor: "border-purple-500/30",
   },
   {
-    key: "reports",
-    label: "Raporlarım",
+    key: "assessments",
+    label: "Değerlendirmeler",
     icon: Clipboard,
     color: "from-pink-500/20 to-pink-600/20",
     textColor: "text-pink-400",
     borderColor: "border-pink-500/30",
   },
-];
-
-const avatarLetters = [
-  "A", "B", "C", "D", "E", "F", "G", "H", "I", "J",
-  "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T",
-  "U", "V", "W", "X", "Y", "Z",
 ];
 
 const avatarColors = [
@@ -121,7 +110,6 @@ const avatarColors = [
   "from-pink-500 to-pink-600",
   "from-red-500 to-red-600",
   "from-orange-500 to-orange-600",
-  "from-yellow-500 to-yellow-600",
   "from-green-500 to-green-600",
   "from-teal-500 to-teal-600",
   "from-cyan-500 to-cyan-600",
@@ -139,14 +127,15 @@ export default function Profile() {
     companies: 0,
     employees: 0,
     risks: 0,
-    notes: 0,
-    reports: 0,
+    inspections: 0,
+    assessments: 0,
   });
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [saving, setSaving] = useState(false);
 
   const [formData, setFormData] = useState({
     full_name: "",
@@ -156,7 +145,9 @@ export default function Profile() {
   });
 
   useEffect(() => {
-    fetchProfileData();
+    if (user) {
+      fetchProfileData();
+    }
   }, [user]);
 
   const fetchProfileData = async () => {
@@ -166,13 +157,21 @@ export default function Profile() {
     setError(null);
 
     try {
+      console.log("📊 Fetching profile for user:", user.id);
+
+      // ✅ 1. PROFILE DATA
       const { data: profileData, error: profileError } = await supabase
         .from("profiles")
         .select("*")
         .eq("id", user.id)
         .single();
 
-      if (profileError) throw profileError;
+      if (profileError) {
+        console.error("❌ Profile error:", profileError);
+        throw new Error("Profil verisi yüklenemedi");
+      }
+
+      console.log("✅ Profile data:", profileData);
 
       setProfile({
         id: profileData.id,
@@ -183,8 +182,8 @@ export default function Profile() {
         position: profileData.position,
         department: profileData.department,
         organization_id: profileData.organization_id,
-        is_active: profileData.is_active,
-        role: profileData.role,
+        is_active: profileData.is_active ?? true,
+        role: profileData.role || "staff",
         created_at: profileData.created_at,
       });
 
@@ -195,48 +194,115 @@ export default function Profile() {
         department: profileData.department || "",
       });
 
-      // ✅ FETCH STATS
-      const { count: companyCount } = await supabase
-        .from("organizations")
-        .select("id", { count: "exact" })
-        .eq("id", profileData.organization_id || "");
+      // ✅ 2. COMPANIES - Kullanıcının organization'ı veya ilişkili companies
+      let companyCount = 0;
+      
+      // Option A: User'ın organization'ı varsa o organization'ı say
+      if (profileData.organization_id) {
+        const { data: orgData } = await supabase
+          .from("organizations")
+          .select("id")
+          .eq("id", profileData.organization_id)
+          .single();
+        
+        if (orgData) companyCount = 1;
+      }
+      
+      // Option B: Companies tablosunda user_id ile eşleşenleri say
+      const { count: userCompanies } = await supabase
+        .from("companies")
+        .select("*", { count: "exact", head: true })
+        .eq("user_id", user.id)
+        .eq("is_active", true);
+      
+      companyCount = Math.max(companyCount, userCompanies || 0);
 
-      const { count: inspCount } = await supabase
-        .from("inspections")
-        .select("id", { count: "exact" })
-        .eq("user_id", user.id);
+      console.log("✅ Companies:", companyCount);
 
-      const { data: inspectionIds } = await supabase
-        .from("inspections")
+      // ✅ 3. EMPLOYEES - Aynı organization veya user'ın companies'indeki çalışanlar
+      let employeeCount = 0;
+      
+      if (profileData.organization_id) {
+        const { count } = await supabase
+          .from("profiles")
+          .select("*", { count: "exact", head: true })
+          .eq("organization_id", profileData.organization_id)
+          .eq("is_active", true)
+          .neq("id", user.id);
+        employeeCount = count || 0;
+      }
+      
+      // Alternatif: User'ın companies'indeki employees
+      const { data: userCompaniesData } = await supabase
+        .from("companies")
         .select("id")
         .eq("user_id", user.id);
+      
+      if (userCompaniesData && userCompaniesData.length > 0) {
+        const companyIds = userCompaniesData.map(c => c.id);
+        const { count: employeesInCompanies } = await supabase
+          .from("employees")
+          .select("*", { count: "exact", head: true })
+          .in("company_id", companyIds)
+          .eq("is_active", true);
+        
+        employeeCount = Math.max(employeeCount, employeesInCompanies || 0);
+      }
+
+      console.log("✅ Employees:", employeeCount);
+
+      // ✅ 4. RISK ITEMS - risk_assessments üzerinden
+      const { data: assessmentIds } = await supabase
+        .from("risk_assessments")
+        .select("id")
+        .eq("user_id", user.id)
+        .eq("is_deleted", false);
 
       let riskCount = 0;
-      if (inspectionIds && inspectionIds.length > 0) {
-        const ids = inspectionIds.map((i) => i.id);
+      if (assessmentIds && assessmentIds.length > 0) {
+        const ids = assessmentIds.map(a => a.id);
         const { count } = await supabase
-          .from("findings")
-          .select("id", { count: "exact" })
-          .in("inspection_id", ids);
+          .from("risk_items")
+          .select("*", { count: "exact", head: true })
+          .in("assessment_id", ids);
         riskCount = count || 0;
       }
 
-      const { count: reportCount } = await supabase
-        .from("reports")
-        .select("id", { count: "exact" })
+      console.log("✅ Risk items:", riskCount);
+
+      // ✅ 5. INSPECTIONS
+      const { count: inspectionCount } = await supabase
+        .from("inspections")
+        .select("*", { count: "exact", head: true })
         .eq("user_id", user.id);
 
+      console.log("✅ Inspections:", inspectionCount);
+
+      // ✅ 6. RISK ASSESSMENTS
+      const { count: assessmentCount } = await supabase
+        .from("risk_assessments")
+        .select("*", { count: "exact", head: true })
+        .eq("user_id", user.id)
+        .eq("is_deleted", false);
+
+      console.log("✅ Assessments:", assessmentCount);
+
+      // ✅ 7. SET STATS
       setStats({
-        companies: companyCount || 0,
-        employees: 0,
+        companies: companyCount,
+        employees: employeeCount,
         risks: riskCount,
-        notes: inspCount || 0,
-        reports: reportCount || 0,
+        inspections: inspectionCount || 0,
+        assessments: assessmentCount || 0,
       });
+
+      console.log("✅ All data fetched successfully");
     } catch (err: any) {
-      console.error("Profile error:", err);
+      console.error("❌ Profile fetch error:", err);
       setError(err.message || "Profil yüklenirken bir sorun oluştu");
-      toast.error("Veri yüklenemedi");
+      toast.error("Veri yüklenemedi", {
+        description: err.message,
+      });
     } finally {
       setLoading(false);
     }
@@ -247,37 +313,55 @@ export default function Profile() {
     if (!file || !user) return;
 
     if (file.size > 5 * 1024 * 1024) {
-      toast.error("Avatar boyutu 5MB'ı aşamaz");
+      toast.error("❌ Avatar boyutu 5MB'ı aşamaz");
       return;
     }
 
     setUploading(true);
+    toast.info("📤 Avatar yükleniyor...");
 
     try {
       const fileExt = file.name.split(".").pop();
       const fileName = `${user.id}-${Date.now()}.${fileExt}`;
+      const filePath = `${fileName}`;
 
+      console.log("📤 Uploading avatar:", filePath);
+
+      // ✅ Upload file
       const { error: uploadError } = await supabase.storage
         .from("avatars")
-        .upload(fileName, file, { upsert: true });
+        .upload(filePath, file, { 
+          cacheControl: "3600", 
+          upsert: true 
+        });
 
       if (uploadError) throw uploadError;
 
-      const { data } = supabase.storage.from("avatars").getPublicUrl(fileName);
+      // ✅ Get public URL
+      const { data: urlData } = supabase.storage
+        .from("avatars")
+        .getPublicUrl(filePath);
 
+      console.log("✅ Avatar URL:", urlData.publicUrl);
+
+      // ✅ Update profile
       const { error: updateError } = await supabase
         .from("profiles")
-        .update({ avatar_url: data.publicUrl })
+        .update({ avatar_url: urlData.publicUrl })
         .eq("id", user.id);
 
       if (updateError) throw updateError;
 
       setProfile((prev) =>
-        prev ? { ...prev, avatar_url: data.publicUrl } : null
+        prev ? { ...prev, avatar_url: urlData.publicUrl } : null
       );
+
       toast.success("✅ Avatar güncellendi");
     } catch (err: any) {
-      toast.error("Avatar yüklenemedi");
+      console.error("❌ Avatar upload error:", err);
+      toast.error("Avatar yüklenemedi", {
+        description: err.message,
+      });
     } finally {
       setUploading(false);
     }
@@ -286,14 +370,20 @@ export default function Profile() {
   const handleUpdateProfile = async () => {
     if (!user) return;
 
+    setSaving(true);
+    toast.info("💾 Profil kaydediliyor...");
+
     try {
+      console.log("💾 Updating profile:", formData);
+
       const { error } = await supabase
         .from("profiles")
         .update({
-          full_name: formData.full_name,
-          phone: formData.phone,
-          position: formData.position,
-          department: formData.department,
+          full_name: formData.full_name.trim(),
+          phone: formData.phone.trim() || null,
+          position: formData.position.trim() || null,
+          department: formData.department.trim() || null,
+          updated_at: new Date().toISOString(),
         })
         .eq("id", user.id);
 
@@ -313,13 +403,25 @@ export default function Profile() {
 
       setEditing(false);
       toast.success("✅ Profil güncellendi");
+      console.log("✅ Profile updated successfully");
     } catch (err: any) {
-      toast.error("Profil güncellenemedi");
+      console.error("❌ Profile update error:", err);
+      toast.error("Profil güncellenemedi", {
+        description: err.message,
+      });
+    } finally {
+      setSaving(false);
     }
   };
 
   const handleLogout = async () => {
-    await signOut();
+    try {
+      await signOut();
+      navigate("/auth");
+      toast.success("Çıkış yapıldı");
+    } catch (err) {
+      toast.error("Çıkış yapılamadı");
+    }
   };
 
   const getInitials = (name: string): string => {
@@ -332,168 +434,171 @@ export default function Profile() {
   };
 
   const getAvatarColor = (name: string): string => {
-    const index = (name.charCodeAt(0) + name.charCodeAt(1 || 0)) % avatarColors.length;
+    const index = name.charCodeAt(0) % avatarColors.length;
     return avatarColors[index];
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 flex items-center justify-center">
+      <div className="min-h-screen flex items-center justify-center">
         <div className="space-y-4 text-center">
-          <Loader2 className="h-12 w-12 animate-spin text-blue-500 mx-auto" />
+          <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto" />
           <p className="text-muted-foreground">Profil yükleniyor...</p>
         </div>
       </div>
     );
   }
 
+  if (error && !profile) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Card className="max-w-md">
+          <CardContent className="p-6 space-y-4 text-center">
+            <AlertCircle className="h-12 w-12 text-destructive mx-auto" />
+            <div>
+              <h3 className="font-semibold text-lg">Hata Oluştu</h3>
+              <p className="text-sm text-muted-foreground mt-1">{error}</p>
+            </div>
+            <Button onClick={fetchProfileData} className="gap-2">
+              <RefreshCw className="h-4 w-4" />
+              Tekrar Dene
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 space-y-8 p-6">
-      {/* ✅ HEADER SECTION */}
-      <div className="space-y-6">
-        {/* ✅ TOP BAR */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-4xl font-bold text-foreground">Profilim</h1>
-            <p className="text-muted-foreground mt-1">
-              Kişisel bilgilerinizi yönetin ve görüntüleyin
-            </p>
-          </div>
-          <div className="flex items-center gap-3">
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-2"
-              onClick={() => navigate("/settings")}
-            >
-              <Settings className="h-4 w-4" />
-              Ayarlar
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="gap-2 text-destructive hover:bg-destructive/10"
-              onClick={handleLogout}
-            >
-              <LogOut className="h-4 w-4" />
-              Çıkış
-            </Button>
-          </div>
+    <div className="space-y-6 p-6 max-w-7xl mx-auto">
+      {/* ✅ HEADER */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold">Profilim</h1>
+          <p className="text-muted-foreground mt-1">
+            Kişisel bilgilerinizi yönetin
+          </p>
         </div>
-
-        {/* ✅ PROFILE CARD */}
-        <div className="glass-card border border-border/50 rounded-2xl p-8">
-          <div className="flex items-start justify-between gap-8">
-            {/* ✅ LEFT - AVATAR */}
-            <div className="flex items-start gap-6">
-              <div className="relative group">
-                <div className="relative">
-                  {profile?.avatar_url ? (
-                    <img
-                      src={profile.avatar_url}
-                      alt="Avatar"
-                      className="h-32 w-32 rounded-2xl object-cover border-2 border-blue-500/30 shadow-lg"
-                    />
-                  ) : (
-                    <div
-                      className={`h-32 w-32 rounded-2xl bg-gradient-to-br ${getAvatarColor(
-                        profile?.full_name || "K"
-                      )} flex items-center justify-center text-5xl font-bold text-white border-2 border-blue-500/30 shadow-lg`}
-                    >
-                      {profile ? getInitials(profile.full_name) : "K"}
-                    </div>
-                  )}
-
-                  {/* ✅ UPLOAD BUTTON */}
-                  <button
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={uploading}
-                    className="absolute -bottom-2 -right-2 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 disabled:opacity-50 p-3 rounded-lg transition-all shadow-lg"
-                  >
-                    {uploading ? (
-                      <Loader2 className="h-5 w-5 text-white animate-spin" />
-                    ) : (
-                      <Camera className="h-5 w-5 text-white" />
-                    )}
-                  </button>
-
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    onChange={handleAvatarUpload}
-                    className="hidden"
-                  />
-
-                  {/* ✅ ACTIVE BADGE */}
-                  {profile?.is_active && (
-                    <div className="absolute top-2 right-2 h-6 w-6 bg-emerald-500 rounded-full border-3 border-slate-900 animate-pulse shadow-lg shadow-emerald-500/50" />
-                  )}
-                </div>
-              </div>
-
-              {/* ✅ INFO */}
-              <div className="space-y-4 flex-1">
-                <div>
-                  <h2 className="text-3xl font-bold text-foreground">
-                    {profile?.full_name}
-                  </h2>
-                  <p className="text-sm text-muted-foreground mt-1 flex items-center gap-2">
-                    <Badge variant={profile?.is_active ? "default" : "secondary"}>
-                      {profile?.is_active ? "✓ Aktif" : "Pasif"}
-                    </Badge>
-                  </p>
-                </div>
-
-                <div className="space-y-2 text-sm">
-                  <p className="flex items-center gap-3 text-muted-foreground">
-                    <Mail className="h-4 w-4" />
-                    <span>{profile?.email}</span>
-                  </p>
-                  <p className="flex items-center gap-3 text-muted-foreground">
-                    <Shield className="h-4 w-4" />
-                    <span className="capitalize">{profile?.role || "Kullanıcı"}</span>
-                  </p>
-                  {profile?.phone && (
-                    <p className="flex items-center gap-3 text-muted-foreground">
-                      <Phone className="h-4 w-4" />
-                      <span>{profile.phone}</span>
-                    </p>
-                  )}
-                  {profile?.position && (
-                    <p className="flex items-center gap-3 text-muted-foreground">
-                      <Briefcase className="h-4 w-4" />
-                      <span>{profile.position}</span>
-                    </p>
-                  )}
-                  {profile?.department && (
-                    <p className="flex items-center gap-3 text-muted-foreground">
-                      <MapPin className="h-4 w-4" />
-                      <span>{profile.department}</span>
-                    </p>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* ✅ RIGHT - QUICK INFO */}
-            <div className="space-y-3 text-right">
-              <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4 space-y-1">
-                <p className="text-xs font-semibold text-muted-foreground">ÜYELIK DURUMU</p>
-                <p className="text-2xl font-bold text-blue-400">✓ Aktif</p>
-              </div>
-              <div className="bg-purple-500/10 border border-purple-500/30 rounded-lg p-4 space-y-1">
-                <p className="text-xs font-semibold text-muted-foreground">ÜYE OLUNMA TARİHİ</p>
-                <p className="text-sm font-semibold text-purple-400">
-                  {profile?.created_at
-                    ? new Date(profile.created_at).toLocaleDateString("tr-TR")
-                    : "-"}
-                </p>
-              </div>
-            </div>
-          </div>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => navigate("/settings")}
+          >
+            <Settings className="h-4 w-4 mr-2" />
+            Ayarlar
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleLogout}
+            className="text-destructive hover:text-destructive"
+          >
+            <LogOut className="h-4 w-4 mr-2" />
+            Çıkış
+          </Button>
         </div>
       </div>
+
+      {/* ✅ PROFILE CARD */}
+      <Card>
+        <CardContent className="p-6">
+          <div className="flex items-start gap-6">
+            {/* Avatar */}
+            <div className="relative group">
+              {profile?.avatar_url ? (
+                <img
+                  src={profile.avatar_url}
+                  alt="Avatar"
+                  className="h-24 w-24 rounded-xl object-cover border-2 border-border"
+                />
+              ) : (
+                <div
+                  className={`h-24 w-24 rounded-xl bg-gradient-to-br ${getAvatarColor(
+                    profile?.full_name || "K"
+                  )} flex items-center justify-center text-3xl font-bold text-white border-2 border-border`}
+                >
+                  {profile ? getInitials(profile.full_name) : "K"}
+                </div>
+              )}
+
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading}
+                className="absolute -bottom-2 -right-2 bg-primary hover:bg-primary/90 disabled:opacity-50 p-2 rounded-lg transition-all shadow-lg"
+              >
+                {uploading ? (
+                  <Loader2 className="h-4 w-4 text-primary-foreground animate-spin" />
+                ) : (
+                  <Camera className="h-4 w-4 text-primary-foreground" />
+                )}
+              </button>
+
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                onChange={handleAvatarUpload}
+                className="hidden"
+              />
+
+              {profile?.is_active && (
+                <div className="absolute top-1 right-1 h-4 w-4 bg-green-500 rounded-full border-2 border-background animate-pulse" />
+              )}
+            </div>
+
+            {/* Info */}
+            <div className="flex-1 space-y-3">
+              <div>
+                <h2 className="text-2xl font-bold">{profile?.full_name}</h2>
+                <div className="flex items-center gap-2 mt-1">
+                  <Badge variant={profile?.is_active ? "default" : "secondary"}>
+                    {profile?.is_active ? "✓ Aktif" : "Pasif"}
+                  </Badge>
+                  <Badge variant="outline" className="capitalize">
+                    {profile?.role || "user"}
+                  </Badge>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm">
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <Mail className="h-4 w-4" />
+                  <span className="truncate">{profile?.email}</span>
+                </div>
+                {profile?.phone && (
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <Phone className="h-4 w-4" />
+                    <span>{profile.phone}</span>
+                  </div>
+                )}
+                {profile?.position && (
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <Briefcase className="h-4 w-4" />
+                    <span>{profile.position}</span>
+                  </div>
+                )}
+                {profile?.department && (
+                  <div className="flex items-center gap-2 text-muted-foreground">
+                    <MapPin className="h-4 w-4" />
+                    <span>{profile.department}</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="text-xs text-muted-foreground">
+                Üyelik: {profile?.created_at
+                  ? new Date(profile.created_at).toLocaleDateString("tr-TR", {
+                      year: "numeric",
+                      month: "long",
+                      day: "numeric",
+                    })
+                  : "-"}
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* ✅ STATISTICS */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
@@ -502,253 +607,206 @@ export default function Profile() {
           const value = stats[item.key as keyof StatsData];
 
           return (
-            <div
-              key={item.key}
-              className={`glass-card border ${item.borderColor} rounded-xl p-5 space-y-3 transition-all duration-300 hover:scale-105 hover:shadow-lg cursor-pointer bg-gradient-to-br ${item.color}`}
-            >
-              <div className="flex items-center justify-between">
-                <div className="p-3 rounded-lg bg-black/20">
+            <Card key={item.key} className={`border-l-4 ${item.borderColor}`}>
+              <CardContent className="p-4 space-y-2">
+                <div className="flex items-center justify-between">
                   <Icon className={`h-5 w-5 ${item.textColor}`} />
                 </div>
-                <span className="text-xs font-bold text-muted-foreground">↑ 12%</span>
-              </div>
-              <div>
-                <p className="text-3xl font-bold text-foreground">{value}</p>
-                <p className="text-xs text-muted-foreground mt-1">{item.label}</p>
-              </div>
-              <div className="h-1.5 bg-black/20 rounded-full overflow-hidden">
-                <div
-                  className={`h-full bg-gradient-to-r ${item.color}`}
-                  style={{ width: `${Math.min((value / 50) * 100, 100)}%` }}
-                />
-              </div>
-            </div>
+                <div>
+                  <p className="text-2xl font-bold">{value}</p>
+                  <p className="text-xs text-muted-foreground">{item.label}</p>
+                </div>
+              </CardContent>
+            </Card>
           );
         })}
       </div>
 
       {/* ✅ TABS */}
-      <div className="glass-card border border-border/50 rounded-xl p-3 overflow-x-auto">
-        <div className="flex items-center gap-2 w-full min-w-max">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setCurrentTab(tab.id)}
-              className={`px-4 py-2.5 rounded-lg text-sm font-semibold whitespace-nowrap transition-all duration-200 flex items-center gap-2 ${
-                currentTab === tab.id
-                  ? "bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-500/30"
-                  : "text-muted-foreground hover:text-foreground hover:bg-secondary/50"
-              }`}
-            >
-              {tab.icon} {tab.label}
-            </button>
-          ))}
-        </div>
+      <div className="flex gap-2 border-b">
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            onClick={() => setCurrentTab(tab.id)}
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+              currentTab === tab.id
+                ? "border-primary text-primary"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {tab.icon} {tab.label}
+          </button>
+        ))}
       </div>
 
-      {/* ✅ CONTENT AREA */}
-      <div className="glass-card border border-border/50 rounded-xl p-8 min-h-[400px]">
-        {error ? (
-          <div className="flex flex-col items-center justify-center py-12 space-y-6">
-            <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-full p-4">
-              <AlertCircle className="h-12 w-12 text-yellow-500" />
-            </div>
-            <div className="text-center space-y-2">
-              <h3 className="text-lg font-bold text-foreground">⚠️ Hata Oluştu</h3>
-              <p className="text-sm text-muted-foreground max-w-md">{error}</p>
-            </div>
-            <Button
-              onClick={fetchProfileData}
-              className="gap-2 gradient-primary border-0 text-foreground"
-            >
-              <RefreshCw className="h-4 w-4" />
-              Tekrar Dene
-            </Button>
-          </div>
-        ) : currentTab === "overview" ? (
-          <div className="space-y-6 animate-fade-in">
-            <div className="flex items-center justify-between">
-              <h2 className="text-2xl font-bold text-foreground">Profil Bilgileri</h2>
-              <Button
-                onClick={() => (editing ? handleUpdateProfile() : setEditing(true))}
-                className={`gap-2 ${
-                  editing
-                    ? "gradient-primary border-0 text-foreground"
-                    : "border-blue-500/30 hover:bg-blue-500/10"
-                }`}
-                variant={editing ? "default" : "outline"}
-              >
-                {editing ? (
-                  <>
-                    <Save className="h-4 w-4" />
-                    Kaydet
-                  </>
-                ) : (
-                  <>
-                    <Edit2 className="h-4 w-4" />
-                    Düzenle
-                  </>
-                )}
-              </Button>
-            </div>
-
-            {editing ? (
-              <div className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label className="text-sm font-semibold">Ad Soyad</Label>
-                    <Input
-                      value={formData.full_name}
-                      onChange={(e) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          full_name: e.target.value,
-                        }))
-                      }
-                      className="bg-secondary/50 h-11"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label className="text-sm font-semibold">Telefon</Label>
-                    <Input
-                      value={formData.phone}
-                      onChange={(e) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          phone: e.target.value,
-                        }))
-                      }
-                      className="bg-secondary/50 h-11"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label className="text-sm font-semibold">Pozisyon</Label>
-                    <Input
-                      value={formData.position}
-                      onChange={(e) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          position: e.target.value,
-                        }))
-                      }
-                      className="bg-secondary/50 h-11"
-                    />
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label className="text-sm font-semibold">Departman</Label>
-                    <Input
-                      value={formData.department}
-                      onChange={(e) =>
-                        setFormData((prev) => ({
-                          ...prev,
-                          department: e.target.value,
-                        }))
-                      }
-                      className="bg-secondary/50 h-11"
-                    />
-                  </div>
-                </div>
-
-                <div className="flex gap-3 pt-4">
+      {/* ✅ TAB CONTENT */}
+      <Card>
+        <CardContent className="p-6">
+          {currentTab === "overview" && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold">Profil Bilgileri</h3>
+                {!editing && (
                   <Button
-                    onClick={() => setEditing(false)}
+                    onClick={() => setEditing(true)}
                     variant="outline"
+                    size="sm"
                   >
-                    <X className="h-4 w-4 mr-2" />
-                    İptal
+                    <Edit2 className="h-4 w-4 mr-2" />
+                    Düzenle
                   </Button>
-                </div>
+                )}
               </div>
-            ) : (
-              <div className="space-y-4">
+
+              {editing ? (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Ad Soyad *</Label>
+                      <Input
+                        value={formData.full_name}
+                        onChange={(e) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            full_name: e.target.value,
+                          }))
+                        }
+                        required
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Telefon</Label>
+                      <Input
+                        value={formData.phone}
+                        onChange={(e) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            phone: e.target.value,
+                          }))
+                        }
+                        placeholder="+90 5XX XXX XX XX"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Pozisyon</Label>
+                      <Input
+                        value={formData.position}
+                        onChange={(e) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            position: e.target.value,
+                          }))
+                        }
+                        placeholder="İSG Uzmanı"
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Departman</Label>
+                      <Input
+                        value={formData.department}
+                        onChange={(e) =>
+                          setFormData((prev) => ({
+                            ...prev,
+                            department: e.target.value,
+                          }))
+                        }
+                        placeholder="İSG Departmanı"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={handleUpdateProfile}
+                      disabled={saving || !formData.full_name.trim()}
+                      className="gap-2"
+                    >
+                      {saving ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Kaydediliyor...
+                        </>
+                      ) : (
+                        <>
+                          <Save className="h-4 w-4" />
+                          Kaydet
+                        </>
+                      )}
+                    </Button>
+                    <Button
+                      onClick={() => {
+                        setEditing(false);
+                        setFormData({
+                          full_name: profile?.full_name || "",
+                          phone: profile?.phone || "",
+                          position: profile?.position || "",
+                          department: profile?.department || "",
+                        });
+                      }}
+                      variant="outline"
+                      disabled={saving}
+                    >
+                      <X className="h-4 w-4 mr-2" />
+                      İptal
+                    </Button>
+                  </div>
+                </div>
+              ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="bg-secondary/30 border border-border/50 rounded-lg p-4 space-y-2">
-                    <p className="text-xs font-semibold text-muted-foreground">AD SOYAD</p>
-                    <p className="text-lg font-bold text-foreground">
-                      {profile?.full_name || "-"}
-                    </p>
+                  <div className="space-y-1">
+                    <p className="text-xs text-muted-foreground">AD SOYAD</p>
+                    <p className="font-medium">{profile?.full_name || "-"}</p>
                   </div>
 
-                  <div className="bg-secondary/30 border border-border/50 rounded-lg p-4 space-y-2">
-                    <p className="text-xs font-semibold text-muted-foreground">TELEFON</p>
-                    <p className="text-lg font-bold text-foreground">
-                      {profile?.phone || "-"}
-                    </p>
+                  <div className="space-y-1">
+                    <p className="text-xs text-muted-foreground">TELEFON</p>
+                    <p className="font-medium">{profile?.phone || "-"}</p>
                   </div>
 
-                  <div className="bg-secondary/30 border border-border/50 rounded-lg p-4 space-y-2">
-                    <p className="text-xs font-semibold text-muted-foreground">POZİSYON</p>
-                    <p className="text-lg font-bold text-foreground">
-                      {profile?.position || "-"}
-                    </p>
+                  <div className="space-y-1">
+                    <p className="text-xs text-muted-foreground">POZİSYON</p>
+                    <p className="font-medium">{profile?.position || "-"}</p>
                   </div>
 
-                  <div className="bg-secondary/30 border border-border/50 rounded-lg p-4 space-y-2">
-                    <p className="text-xs font-semibold text-muted-foreground">DEPARTMAN</p>
-                    <p className="text-lg font-bold text-foreground">
-                      {profile?.department || "-"}
+                  <div className="space-y-1">
+                    <p className="text-xs text-muted-foreground">DEPARTMAN</p>
+                    <p className="font-medium">{profile?.department || "-"}</p>
+                  </div>
+
+                  <div className="space-y-1">
+                    <p className="text-xs text-muted-foreground">E-POSTA</p>
+                    <p className="font-medium truncate">{profile?.email}</p>
+                  </div>
+
+                  <div className="space-y-1">
+                    <p className="text-xs text-muted-foreground">ROL</p>
+                    <p className="font-medium capitalize">
+                      {profile?.role || "user"}
                     </p>
                   </div>
                 </div>
+              )}
+            </div>
+          )}
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4 border-t border-border/50">
-                  <div className="bg-secondary/30 border border-border/50 rounded-lg p-4 space-y-2">
-                    <p className="text-xs font-semibold text-muted-foreground">ROL</p>
-                    <p className="text-lg font-bold text-blue-400 capitalize">
-                      {profile?.role || "staff"}
-                    </p>
-                  </div>
+          {currentTab === "activity" && (
+            <div className="text-center py-12 text-muted-foreground">
+              <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
+              <p>Aktivite geçmişi yakında eklenecek</p>
+            </div>
+          )}
 
-                  <div className="bg-secondary/30 border border-border/50 rounded-lg p-4 space-y-2">
-                    <p className="text-xs font-semibold text-muted-foreground">DURUM</p>
-                    <p className="text-lg font-bold text-emerald-400">
-                      {profile?.is_active ? "✓ Aktif" : "✗ Pasif"}
-                    </p>
-                  </div>
-
-                  <div className="bg-secondary/30 border border-border/50 rounded-lg p-4 space-y-2">
-                    <p className="text-xs font-semibold text-muted-foreground">E-POSTA</p>
-                    <p className="text-sm font-bold text-purple-400 truncate">
-                      {profile?.email}
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="text-center py-12 text-muted-foreground">
-            <p className="text-lg font-semibold mb-2">
-              {tabs.find((t) => t.id === currentTab)?.label}
-            </p>
-            <p>Bu sekme henüz geliştirilme aşamasındadır.</p>
-          </div>
-        )}
-      </div>
+          {currentTab === "security" && (
+            <div className="text-center py-12 text-muted-foreground">
+              <Shield className="h-12 w-12 mx-auto mb-4 opacity-50" />
+              <p>Güvenlik ayarları yakında eklenecek</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
-  );
-}
-
-// ✅ Badge Component
-function Badge({
-  variant = "default",
-  children,
-}: {
-  variant?: "default" | "secondary";
-  children: React.ReactNode;
-}) {
-  return (
-    <span
-      className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold ${
-        variant === "default"
-          ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
-          : "bg-gray-500/20 text-gray-400 border border-gray-500/30"
-      }`}
-    >
-      {children}
-    </span>
   );
 }

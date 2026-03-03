@@ -1,3 +1,32 @@
+export type ADEPStatus = "draft" | "completed" | "approved" | "expired";
+
+export interface SavedADEP {
+  id: string;
+  created_at: string;
+  updated_at: string;
+  user_id: string;
+  org_id?: string;
+  plan_name: string;
+  company_name: string;
+  sector?: string;
+  hazard_class?: string;
+  employee_count?: number;
+  status: ADEPStatus;
+  completion_percentage: number;
+  is_active: boolean;
+  plan_data: ADEPData;
+  pdf_url?: string;
+  pdf_size_kb?: number;
+  qr_code_url?: string;
+  next_review_date?: string;
+  last_reviewed_at?: string;
+  approved_by?: string;
+  approved_at?: string;
+  version: number;
+  is_deleted: boolean;
+}
+
+
 export interface CompanyInfo {
   firma_adi: string;
   adres: string;

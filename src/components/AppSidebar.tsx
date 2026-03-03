@@ -12,21 +12,19 @@ import {
   LogOut,
   User,
   BookOpen,
-  Menu,
   TrendingUp,
   Building2,
   Flame,
   Calendar,
   Users,
   Target,
-  AlertTriangle,
   ChevronDown,
-  Zap,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useAuth } from "@/contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { supabase } from "@/integrations/supabase/client";
 import {
   Sidebar,
   SidebarContent,
@@ -41,55 +39,6 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 
-// ✅ Hiyerarşik Gruplandırma
-const menuGroups = [
-  {
-    label: "GENEL",
-    icon: LayoutDashboard,
-    items: [
-      { title: "Panel", url: "/", icon: LayoutDashboard, badge: null },
-      { title: "Profilim", url: "/profile", icon: User, badge: null },
-    ]
-  },
-  {
-    label: "FİRMA YÖNETİMİ",
-    icon: Building2,
-    items: [
-      { title: "Firmalar", url: "/companies", icon: Building2, badge: null },
-      { title: "Denetimler", url: "/inspections", icon: ClipboardCheck, badge: null },
-    ]
-  },
-  {
-    label: "RİSK & GÜVENLİK",
-    icon: ShieldAlert,
-    items: [
-      { title: "Risk Sihirbazı", url: "/risk-wizard", icon: TrendingUp, badge: "AI" },
-      { title: "DÖF Yönetimi", url: "/capa", icon: ShieldAlert, badge: null },
-      { title: "DÖF Oluştur", url: "/bulk-capa", icon: ShieldPlus, badge: null },
-      { title: "Acil Durum Planı", url: "/adep-wizard", icon: Flame, badge: null },
-    ]
-  },
-  {
-    label: "YAPAY ZEKA ARAÇLARI",
-    icon: Brain,
-    items: [
-      { title: "AI Raporlar", url: "/reports", icon: Brain, badge: "Beta" },
-      { title: "AI Kroki Okuyucu", url: "/blueprint-analyzer", icon: Target, badge: "Pro" },
-    ]
-  },
-  {
-    label: "PLANLAMA & RAPORLAMA",
-    icon: Calendar,
-    items: [
-      { title: "Yıllık Planlar", url: "/annual-plans", icon: Calendar, badge: null },
-      { title: "İSG Kütüphanesi", url: "/safety-library", icon: BookOpen, badge: null },
-    ]
-  }
-];
-
-const bottomItems = [
-  { title: "Ayarlar", url: "/settings", icon: Settings },
-];
 
 export function AppSidebar() {
   const { state, toggleSidebar } = useSidebar();
@@ -98,9 +47,93 @@ export function AppSidebar() {
   const collapsed = state === "collapsed";
   
   const [collapsedGroups, setCollapsedGroups] = useState<string[]>([]);
+  const [draftMeetingsCount, setDraftMeetingsCount] = useState(0);
+
+  // ✅ Fetch draft meetings count
+  useEffect(() => {
+    if (user) {
+      fetchDraftMeetingsCount();
+    }
+  }, [user]);
+
+  const fetchDraftMeetingsCount = async () => {
+    if (!user) return;
+
+    try {
+      const { count, error } = await supabase
+        .from("board_meetings")
+        .select("*", { count: "exact", head: true })
+        .eq("user_id", user.id)
+        .eq("status", "draft");
+
+      if (!error) {
+        setDraftMeetingsCount(count || 0);
+      }
+    } catch (error) {
+      console.error("Failed to fetch draft meetings count:", error);
+    }
+  };
+
+  // ✅ Hiyerarşik Gruplandırma
+  const menuGroups = [
+    {
+      label: "GENEL",
+      icon: LayoutDashboard,
+      items: [
+        { title: "Panel", url: "/", icon: LayoutDashboard, badge: null },
+        { title: "Profilim", url: "/profile", icon: User, badge: null },
+      ]
+    },
+    {
+      label: "FİRMA YÖNETİMİ",
+      icon: Building2,
+      items: [
+        { title: "Firmalar", url: "/companies", icon: Building2, badge: null },
+        { title: "Denetimler", url: "/inspections", icon: ClipboardCheck, badge: null },
+        { 
+          title: "Kurul Toplantıları", 
+          url: "/board-meetings", 
+          icon: Users, 
+          badge: draftMeetingsCount > 0 ? draftMeetingsCount : null 
+        }
+      ]
+    },
+    {
+      label: "RİSK & GÜVENLİK",
+      icon: ShieldAlert,
+      items: [
+        { title: "Risk Sihirbazı", url: "/risk-wizard", icon: TrendingUp, badge: "AI" },
+        { title: "Klasik Risk Editörü", url: "/risk-editor", icon: FileText, badge: "NEW" },
+        { title: "DÖF Yönetimi", url: "/capa", icon: ShieldAlert, badge: null },
+        { title: "DÖF Oluştur", url: "/bulk-capa", icon: ShieldPlus, badge: null },
+        { title: "Acil Durum Planı", url: "/adep-wizard", icon: Flame, badge: null },
+        { title: "ADEP Planlarım", url: "/adep-plans", icon: FileText, badge: null },
+      ]
+    },
+    {
+      label: "YAPAY ZEKA ARAÇLARI",
+      icon: Brain,
+      items: [
+        { title: "AI Raporlar", url: "/reports", icon: Brain, badge: "Beta" },
+        { title: "AI Kroki Okuyucu", url: "/blueprint-analyzer", icon: Target, badge: "Pro" },
+      ]
+    },
+    {
+      label: "PLANLAMA & RAPORLAMA",
+      icon: Calendar,
+      items: [
+        { title: "Yıllık Planlar", url: "/annual-plans", icon: Calendar, badge: null },
+        { title: "İSG Kütüphanesi", url: "/safety-library", icon: BookOpen, badge: null },
+      ]
+    }
+  ];
+
+  const bottomItems = [
+    { title: "Ayarlar", url: "/settings", icon: Settings },
+  ];
 
   const toggleGroup = (label: string) => {
-    if (collapsed) return; // Sidebar daraltılmışsa grup açma
+    if (collapsed) return;
     setCollapsedGroups(prev =>
       prev.includes(label)
         ? prev.filter(g => g !== label)
@@ -139,7 +172,7 @@ export function AppSidebar() {
 
       {/* MAIN CONTENT */}
       <SidebarContent className="px-2 py-3 overflow-y-auto scrollbar-thin scrollbar-thumb-slate-800 scrollbar-track-transparent">
-        {menuGroups.map((group, groupIndex) => (
+        {menuGroups.map((group) => (
           <SidebarGroup key={group.label} className="mb-1">
             {/* GROUP HEADER */}
             <button
@@ -197,7 +230,11 @@ export function AppSidebar() {
                                     ? "bg-amber-500/20 text-amber-300 border-amber-500/30 shadow-sm shadow-amber-500/20"
                                     : item.badge === "Beta"
                                     ? "bg-blue-500/20 text-blue-300 border-blue-500/30 shadow-sm shadow-blue-500/20"
-                                    : "bg-emerald-500/20 text-emerald-300 border-emerald-500/30 shadow-sm shadow-emerald-500/20"
+                                    : item.badge === "NEW"
+                                    ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/30 shadow-sm shadow-emerald-500/20"
+                                    : typeof item.badge === "number"
+                                    ? "bg-yellow-500/20 text-yellow-300 border-yellow-500/30 shadow-sm shadow-yellow-500/20"
+                                    : "bg-slate-500/20 text-slate-300 border-slate-500/30"
                                 }`}>
                                   {item.badge}
                                 </span>

@@ -1,10 +1,12 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 
+// ✅ Gelişmiş CORS Headers
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, accept",
+  "Access-Control-Max-Age": "86400", // 24 saat cache
 };
-
 // ✅ ENHANCED TYPES
 interface ProjectInfo {
   area_type: string;
@@ -56,6 +58,8 @@ interface BlueprintAnalysisResult {
   improvement_roadmap?: ImprovementRoadmap;
 }
 
+
+
 /**
  * ✅ Enhanced JSON Parser - Kesik ve hatalı JSON'ları düzeltir
  */
@@ -67,6 +71,8 @@ function parseAIResponse(contentText: string, requestId: string): BlueprintAnaly
   } else {
     console.log(`📄 [${requestId}] Tam içerik:\n${contentText}`);
   }
+
+  
   
   try {
     let cleaned = contentText.trim();
@@ -281,6 +287,9 @@ function ensureCompleteResult(parsed: any, requestId: string): BlueprintAnalysis
   return parsed as BlueprintAnalysisResult;
 }
 
+
+
+
 /**
  * ✅ Manual Parse - Son çare manuel parsing
  */
@@ -354,6 +363,9 @@ function manualParse(contentText: string, requestId: string): BlueprintAnalysisR
   
   return result;
 }
+
+
+
 
 /**
  * ✅ ENHANCED SYSTEM PROMPT
@@ -466,8 +478,13 @@ const SYSTEM_PROMPT = `Sen 20 yıllık deneyime sahip bir Yangın Güvenliği ve
  * ✅ MAIN HANDLER
  */
 serve(async (req) => {
+  // ✅ CRITICAL: OPTIONS request için hemen dön
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+    console.log("⚡ CORS Preflight Request");
+    return new Response(null, {
+      status: 204,
+      headers: corsHeaders,
+    });
   }
 
   const requestId = crypto.randomUUID().substring(0, 8);
@@ -475,6 +492,7 @@ serve(async (req) => {
   
   console.log(`\n${"=".repeat(60)}`);
   console.log(`🏗️  [${requestId}] YENİ KROKİ ANALİZ TALEBİ`);
+  console.log(`🌐 [${requestId}] Origin: ${req.headers.get("origin")}`);
   console.log(`⏰ [${requestId}] Timestamp: ${new Date().toISOString()}`);
   console.log(`${"=".repeat(60)}\n`);
 
@@ -654,9 +672,7 @@ serve(async (req) => {
     console.error(`${"=".repeat(60)}`);
     console.error(`📛 [${requestId}] Error Type: ${error.name}`);
     console.error(`📄 [${requestId}] Error Message: ${error.message}`);
-    console.error(`🔍 [${requestId}] Stack Trace:\n${error.stack}`);
     console.error(`⏱️  [${requestId}] Hata anı: ${errorDuration}ms`);
-    console.error(`🕐 [${requestId}] Timestamp: ${new Date().toISOString()}`);
     console.error(`${"=".repeat(60)}\n`);
 
     return new Response(
@@ -673,4 +689,4 @@ serve(async (req) => {
       }
     );
   }
-});
+}); 

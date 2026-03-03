@@ -4,9 +4,9 @@
 @tailwind components;
 @tailwind utilities;
 
-
 @layer base {
   :root {
+    /* Temel Renkler (Dark Mode Varsayılan Olarak Ayarlandı - Proje Yapına Göre) */
     --background: 222 47% 11%;
     --foreground: 210 40% 98%;
 
@@ -37,6 +37,7 @@
 
     --radius: 0.75rem;
 
+    /* Ekstra Durum Renkleri */
     --success: 142 76% 36%;
     --success-foreground: 210 40% 98%;
     --warning: 38 92% 50%;
@@ -44,12 +45,7 @@
     --info: 199 89% 48%;
     --info-foreground: 222 47% 11%;
 
-    --chart-1: 217 91% 60%;
-    --chart-2: 142 76% 36%;
-    --chart-3: 38 92% 50%;
-    --chart-4: 0 84% 60%;
-    --chart-5: 199 89% 48%;
-
+    /* Sidebar ve Chart Değişkenleri */
     --sidebar-background: 222 47% 8%;
     --sidebar-foreground: 215 20% 65%;
     --sidebar-primary: 217 91% 60%;
@@ -59,34 +55,45 @@
     --sidebar-border: 217 33% 17%;
     --sidebar-ring: 217 91% 60%;
   }
+
+  /* Eğer aydınlık mod kullanacaksan burayı kendine göre doldurabilirsin */
+  .light {
+    --background: 0 0% 100%;
+    --foreground: 222.2 84% 4.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 222.2 84% 4.9%;
+    --border: 214.3 31.8% 91.4%;
+    --primary: 222.2 47.4% 11.2%;
+  }
 }
 
 @layer base {
   * {
     @apply border-border;
   }
-
   body {
-    @apply bg-background text-foreground font-sans antialiased;
+    @apply bg-background text-foreground antialiased;
     font-family: 'Inter', sans-serif;
   }
 }
 
 @layer utilities {
+  /* Hata veren kısım buradaydı, artık değişkenler temizlendiği için çalışacak */
   .glass-card {
-    @apply bg-card/80 backdrop-blur-sm border border-border/50 rounded-lg;
+    background-color: hsl(var(--card) / 0.8);
+    @apply backdrop-blur-sm border border-border/50 rounded-lg;
   }
 
   .glow-primary {
-    box-shadow: 0 0 20px hsl(217 91% 60% / 0.15), 0 0 60px hsl(217 91% 60% / 0.05);
+    box-shadow: 0 0 20px hsl(var(--primary) / 0.15), 0 0 60px hsl(var(--primary) / 0.05);
   }
 
   .gradient-primary {
-    background: linear-gradient(135deg, hsl(217 91% 60%), hsl(199 89% 48%));
+    background: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--info)));
   }
 
   .gradient-text {
-    background: linear-gradient(135deg, hsl(217 91% 60%), hsl(199 89% 48%));
+    background: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--info)));
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;

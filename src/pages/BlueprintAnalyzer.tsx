@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback,useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { 
   Upload, Building2, Shield, AlertTriangle, CheckCircle2, Loader2, 
@@ -117,10 +117,30 @@ const LOADING_MESSAGES = [
   { text: "Sonuçlar hazırlanıyor...", progress: 95 }
 ];
 
+// ✅ Helper: Floor number parser
+const parseFloorNumber = (floor: any): number => {
+  if (typeof floor === 'number') return floor;
+  
+  if (typeof floor === 'string') {
+    // Sayı çıkar: "1.KAT" → 1, "2. Kat" → 2
+    const match = floor.match(/\d+/);
+    if (match) return parseInt(match[0]);
+    
+    // Özel durumlar
+    const lowerFloor = floor.toLowerCase();
+    if (lowerFloor.includes('zemin') || lowerFloor.includes('ground')) return 0;
+    if (lowerFloor.includes('bodrum') || lowerFloor.includes('basement')) return -1;
+    if (lowerFloor.includes('çatı') || lowerFloor.includes('roof')) return 99;
+  }
+  
+  return 1; // Default: 1. kat
+};
+  
+
 export default function BlueprintAnalyzer() {
   const { user } = useAuth();
-  const navigate = useNavigate();
-  const fileInputRef = useRef<HTMLInputElement>(null);
+    const navigate = useNavigate();
+    const fileInputRef = useRef<HTMLInputElement>(null);
   
   // States
   const [blueprintImage, setBlueprintImage] = useState<string>("");
@@ -140,6 +160,13 @@ export default function BlueprintAnalyzer() {
   const [projectName, setProjectName] = useState("");
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
 
+   // ✅ Component mount olduğunda history'yi yükle
+  useEffect(() => {
+    if (user) {
+      fetchHistory();
+    }
+  }, [user]); // user değiştiğinde yeniden fetch
+  
   // ✅ Fetch history - Type-Safe Çözüm
   const fetchHistory = async () => {
     if (!user) return;
@@ -171,37 +198,51 @@ export default function BlueprintAnalyzer() {
     return new Promise((resolve, reject) => {
       const img = new Image();
       img.src = base64;
+      
       img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 1200;
-        const MAX_HEIGHT = 1200;
-        let width = img.width;
-        let height = img.height;
+        try {
+          const canvas = document.createElement('canvas');
+          const MAX_WIDTH = 1200;
+          const MAX_HEIGHT = 1200;
+          let width = img.width;
+          let height = img.height;
 
-        if (width > height) {
-          if (width > MAX_WIDTH) {
-            height *= MAX_WIDTH / width;
-            width = MAX_WIDTH;
+          if (width > height) {
+            if (width > MAX_WIDTH) {
+              height *= MAX_WIDTH / width;
+              width = MAX_WIDTH;
+            }
+          } else {
+            if (height > MAX_HEIGHT) {
+              width *= MAX_HEIGHT / height;
+              height = MAX_HEIGHT;
+            }
           }
-        } else {
-          if (height > MAX_HEIGHT) {
-            width *= MAX_HEIGHT / height;
-            height = MAX_HEIGHT;
+
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          
+          if (!ctx) {
+            throw new Error('Canvas context alınamadı');
           }
+          
+          ctx.fillStyle = '#FFFFFF';
+          ctx.fillRect(0, 0, width, height);
+          ctx.drawImage(img, 0, 0, width, height);
+          
+          resolve(canvas.toDataURL('image/jpeg', 0.85));
+        } catch (error) {
+          console.error('Compression error:', error);
+          // ✅ Fallback: orijinal base64
+          resolve(base64);
         }
-
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        
-        // White background
-        ctx!.fillStyle = '#FFFFFF';
-        ctx!.fillRect(0, 0, width, height);
-        
-        ctx?.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL('image/jpeg', 0.85));
       };
-      img.onerror = reject;
+      
+      img.onerror = (error) => {
+        console.error('Image load error:', error);
+        reject(new Error('Görsel yüklenemedi'));
+      };
     });
   }, []);
 
@@ -241,6 +282,60 @@ export default function BlueprintAnalyzer() {
     reader.readAsDataURL(file);
   };
 
+  // Save fonksiyonu
+  const saveAnalysis = async () => {
+    if (!analysisResult || !user) {
+      toast.error("Kaydedilecek analiz bulunamadı");
+      return;
+    }
+
+    try {
+      console.log("💾 Saving analysis to database...");
+      console.log("📊 Analysis result:", analysisResult);
+
+      // ✅ Floor number'ı parse et
+      const floorNumber = parseFloorNumber(analysisResult.project_info.detected_floor);
+      
+      console.log(`🔢 Floor parsing: "${analysisResult.project_info.detected_floor}" → ${floorNumber}`);
+
+      const { data, error } = await supabase
+        .from("blueprint_analyses")
+        .insert({
+          user_id: user.id,
+          analysis_result: analysisResult as any,
+          building_type: analysisResult.project_info.area_type || "unknown",
+          floor_number: floorNumber, // ✅ Parsed integer
+          area_sqm: analysisResult.project_info.estimated_area_sqm || 0,
+          image_size_kb: Math.round((blueprintImage?.length || 0) * 0.75 / 1024),
+          project_name: projectName || null,
+          user_notes: manualNotes || null
+        })
+        .select()
+        .single();
+
+      if (error) {
+        console.error("❌ Database save error:", error);
+        throw error;
+      }
+
+      console.log("✅ Analysis saved successfully:", data.id);
+      
+      toast.success("✅ Analiz başarıyla kaydedildi!", {
+        description: projectName || `Analiz #${data.id.substring(0, 8)}`
+      });
+
+      await fetchHistory();
+
+    } catch (error: any) {
+      console.error("💥 Save operation failed:", error);
+      
+      toast.error("❌ Kaydetme hatası", {
+        description: error.message || "Bilinmeyen hata",
+        duration: 5000
+      });
+    }
+  };
+
   // ✅ Drag & Drop support
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -253,7 +348,7 @@ export default function BlueprintAnalyzer() {
     }
   }, []);
 
-  // ✅ AI Analysis (geliştirilmiş)
+  // ✅ AI Analysis (production-ready)
   const analyzeBlueprint = async () => {
     if (!blueprintImage) {
       toast.error("Lütfen bir kroki görseli yükleyin");
@@ -263,6 +358,11 @@ export default function BlueprintAnalyzer() {
     setLoading(true);
     setLoadingProgress(0);
     setAnalysisResult(null);
+
+    console.log("🚀 Starting blueprint analysis...");
+    console.log("📊 Image size:", Math.round(blueprintImage.length * 0.75 / 1024), "KB");
+    console.log("📝 Project name:", projectName || "(none)");
+    console.log("📝 User notes:", manualNotes || "(none)");
 
     // Loading animation
     let messageIndex = 0;
@@ -275,6 +375,9 @@ export default function BlueprintAnalyzer() {
     }, 2000);
 
     try {
+      // ✅ Call Edge Function
+      console.log("📡 Calling analyze-blueprint Edge Function...");
+      
       const { data, error } = await supabase.functions.invoke("analyze-blueprint", {
         body: { 
           image: blueprintImage,
@@ -286,29 +389,91 @@ export default function BlueprintAnalyzer() {
       clearInterval(interval);
       setLoadingProgress(100);
 
-      if (error) throw new Error(error.message);
-      if (data?.error) throw new Error(data.error);
+      console.log("✅ Edge Function response received");
+      console.log("📦 Response data:", data);
+      console.log("❌ Response error:", error);
+
+      // ✅ Error handling
+      if (error) {
+        console.error("💥 Edge Function error:", error);
+        throw new Error(error.message || "Edge function hatası");
+      }
+
+      if (data?.error) {
+        console.error("💥 API error:", data.error);
+        throw new Error(data.error);
+      }
+
+      if (!data?.analysis) {
+        console.error("💥 No analysis data in response");
+        throw new Error("Analiz verisi alınamadı");
+      }
+
+      console.log("✅ Analysis result received:", {
+        type: data.analysis.project_info.area_type,
+        floor: data.analysis.project_info.detected_floor,
+        area: data.analysis.project_info.estimated_area_sqm,
+        score: data.analysis.compliance_score
+      });
 
       setAnalysisResult(data.analysis);
 
-      // Save to database
-      await supabase.from("blueprint_analyses").insert({
-        user_id: user?.id,
-        analysis_result: data.analysis,
-        building_type: data.analysis.project_info.area_type,
-        floor_number: data.analysis.project_info.detected_floor,
-        area_sqm: data.analysis.project_info.estimated_area_sqm,
-        image_size_kb: data.metadata?.image_size_kb || 0,
-        project_name: projectName || "Adsız Proje",
-        user_notes: manualNotes
-      });
+      // ✅ Save to database with parsing
+      try {
+        console.log("💾 Saving to database...");
 
-      await fetchHistory();
+        const floorNumber = parseFloorNumber(data.analysis.project_info.detected_floor);
+        
+        const insertData = {
+          user_id: user?.id,
+          analysis_result: data.analysis as any,
+          building_type: data.analysis.project_info.area_type || "unknown",
+          floor_number: floorNumber,
+          area_sqm: data.analysis.project_info.estimated_area_sqm || 0,
+          image_size_kb: data.metadata?.image_size_kb || 0,
+          project_name: projectName || "Adsız Proje",
+          user_notes: manualNotes || null
+        };
 
+        console.log("📊 Insert data:", insertData);
+
+        const { data: savedData, error: saveError } = await supabase
+          .from("blueprint_analyses")
+          .insert(insertData)
+          .select()
+          .single();
+
+        if (saveError) {
+          console.error("❌ Database save error:", saveError);
+          console.error("📄 Error details:", {
+            code: saveError.code,
+            message: saveError.message,
+            details: saveError.details,
+            hint: saveError.hint
+          });
+          throw saveError;
+        }
+
+        console.log("✅ Saved to database:", savedData?.id);
+
+        await fetchHistory();
+
+      } catch (saveError: any) {
+        console.error("💥 Save operation failed:", saveError);
+        
+        // Non-critical error, show warning but don't block
+        toast.warning("⚠️ Analiz tamamlandı ama kaydedilemedi", {
+          description: saveError.message || "Veritabanı hatası",
+          duration: 5000
+        });
+      }
+
+      // ✅ Success notification
       toast.success(
         `✅ Analiz tamamlandı! Uygunluk: ${data.analysis.compliance_score}%`,
         {
           duration: 5000,
+          description: `${data.analysis.equipment_inventory.length} ekipman türü tespit edildi`,
           action: {
             label: "ADEP'e Aktar",
             onClick: () => navigate("/adep-wizard", { state: { blueprintData: data.analysis } })
@@ -318,15 +483,48 @@ export default function BlueprintAnalyzer() {
 
       setActiveTab("results");
 
-    } catch (e: any) {
+      console.log("🎉 Analysis completed successfully!");
+
+    } catch (error: any) {
       clearInterval(interval);
-      console.error(e);
-      toast.error(`❌ Analiz hatası: ${e.message}`);
+      
+      console.error("💥 Analysis failed:", error);
+      console.error("📄 Error details:", {
+        name: error.name,
+        message: error.message,
+        stack: error.stack
+      });
+
+      let errorMessage = "Analiz sırasında hata oluştu";
+      let errorDescription = "Lütfen tekrar deneyin";
+
+      // ✅ User-friendly error messages
+      if (error.message?.includes("timeout") || error.message?.includes("timed out")) {
+        errorMessage = "⏱️ İstek zaman aşımına uğradı";
+        errorDescription = "Daha küçük bir görsel deneyin veya internet bağlantınızı kontrol edin";
+      } else if (error.message?.includes("fetch") || error.message?.includes("network")) {
+        errorMessage = "🌐 Sunucuya bağlanılamadı";
+        errorDescription = "İnternet bağlantınızı kontrol edin";
+      } else if (error.message?.includes("CORS")) {
+        errorMessage = "🔒 Güvenlik hatası";
+        errorDescription = "Edge function CORS ayarları kontrol ediliyor";
+      } else if (error.message?.includes("API")) {
+        errorMessage = "🤖 AI servisi hatası";
+        errorDescription = error.message;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+
+      toast.error(errorMessage, {
+        description: errorDescription,
+        duration: 8000
+      });
+
     } finally {
       setLoading(false);
+      console.log("🏁 Analysis process ended");
     }
   };
-
   // ✅ Enhanced PDF Export
   const exportPDF = async () => {
     if (!analysisResult) return;
@@ -632,7 +830,6 @@ export default function BlueprintAnalyzer() {
     toast.success("✅ Profesyonel rapor indirildi!");
   };
 
-  // ✅ Compare with previous analysis
   const loadPreviousAnalysis = async (id: string) => {
     const { data, error } = await supabase
       .from("blueprint_analyses")
@@ -640,11 +837,14 @@ export default function BlueprintAnalyzer() {
       .eq("id", id)
       .single();
 
-        if (!error && data) {
-      // data[0].analysis_result veya ilgili data objesini kendi tipine zorla
+    if (!error && data?.analysis_result) {
+      // ✅ Type assertion ile
       setPreviousAnalysis(data.analysis_result as unknown as AnalysisResult);
       setCompareMode(true);
       toast.success("Önceki analiz yüklendi. Karşılaştırma modu aktif.");
+    } else if (error) {
+      console.error("Load previous analysis error:", error);
+      toast.error("Önceki analiz yüklenemedi");
     }
   };
 
@@ -1001,78 +1201,54 @@ export default function BlueprintAnalyzer() {
           ADEP'e Aktar
         </Button>
         <Dialog open={saveDialogOpen} onOpenChange={setSaveDialogOpen}>
-          <DialogTrigger asChild>
-            <Button variant="outline" className="gap-2">
-              <Save className="h-4 w-4" />
+        <DialogTrigger asChild>
+          <Button variant="outline" className="gap-2">
+            <Save className="h-4 w-4" />
+            Kaydet
+          </Button>
+        </DialogTrigger>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Analizi Kaydet</DialogTitle>
+            <DialogDescription>
+              Bu analizi daha sonra tekrar görüntülemek için kaydedin
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 pt-4">
+            <div>
+              <Label>Proje Adı</Label>
+              <Input
+                value={projectName}
+                onChange={(e) => setProjectName(e.target.value)}
+                placeholder="Örn: ABC Plaza 3. Kat"
+                className="mt-2"
+              />
+            </div>
+            <div>
+              <Label>Notlar</Label>
+              <Textarea
+                value={manualNotes}
+                onChange={(e) => setManualNotes(e.target.value)}
+                placeholder="Ek notlar..."
+                className="mt-2"
+                rows={3}
+              />
+            </div>
+            {/* ✅ Mevcut saveAnalysis fonksiyonunu kullan */}
+            <Button 
+              onClick={async () => {
+                await saveAnalysis();
+                if (!toast.error) { // Hata yoksa kapat
+                  setSaveDialogOpen(false);
+                }
+              }}
+              className="w-full"
+            >
               Kaydet
             </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Analizi Kaydet</DialogTitle>
-              <DialogDescription>
-                Bu analizi daha sonra tekrar görüntülemek için kaydedin
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4 pt-4">
-              <div>
-                <Label>Proje Adı</Label>
-                <Input
-                  value={projectName}
-                  onChange={(e) => setProjectName(e.target.value)}
-                  placeholder="Örn: ABC Plaza 3. Kat"
-                  className="mt-2"
-                />
-              </div>
-              <div>
-                <Label>Notlar</Label>
-                <Textarea
-                  value={manualNotes}
-                  onChange={(e) => setManualNotes(e.target.value)}
-                  placeholder="Ek notlar..."
-                  className="mt-2"
-                  rows={3}
-                />
-              </div>
-              <Button 
-                onClick={async () => {
-                  try {
-                    if (!user?.id || !analysisResult) return;
-
-                    // ✅ Obje yapısını 'any' olarak cast ederek tip uyumsuzluğunu gideriyoruz
-                    const insertData: any = {
-                      user_id: user.id,
-                      analysis_result: analysisResult as any, // 'Json' yerine direkt 'any'
-                      building_type: analysisResult.project_info.area_type,
-                      floor_number: analysisResult.project_info.detected_floor,
-                      area_sqm: analysisResult.project_info.estimated_area_sqm,
-                      // Not: Eğer bu sütunlar Supabase tablonuzda yoksa hata alırsınız.
-                      // Veritabanı şemanızda olduklarından emin olun:
-                      project_name: projectName || "Adsız Proje", 
-                      user_notes: manualNotes || ""
-                    };
-
-                    const { error } = await supabase
-                      .from("blueprint_analyses")
-                      .insert(insertData);
-
-                    if (error) throw error;
-
-                    setSaveDialogOpen(false);
-                    toast.success("✅ Analiz başarıyla kaydedildi");
-                    fetchHistory();
-                  } catch (error: any) {
-                    console.error("Save error:", error);
-                    toast.error(`❌ Kayıt hatası: ${error.message}`);
-                  }
-                }}
-                className="w-full"
-              >
-                Kaydet
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
+          </div>
+        </DialogContent>
+      </Dialog>
       </div>
 
       {/* Main Content Grid */}

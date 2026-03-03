@@ -123,6 +123,8 @@ const App = () => (
               {/* ============================================ */}
               {/* PUBLIC ROUTES */}
               {/* ============================================ */}
+
+              <Route path="/auth" element={<Auth />} />
               <Route
                 path="/auth/login"
                 element={

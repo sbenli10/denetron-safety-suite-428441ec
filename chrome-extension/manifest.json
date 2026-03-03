@@ -12,7 +12,7 @@
   ],
   "host_permissions": [
     "https://isgkatip.csgb.gov.tr/*",
-    "https://*.supabase.co/*"
+    "https://elmdzekyyoepdrpnfppn.supabase.co/*"
   ],
   "background": {
     "service_worker": "background/service-worker.js",

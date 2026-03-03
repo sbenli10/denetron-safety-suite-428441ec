@@ -109,31 +109,23 @@ export default function AuthCallback() {
           </p>
 
           <p style={{marginTop:10}}>
+            Denetron Extension popup'ını açarak özelliklere erişebilirsiniz,Extension'da oturumunuzun aktif olduğunu göreceksiniz.
+          </p>
+
+          <p style={{marginTop:10}}>
+            Extension'da herhangi bir sorun yaşarsanız, bu sayfayı tekrar açarak oturumu yenileyebilirsiniz.
+          </p>
+
+
+          <p style={{marginTop:10}}>
           👉 Devam etmek için <b>tarayıcıdaki Denetron Extension popup'ını açın.</b>
           </p>
 
           <p style={{marginTop:10,fontSize:13,opacity:.7}}>
           Bu sekme otomatik kapanmazsa aşağıdaki butona basabilirsiniz.
           </p>
-
         </div>
-
       )}
-
-      <button
-        onClick={()=>window.close()}
-        style={{
-          marginTop:10,
-          padding:"10px 18px",
-          borderRadius:10,
-          background:"#4f46e5",
-          border:"none",
-          color:"white",
-          cursor:"pointer"
-        }}
-      >
-        Sekmeyi Kapat
-      </button>
 
       <a
         href="/auth/login"

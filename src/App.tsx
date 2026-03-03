@@ -164,6 +164,7 @@ const App = () => (
 
                           <Route path="/isg-bot" element={<ISGBot />} />
                           <Route path="/isg-bot/:tab" element={<ISGBot />} />
+                          <Route path="/docs/isg-bot-setup" element={<ISGBotSetup />} />
 
                           {/* ============================================ */}
                           {/* FINDINGS */}

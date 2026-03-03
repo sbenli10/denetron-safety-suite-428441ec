@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Denetron İSG Operasyon Botu",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Akıllı İSG-KATİP entegrasyonu, compliance kontrol ve risk analizi",
 
   "permissions": [
@@ -15,7 +15,8 @@
 
   "host_permissions": [
     "https://isgkatip.csgb.gov.tr/*",
-    "https://*.supabase.co/*"
+    "https://*.supabase.co/*",
+    "https://denetron-safety-suite-428441ec-lsxuffzgz-sbenli10s-projects.vercel.app/*"
   ],
 
   "background": {
@@ -38,12 +39,6 @@
       "48": "assets/icon-48.png",
       "128": "assets/icon-128.png"
     }
-  },
-
-  "options_page": "options/options.html",
-  "options_ui": {
-    "page": "options/options.html",
-    "open_in_tab": true
   },
 
   "icons": {

@@ -5,24 +5,18 @@
 import { SyncManager } from './sync-manager.js';
 import { RuleEngine } from './rule-engine.js';
 import { QueueManager } from './queue-manager.js';
+import { AuthHandler } from '../auth/auth-handler.js';
 
 class BackgroundService {
   constructor() {
     this.syncManager = new SyncManager();
     this.ruleEngine = new RuleEngine();
     this.queueManager = new QueueManager();
-    this.supabaseUrl = null;
-    this.supabaseKey = null;
+    this.authHandler = new AuthHandler();
   }
 
   async init() {
     console.log('🔧 Background service started');
-
-    // Load config
-    const config = await chrome.storage.local.get(['supabaseUrl', 'supabaseKey', 'orgId']);
-    this.supabaseUrl = config.supabaseUrl;
-    this.supabaseKey = config.supabaseKey;
-    this.orgId = config.orgId;
 
     // Listeners
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -30,10 +24,16 @@ class BackgroundService {
       return true; // Async
     });
 
-    // Alarm for periodic sync
+    // Token refresh alarm
+    chrome.alarms.create('tokenRefresh', { periodInMinutes: 5 });
+    
+    // Periodic sync alarm
     chrome.alarms.create('periodicSync', { periodInMinutes: 30 });
+    
     chrome.alarms.onAlarm.addListener((alarm) => {
-      if (alarm.name === 'periodicSync') {
+      if (alarm.name === 'tokenRefresh') {
+        this.checkAndRefreshToken();
+      } else if (alarm.name === 'periodicSync') {
         this.syncAll();
       }
     });
@@ -57,8 +57,9 @@ class BackgroundService {
           sendResponse({ success: true, result });
           break;
 
-        case 'BULK_DOWNLOAD_PDF':
-          await this.handleBulkDownload(message.data);
+        case 'DENETRON_AUTH_SUCCESS':
+          // Forward to popup
+          chrome.runtime.sendMessage(message);
           sendResponse({ success: true });
           break;
 
@@ -71,8 +72,30 @@ class BackgroundService {
     }
   }
 
+  async checkAndRefreshToken() {
+    const auth = await this.authHandler.getAuth();
+    
+    if (!auth) {
+      return;
+    }
+
+    // Refresh if token expires in < 10 minutes
+    if (Date.now() >= (auth.expiresAt - 10 * 60 * 1000)) {
+      console.log('🔄 Auto-refreshing token...');
+      await this.authHandler.refreshToken();
+    }
+  }
+
   async handleCompanyData(data) {
     try {
+      const token = await this.authHandler.getAccessToken();
+      const user = await this.authHandler.getUser();
+
+      if (!token || !user) {
+        console.error('❌ No auth token available');
+        return;
+      }
+
       // Queue'ya ekle
       await this.queueManager.add({
         type: 'COMPANY_UPDATE',
@@ -84,11 +107,14 @@ class BackgroundService {
       const complianceResult = await this.ruleEngine.checkCompliance(data);
 
       // Supabase'e sync
-      await this.syncManager.syncToSupabase({
-        ...data,
-        compliance: complianceResult,
-        orgId: this.orgId,
-      });
+      await this.syncManager.syncToSupabase(
+        {
+          ...data,
+          compliance: complianceResult,
+          orgId: user.id,
+        },
+        token
+      );
 
       console.log('✅ Company data processed:', data.sgkNo);
     } catch (error) {
@@ -100,10 +126,17 @@ class BackgroundService {
     console.log('🔄 Starting full sync...');
     
     try {
+      const token = await this.authHandler.getAccessToken();
+      
+      if (!token) {
+        console.error('❌ No auth token for sync');
+        return;
+      }
+
       const items = await this.queueManager.getAll();
       
       for (const item of items) {
-        await this.syncManager.syncToSupabase(item.data);
+        await this.syncManager.syncToSupabase(item.data, token);
         await this.queueManager.remove(item.id);
       }
 
@@ -112,23 +145,10 @@ class BackgroundService {
       console.error('❌ Sync error:', error);
     }
   }
-
-  async handleBulkDownload(companies) {
-    for (const company of companies) {
-      try {
-        const filename = `${company.sgkNo}_${company.companyName}_${new Date().toISOString().split('T')[0]}.pdf`;
-        
-        // İSG-KATİP'ten PDF URL'sini al ve indir
-        // Bu kısım İSG-KATİP API'sine göre özelleştirilmeli
-        
-        console.log(`✅ Downloaded: ${filename}`);
-      } catch (error) {
-        console.error(`❌ Download failed for ${company.sgkNo}:`, error);
-      }
-    }
-  }
 }
 
-// Init
-const backgroundService = new BackgroundService();
-backgroundService.init();
+// Initialize
+const service = new BackgroundService();
+service.init();
+
+console.log('🟢 Background service loaded');

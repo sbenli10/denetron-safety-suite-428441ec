@@ -1,533 +1,289 @@
 // ====================================================
-// POPUP LOGIC - AUTO-CONFIG + OAUTH READY
+// POPUP LOGIC - OAUTH AUTHENTICATION
 // ====================================================
+
+import { AuthHandler } from '../auth/auth-handler.js';
 
 class PopupController {
   constructor() {
+    this.authHandler = new AuthHandler();
     this.stats = {
       totalCompanies: 0,
       warningCount: 0,
       criticalCount: 0,
     };
-    this.activities = [];
-    this.authenticated = false;
-    this.config = null;
   }
 
   async init() {
     console.log('🚀 Popup initialized');
 
-    // Check authentication
-    const isConfigured = await this.checkConfiguration();
+    this.showLoading();
 
-    if (!isConfigured) {
-      this.showConfigurationRequired();
+    // Check for auth from localStorage (fallback)
+    await this.checkLocalStorageAuth();
+
+    // Check authentication
+    const isAuth = await this.authHandler.isAuthenticated();
+
+    if (!isAuth) {
+      this.showAuthScreen();
       return;
     }
 
-    this.authenticated = true;
+    // Show main app
+    await this.showMainApp();
+  }
 
-    // Load stats
-    await this.loadStats();
+  // ====================================================
+  // CHECK LOCALSTORAGE AUTH (FALLBACK)
+  // ====================================================
+
+  async checkLocalStorageAuth() {
+    try {
+      // Query all tabs for auth data
+      const tabs = await chrome.tabs.query({
+        url: 'https://denetron-safety-suite-428441ec-lsxuffzgz-sbenli10s-projects.vercel.app/*'
+      });
+
+      for (const tab of tabs) {
+        if (!tab.id) continue;
+
+        try {
+          const result = await chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            func: () => {
+              const authData = localStorage.getItem('denetron_extension_auth');
+              if (authData) {
+                localStorage.removeItem('denetron_extension_auth');
+                return JSON.parse(authData);
+              }
+              return null;
+            }
+          });
+
+          if (result && result[0]?.result) {
+            console.log('✅ Auth found in localStorage');
+            await this.authHandler.saveAuth(result[0].result);
+            return;
+          }
+        } catch (err) {
+          console.warn('Could not access tab:', tab.id);
+        }
+      }
+    } catch (error) {
+      console.error('❌ LocalStorage check error:', error);
+    }
+  }
+
+  // ====================================================
+  // SCREEN MANAGEMENT
+  // ====================================================
+
+  showLoading() {
+    document.getElementById('loadingScreen').style.display = 'flex';
+    document.getElementById('authScreen').style.display = 'none';
+    document.getElementById('mainApp').style.display = 'none';
+  }
+
+  showAuthScreen() {
+    document.getElementById('loadingScreen').style.display = 'none';
+    document.getElementById('authScreen').style.display = 'flex';
+    document.getElementById('mainApp').style.display = 'none';
+
+    // Setup login button
+    document.getElementById('btnLogin').addEventListener('click', () => {
+      this.handleLogin();
+    });
+  }
+
+  async showMainApp() {
+    document.getElementById('loadingScreen').style.display = 'none';
+    document.getElementById('authScreen').style.display = 'none';
+    document.getElementById('mainApp').style.display = 'block';
 
     // Setup event listeners
     this.setupEventListeners();
 
-    // Load recent activities
+    // Load data
+    await this.loadStats();
     await this.loadActivities();
-
-    // Update UI
-    this.updateUI();
-
-    console.log('✅ Popup ready');
   }
 
-  async checkConfiguration() {
-    try {
-      const config = await chrome.storage.local.get([
-        'supabaseUrl',
-        'supabaseKey',
-        'orgId',
-        'userId',
-        'autoConfigured',
-      ]);
+  // ====================================================
+  // AUTHENTICATION
+  // ====================================================
 
-      this.config = config;
-
-      // Check if all required fields exist
-      if (!config.supabaseUrl || !config.supabaseKey) {
-        console.warn('⚠️ Configuration missing');
-        return false;
-      }
-
-      // Validate URL format
-      if (!config.supabaseUrl.includes('supabase.co')) {
-        console.error('❌ Invalid Supabase URL');
-        return false;
-      }
-
-      console.log('✅ Configuration valid');
-      return true;
-    } catch (error) {
-      console.error('❌ Config check error:', error);
-      return false;
-    }
+  handleLogin() {
+    const loginUrl = this.authHandler.getLoginUrl();
+    chrome.tabs.create({ url: loginUrl });
+    
+    // Listen for auth callback
+    this.listenForAuth();
+    
+    // Close popup after opening login (user will reopen after login)
+    setTimeout(() => window.close(), 500);
   }
 
-  showConfigurationRequired() {
-    const container = document.querySelector('.container');
-    if (!container) return;
-
-    container.innerHTML = `
-      <div class="config-required">
-        <div class="config-icon">⚙️</div>
-        <h2>Yapılandırma Gerekli</h2>
-        <p>Extension'ı kullanmak için ayarları yapılandırmanız gerekiyor.</p>
+  listenForAuth() {
+    // Listen for messages from web app
+    const messageListener = async (message, sender, sendResponse) => {
+      if (message.type === 'DENETRON_AUTH_SUCCESS') {
+        console.log('✅ Auth success received');
         
-        <button id="openSettingsBtn" class="btn btn-primary">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="3"></circle>
-            <path d="M12 1v6m0 6v6m0-18l-3 3m3-3l3 3m-3 15l-3-3m3 3l3-3M1 12h6m6 0h6M1 12l3-3m-3 3l3 3m18-3l-3-3m3 3l-3 3"></path>
-          </svg>
-          Ayarları Aç
-        </button>
+        // Save auth data
+        await this.authHandler.saveAuth(message.data);
+        
+        // Reload popup
+        window.location.reload();
+        
+        sendResponse({ success: true });
+      }
+    };
 
-        <div class="config-help">
-          <p class="help-text">
-            <strong>Otomatik yapılandırma çalışmadı mı?</strong><br>
-            Ayarlar sayfasından Supabase bilgilerinizi manuel olarak girebilirsiniz.
-          </p>
-        </div>
-      </div>
+    chrome.runtime.onMessage.addListener(messageListener);
 
-      <style>
-        .config-required {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          padding: 40px 20px;
-          text-align: center;
-        }
+    // Auto-remove listener after 5 minutes
+    setTimeout(() => {
+      chrome.runtime.onMessage.removeListener(messageListener);
+    }, 5 * 60 * 1000);
+  }
 
-        .config-icon {
-          font-size: 64px;
-          margin-bottom: 20px;
-          animation: pulse 2s infinite;
-        }
+  async handleLogout() {
+    if (!confirm('Çıkış yapmak istediğinizden emin misiniz?')) {
+      return;
+    }
 
-        @keyframes pulse {
-          0%, 100% { opacity: 1; transform: scale(1); }
-          50% { opacity: 0.8; transform: scale(1.05); }
-        }
+    await this.authHandler.clearAuth();
+    window.location.reload();
+  }
 
-        .config-required h2 {
-          font-size: 20px;
-          font-weight: 600;
-          margin-bottom: 8px;
-          color: #1e293b;
-        }
+  // ====================================================
+  // EVENT LISTENERS
+  // ====================================================
 
-        .config-required p {
-          font-size: 14px;
-          color: #64748b;
-          margin-bottom: 24px;
-          max-width: 280px;
-        }
+  setupEventListeners() {
+    // Logout
+    document.getElementById('btnLogout')?.addEventListener('click', () => {
+      this.handleLogout();
+    });
 
-        .config-help {
-          margin-top: 24px;
-          padding: 16px;
-          background: #f1f5f9;
-          border-radius: 8px;
-          max-width: 320px;
-        }
+    // Sync
+    document.getElementById('btnSync')?.addEventListener('click', () => {
+      this.handleSync();
+    });
 
-        .help-text {
-          font-size: 12px;
-          color: #475569;
-          line-height: 1.6;
-        }
-
-        .help-text strong {
-          color: #1e293b;
-        }
-      </style>
-    `;
-
-    // Setup settings button
-    document.getElementById('openSettingsBtn')?.addEventListener('click', () => {
-      this.openSettings();
+    // Open Dashboard
+    document.getElementById('btnOpenDashboard')?.addEventListener('click', () => {
+      chrome.tabs.create({
+        url: 'https://denetron-safety-suite-428441ec-lsxuffzgz-sbenli10s-projects.vercel.app/isg-bot'
+      });
     });
   }
 
+  // ====================================================
+  // DATA LOADING
+  // ====================================================
+
   async loadStats() {
     try {
-      // Get stats from background
-      const response = await chrome.runtime.sendMessage({
-        type: 'GET_STATS',
-      });
+      const token = await this.authHandler.getAccessToken();
+      const user = await this.authHandler.getUser();
 
-      if (response && response.success) {
-        this.stats = response.stats;
-        console.log('✅ Stats loaded:', this.stats);
-      } else {
-        console.warn('⚠️ Stats not available yet');
-        // Use default stats
-        this.stats = {
-          totalCompanies: 0,
-          warningCount: 0,
-          criticalCount: 0,
-        };
+      if (!token || !user) {
+        throw new Error('No auth token');
       }
-    } catch (error) {
-      console.error('❌ Stats load error:', error);
-      // Fallback to default stats
+
+      // Call Supabase function
+      const response = await fetch(
+        `https://elmdzekyyoepdrnfppn.supabase.co/functions/v1/compliance-check`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            action: 'GET_DASHBOARD',
+            data: {
+              orgId: user.id,
+            },
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error('API call failed');
+      }
+
+      const data = await response.json();
+
       this.stats = {
-        totalCompanies: 0,
-        warningCount: 0,
-        criticalCount: 0,
+        totalCompanies: data.stats?.totalCompanies || 0,
+        warningCount: data.stats?.warningCount || 0,
+        criticalCount: data.stats?.criticalCount || 0,
       };
+
+      this.updateStatsUI();
+    } catch (error) {
+      console.error('❌ Load stats error:', error);
+      this.stats = { totalCompanies: 0, warningCount: 0, criticalCount: 0 };
+      this.updateStatsUI();
     }
+  }
+
+  updateStatsUI() {
+    document.getElementById('totalCompanies').textContent = this.stats.totalCompanies;
+    document.getElementById('warningCount').textContent = this.stats.warningCount;
+    document.getElementById('criticalCount').textContent = this.stats.criticalCount;
   }
 
   async loadActivities() {
-    try {
-      const response = await chrome.runtime.sendMessage({
-        type: 'GET_RECENT_ACTIVITIES',
-        limit: 5,
-      });
-
-      if (response && response.success) {
-        this.activities = response.activities || [];
-        console.log('✅ Activities loaded:', this.activities.length);
-      } else {
-        console.warn('⚠️ Activities not available yet');
-        this.activities = [];
-      }
-    } catch (error) {
-      console.error('❌ Activities load error:', error);
-      this.activities = [];
-    }
-  }
-
-  setupEventListeners() {
-    // Sync button
-    const btnSync = document.getElementById('btnSync');
-    if (btnSync) {
-      btnSync.addEventListener('click', () => this.handleSync());
-    }
-
-    // Bulk assign button
-    const btnBulkAssign = document.getElementById('btnBulkAssign');
-    if (btnBulkAssign) {
-      btnBulkAssign.addEventListener('click', () => this.handleBulkAssign());
-    }
-
-    // Bulk download button
-    const btnBulkDownload = document.getElementById('btnBulkDownload');
-    if (btnBulkDownload) {
-      btnBulkDownload.addEventListener('click', () => this.handleBulkDownload());
-    }
-
-    // Compliance button
-    const btnCompliance = document.getElementById('btnCompliance');
-    if (btnCompliance) {
-      btnCompliance.addEventListener('click', () => this.handleComplianceCheck());
-    }
-
-    // Dashboard link
-    const openDashboard = document.getElementById('openDashboard');
-    if (openDashboard) {
-      openDashboard.addEventListener('click', (e) => {
-        e.preventDefault();
-        this.openDashboard();
-      });
-    }
-
-    // Settings link
-    const openSettings = document.getElementById('openSettings');
-    if (openSettings) {
-      openSettings.addEventListener('click', (e) => {
-        e.preventDefault();
-        this.openSettings();
-      });
-    }
-  }
-
-  updateUI() {
-    // Update stats
-    const totalCompaniesEl = document.getElementById('totalCompanies');
-    if (totalCompaniesEl) {
-      totalCompaniesEl.textContent = this.stats.totalCompanies;
-    }
-
-    const warningCountEl = document.getElementById('warningCount');
-    if (warningCountEl) {
-      warningCountEl.textContent = this.stats.warningCount;
-    }
-
-    const criticalCountEl = document.getElementById('criticalCount');
-    if (criticalCountEl) {
-      criticalCountEl.textContent = this.stats.criticalCount;
-    }
-
-    // Update activities
+    // TODO: Load recent activities from storage
     const activityList = document.getElementById('activityList');
-    if (!activityList) return;
-
-    if (this.activities.length === 0) {
-      activityList.innerHTML = '<div class="activity-empty">Henüz işlem yok</div>';
-    } else {
-      activityList.innerHTML = this.activities
-        .map(
-          (activity) => `
-          <div class="activity-item">
-            <div class="activity-icon">${this.getActivityIcon(activity.type)}</div>
-            <div class="activity-text">${activity.message}</div>
-            <div class="activity-time">${this.formatTime(activity.timestamp)}</div>
-          </div>
-        `
-        )
-        .join('');
-    }
-
-    console.log('✅ UI updated');
+    activityList.innerHTML = '<p class="empty-state">Henüz işlem yok</p>';
   }
+
+  // ====================================================
+  // ACTIONS
+  // ====================================================
 
   async handleSync() {
-    this.showStatus('Senkronize ediliyor...', 'loading');
+    const btn = document.getElementById('btnSync');
+    const originalText = btn.innerHTML;
 
     try {
-      const response = await chrome.runtime.sendMessage({
-        type: 'SYNC_NOW',
-      });
+      btn.disabled = true;
+      btn.innerHTML = '<div class="spinner"></div> Senkronize ediliyor...';
 
-      if (response && response.success) {
-        this.showStatus('Senkronizasyon tamamlandı', 'success');
-        await this.loadStats();
-        this.updateUI();
-      } else {
-        throw new Error(response?.error || 'Sync failed');
-      }
+      // Send sync message to background
+      await chrome.runtime.sendMessage({ type: 'SYNC_NOW' });
+
+      // Reload stats
+      await this.loadStats();
+
+      btn.innerHTML = '✅ Tamamlandı!';
+      
+      setTimeout(() => {
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+      }, 2000);
     } catch (error) {
       console.error('❌ Sync error:', error);
-      this.showStatus('Senkronizasyon hatası', 'error');
-    }
-  }
-
-  async handleBulkAssign() {
-    this.showStatus('Toplu atama başlatılıyor...', 'loading');
-
-    try {
-      // Get current tab
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-
-      if (!tab.url || !tab.url.includes('isgkatip.csgb.gov.tr')) {
-        this.showStatus('İSG-KATİP sayfasında olmalısınız', 'error');
-        return;
-      }
-
-      // Get selected companies from content script
-      const response = await chrome.tabs.sendMessage(tab.id, {
-        type: 'GET_SELECTED_COMPANIES',
-      });
-
-      if (!response || !response.data || response.data.length === 0) {
-        this.showStatus('Lütfen firma seçin', 'error');
-        return;
-      }
-
-      // Prompt for expert selection
-      const expertId = prompt('Uzman ID girin:');
-      if (!expertId) {
-        this.showStatus('Atama iptal edildi', 'info');
-        return;
-      }
-
-      // Perform bulk assignment
-      const assignResponse = await chrome.tabs.sendMessage(tab.id, {
-        type: 'BULK_ASSIGN',
-        payload: {
-          companies: response.data,
-          expertId,
-        },
-      });
-
-      if (assignResponse && assignResponse.success) {
-        this.showStatus(`${response.data.length} firma atandı`, 'success');
-      } else {
-        throw new Error(assignResponse?.error || 'Assignment failed');
-      }
-    } catch (error) {
-      console.error('❌ Bulk assign error:', error);
-      this.showStatus('Atama hatası', 'error');
-    }
-  }
-
-  async handleBulkDownload() {
-    this.showStatus('İndirme başlatılıyor...', 'loading');
-
-    try {
-      const response = await chrome.runtime.sendMessage({
-        type: 'BULK_DOWNLOAD_PDF',
-        data: {
-          orgId: this.config.orgId,
-        },
-      });
-
-      if (response && response.success) {
-        this.showStatus('İndirme tamamlandı', 'success');
-      } else {
-        throw new Error(response?.error || 'Download failed');
-      }
-    } catch (error) {
-      console.error('❌ Download error:', error);
-      this.showStatus('İndirme hatası', 'error');
-    }
-  }
-
-  async handleComplianceCheck() {
-    this.showStatus('Compliance kontrol ediliyor...', 'loading');
-
-    try {
-      const response = await chrome.runtime.sendMessage({
-        type: 'RUN_COMPLIANCE_CHECK',
-        data: {
-          orgId: this.config.orgId,
-        },
-      });
-
-      if (response && response.success) {
-        this.showStatus('Kontrol tamamlandı', 'success');
-
-        // Show summary
-        const summary = response.summary || {
-          compliant: 0,
-          warning: 0,
-          critical: 0,
-        };
-
-        alert(
-          `Compliance Özeti:\n\n` +
-            `✅ Uyumlu: ${summary.compliant}\n` +
-            `⚠️ Uyarı: ${summary.warning}\n` +
-            `❌ Kritik: ${summary.critical}`
-        );
-
-        await this.loadStats();
-        this.updateUI();
-      } else {
-        throw new Error(response?.error || 'Compliance check failed');
-      }
-    } catch (error) {
-      console.error('❌ Compliance check error:', error);
-      this.showStatus('Kontrol hatası', 'error');
-    }
-  }
-
-  openDashboard() {
-    // Try multiple dashboard URLs
-    const dashboardUrls = [
-      'http://localhost:8080/isg-bot',
-      'https://app.denetron.com/isg-bot',
-      chrome.runtime.getURL('dashboard.html'),
-    ];
-
-    // Use first available URL (in production, use actual domain)
-    chrome.tabs.create({ url: dashboardUrls[0] });
-  }
-
-  openSettings() {
-    try {
-      chrome.runtime.openOptionsPage();
-    } catch (error) {
-      console.error('❌ Open settings error:', error);
-      // Fallback: open in new tab
-      chrome.tabs.create({ url: chrome.runtime.getURL('options/options.html') });
-    }
-  }
-
-  showStatus(message, type = 'info') {
-    const statusEl = document.getElementById('status');
-    if (!statusEl) return;
-
-    const statusDot = statusEl.querySelector('.status-dot');
-    const statusText = statusEl.querySelector('.status-text');
-
-    if (statusText) {
-      statusText.textContent = message;
-    }
-
-    // Update dot color
-    if (statusDot) {
-      statusDot.style.background =
-        type === 'success'
-          ? '#10b981'
-          : type === 'error'
-          ? '#ef4444'
-          : type === 'loading'
-          ? '#f59e0b'
-          : '#3b82f6';
-    }
-
-    console.log(`[${type.toUpperCase()}] ${message}`);
-
-    // Reset after 3 seconds (except for loading)
-    if (type !== 'loading') {
+      btn.innerHTML = '❌ Hata!';
+      
       setTimeout(() => {
-        if (statusText) statusText.textContent = 'Hazır';
-        if (statusDot) statusDot.style.background = '#10b981';
-      }, 3000);
-    }
-  }
-
-  getActivityIcon(type) {
-    const icons = {
-      sync: '🔄',
-      assign: '👤',
-      download: '📥',
-      compliance: '✅',
-      error: '❌',
-      info: 'ℹ️',
-    };
-
-    return icons[type] || '•';
-  }
-
-  formatTime(timestamp) {
-    if (!timestamp) return 'Bilinmiyor';
-
-    try {
-      const date = new Date(timestamp);
-      const now = new Date();
-      const diff = now - date;
-
-      const minutes = Math.floor(diff / 60000);
-      const hours = Math.floor(diff / 3600000);
-      const days = Math.floor(diff / 86400000);
-
-      if (minutes < 1) return 'Az önce';
-      if (minutes < 60) return `${minutes}dk önce`;
-      if (hours < 24) return `${hours}s önce`;
-      return `${days}g önce`;
-    } catch (error) {
-      return 'Bilinmiyor';
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+      }, 2000);
     }
   }
 }
 
 // ====================================================
-// INITIALIZE POPUP
+// INITIALIZE
 // ====================================================
 
-// Wait for DOM to be ready
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', () => {
-    const popup = new PopupController();
-    popup.init();
-  });
-} else {
-  const popup = new PopupController();
-  popup.init();
-}
+document.addEventListener('DOMContentLoaded', () => {
+  const controller = new PopupController();
+  controller.init();
+});

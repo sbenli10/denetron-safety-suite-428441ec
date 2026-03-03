@@ -7,83 +7,103 @@
   <link rel="stylesheet" href="popup.css">
 </head>
 <body>
-  <div class="container">
-    <!-- Header -->
-    <header class="header">
-      <div class="logo">
-        <img src="../assets/icon-48.png" alt="Denetron" />
-        <h1>Denetron İSG Bot</h1>
+  <div class="container" id="app">
+    <!-- AUTH SCREEN -->
+    <div id="authScreen" class="auth-screen" style="display: none;">
+      <div class="auth-content">
+        <div class="auth-logo">
+          <img src="../assets/icon-128.png" alt="Denetron" />
+        </div>
+        <h2>Denetron İSG Bot</h2>
+        <p class="auth-subtitle">Devam etmek için giriş yapın</p>
+        
+        <button class="btn btn-primary btn-large" id="btnLogin">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"></path>
+            <polyline points="10 17 15 12 10 7"></polyline>
+            <line x1="15" y1="12" x2="3" y2="12"></line>
+          </svg>
+          Denetron'a Giriş Yap
+        </button>
+
+        <p class="auth-help">
+          Denetron hesabınızla giriş yaparak<br>
+          İSG Bot'u kullanmaya başlayın
+        </p>
       </div>
-      <div class="status" id="status">
-        <span class="status-dot"></span>
-        <span class="status-text">Hazır</span>
-      </div>
-    </header>
+    </div>
 
-    <!-- Stats -->
-    <section class="stats-grid" id="stats">
-      <div class="stat-card">
-        <div class="stat-label">Toplam Firma</div>
-        <div class="stat-value" id="totalCompanies">-</div>
-      </div>
-      <div class="stat-card warning">
-        <div class="stat-label">Uyarı</div>
-        <div class="stat-value" id="warningCount">-</div>
-      </div>
-      <div class="stat-card critical">
-        <div class="stat-label">Kritik</div>
-        <div class="stat-value" id="criticalCount">-</div>
-      </div>
-    </section>
+    <!-- MAIN APP (existing) -->
+    <div id="mainApp" style="display: none;">
+      <!-- Header -->
+      <header class="header">
+        <div class="logo">
+          <img src="../assets/icon-48.png" alt="Denetron" />
+          <h1>Denetron İSG Bot</h1>
+        </div>
+        <div class="header-actions">
+          <button class="btn-icon" id="btnLogout" title="Çıkış Yap">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+              <polyline points="16 17 21 12 16 7"></polyline>
+              <line x1="21" y1="12" x2="9" y2="12"></line>
+            </svg>
+          </button>
+        </div>
+      </header>
 
-    <!-- Actions -->
-    <section class="actions">
-      <h2>İşlemler</h2>
-      
-      <button class="btn btn-primary" id="btnSync">
-        <svg class="icon" viewBox="0 0 24 24">
-          <path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/>
-        </svg>
-        Hemen Senkronize Et
-      </button>
+      <!-- Stats -->
+      <section class="stats-grid" id="stats">
+        <div class="stat-card">
+          <div class="stat-label">Toplam Firma</div>
+          <div class="stat-value" id="totalCompanies">-</div>
+        </div>
+        <div class="stat-card warning">
+          <div class="stat-label">Uyarı</div>
+          <div class="stat-value" id="warningCount">-</div>
+        </div>
+        <div class="stat-card critical">
+          <div class="stat-label">Kritik</div>
+          <div class="stat-value" id="criticalCount">-</div>
+        </div>
+      </section>
 
-      <button class="btn btn-secondary" id="btnBulkAssign">
-        <svg class="icon" viewBox="0 0 24 24">
-          <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/>
-        </svg>
-        Toplu Atama Yap
-      </button>
+      <!-- Actions -->
+      <section class="actions">
+        <h2>İşlemler</h2>
+        
+        <button class="btn btn-primary" id="btnSync">
+          <svg class="icon" viewBox="0 0 24 24">
+            <path d="M12 4V1L8 5l4 4V6c3.31 0 6 2.69 6 6 0 1.01-.25 1.97-.7 2.8l1.46 1.46C19.54 15.03 20 13.57 20 12c0-4.42-3.58-8-8-8zm0 14c-3.31 0-6-2.69-6-6 0-1.01.25-1.97.7-2.8L5.24 7.74C4.46 8.97 4 10.43 4 12c0 4.42 3.58 8 8 8v3l4-4-4-4v3z"/>
+          </svg>
+          Hemen Senkronize Et
+        </button>
 
-      <button class="btn btn-secondary" id="btnBulkDownload">
-        <svg class="icon" viewBox="0 0 24 24">
-          <path d="M19 12v7H5v-7H3v7c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2v-7h-2zm-6 .67l2.59-2.58L17 11.5l-5 5-5-5 1.41-1.41L11 12.67V3h2z"/>
-        </svg>
-        Sözleşmeleri İndir
-      </button>
+        <button class="btn btn-secondary" id="btnOpenDashboard">
+          <svg class="icon" viewBox="0 0 24 24">
+            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+            <polyline points="9 22 9 12 15 12 15 22"></polyline>
+          </svg>
+          Dashboard'ı Aç
+        </button>
+      </section>
 
-      <button class="btn btn-accent" id="btnCompliance">
-        <svg class="icon" viewBox="0 0 24 24">
-          <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm-2 16l-4-4 1.41-1.41L10 14.17l6.59-6.59L18 9l-8 8z"/>
-        </svg>
-        Compliance Kontrol
-      </button>
-    </section>
+      <!-- Recent Activity -->
+      <section class="activity">
+        <h2>Son İşlemler</h2>
+        <div id="activityList" class="activity-list">
+          <p class="empty-state">Henüz işlem yok</p>
+        </div>
+      </section>
+    </div>
 
-    <!-- Recent Activity -->
-    <section class="activity">
-      <h2>Son İşlemler</h2>
-      <div class="activity-list" id="activityList">
-        <div class="activity-empty">Henüz işlem yok</div>
-      </div>
-    </section>
-
-    <!-- Footer -->
-    <footer class="footer">
-      <a href="#" id="openDashboard">Dashboard'ı Aç</a>
-      <a href="#" id="openSettings">Ayarlar</a>
-    </footer>
+    <!-- LOADING -->
+    <div id="loadingScreen" class="loading-screen">
+      <div class="spinner"></div>
+      <p>Yükleniyor...</p>
+    </div>
   </div>
 
-  <script src="popup.js"></script>
+  <script type="module" src="popup.js"></script>
 </body>
 </html>

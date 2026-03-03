@@ -124,7 +124,7 @@ const App = () => (
               {/* PUBLIC ROUTES */}
               {/* ============================================ */}
               <Route
-                path="/auth"
+                path="/auth/login"
                 element={
                   <Suspense fallback={<PageLoader />}>
                     <Auth />

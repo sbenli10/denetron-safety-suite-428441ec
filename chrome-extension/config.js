@@ -4,7 +4,7 @@
 
 export const CONFIG = {
   supabaseUrl: 'https://elmdzekyyoepdrnfppn.supabase.co',
-  webAppUrl: 'https://denetron-safety-suite-428441ec-lsxuffzgz-sbenli10s-projects.vercel.app',
+  webAppUrl: 'https://www.denetron.me',
 };
 
 console.log('🟢 Config loaded');

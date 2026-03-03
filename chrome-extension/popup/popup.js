@@ -38,11 +38,13 @@ class PopupController {
   // CHECK LOCALSTORAGE AUTH (FALLBACK)
   // ====================================================
 
+  // İlgili satırları bul ve değiştir:
+
   async checkLocalStorageAuth() {
     try {
       // Query all tabs for auth data
       const tabs = await chrome.tabs.query({
-        url: 'https://denetron-safety-suite-428441ec-lsxuffzgz-sbenli10s-projects.vercel.app/*'
+        url: ['https://www.denetron.me/*', 'https://denetron.me/*']
       });
 
       for (const tab of tabs) {
@@ -73,6 +75,27 @@ class PopupController {
     } catch (error) {
       console.error('❌ LocalStorage check error:', error);
     }
+  }
+
+  // ...
+
+  setupEventListeners() {
+    // Logout
+    document.getElementById('btnLogout')?.addEventListener('click', () => {
+      this.handleLogout();
+    });
+
+    // Sync
+    document.getElementById('btnSync')?.addEventListener('click', () => {
+      this.handleSync();
+    });
+
+    // Open Dashboard
+    document.getElementById('btnOpenDashboard')?.addEventListener('click', () => {
+      chrome.tabs.create({
+        url: 'https://www.denetron.me/isg-bot'
+      });
+    });
   }
 
   // ====================================================

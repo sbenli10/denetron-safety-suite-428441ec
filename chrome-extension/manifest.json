@@ -15,8 +15,9 @@
 
   "host_permissions": [
     "https://isgkatip.csgb.gov.tr/*",
-    "https://*.supabase.co/*",
-    "https://denetron-safety-suite-428441ec-lsxuffzgz-sbenli10s-projects.vercel.app/*"
+    "https://elmdzekyyoepdrpnfppn.supabase.co/*",
+    "https://www.denetron.me/*",
+    "https://denetron.me/*"
   ],
 
   "background": {

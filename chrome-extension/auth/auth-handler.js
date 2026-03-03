@@ -5,6 +5,7 @@
 export class AuthHandler {
   constructor() {
     this.supabaseUrl = 'https://elmdzekyyoepdrnfppn.supabase.co';
+    this.webAppUrl = 'https://www.denetron.me';
     this.storageKey = 'denetron_auth';
   }
 
@@ -150,6 +151,6 @@ export class AuthHandler {
   // ====================================================
 
   getLoginUrl() {
-    return 'https://denetron-safety-suite-428441ec-lsxuffzgz-sbenli10s-projects.vercel.app/auth/login?ext=true';
+    return `${this.webAppUrl}/auth/login?ext=true`;
   }
 }

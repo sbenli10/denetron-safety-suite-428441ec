@@ -24,7 +24,6 @@ export default function AuthCallback() {
         navigate('/');
         return;
       }
-
       // Get session
       const { data: { session }, error } = await supabase.auth.getSession();
 

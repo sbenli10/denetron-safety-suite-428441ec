@@ -1,125 +1,160 @@
-// ====================================================
-// AUTH CALLBACK FOR CHROME EXTENSION (DEBUG VERSION)
-// ====================================================
-
-import { useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { supabase } from '@/integrations/supabase/client';
+import { useEffect, useState } from "react";
+import { supabase } from "@/integrations/supabase/client";
 
 export default function AuthCallback() {
-  const navigate = useNavigate();
 
-  useEffect(() => {
-    handleAuthCallback();
-  }, []);
+  const [status,setStatus] = useState("Giriş doğrulanıyor...");
+  const [success,setSuccess] = useState(false);
 
-  const handleAuthCallback = async () => {
-    console.log("🔥 AuthCallback started");
+  useEffect(()=>{
+    handleCallback();
+  },[]);
 
-    try {
-      const urlParams = new URLSearchParams(window.location.search);
-      const isExtension = urlParams.get('ext') === 'true';
+  const handleCallback = async () => {
 
-      console.log("🔎 URL:", window.location.href);
-      console.log("🔎 isExtension:", isExtension);
-      console.log("🔎 chrome.runtime exists:", !!(window as any).chrome?.runtime);
+    try{
 
-      if (!isExtension) {
-        console.log("➡️ Regular web login, redirecting...");
-        navigate('/');
+      const params = new URLSearchParams(window.location.search);
+      const isExtension = params.get("ext") === "true";
+
+      if(!isExtension){
+        window.location.href="/";
         return;
       }
 
-      console.log("🔐 Getting session from Supabase...");
+      // session bazen geç gelir
+      for(let i=0;i<8;i++){
 
-      const { data: { session }, error } = await supabase.auth.getSession();
+        const {data,error} = await supabase.auth.getSession();
 
-      console.log("📦 Session result:", session);
-      console.log("❌ Session error:", error);
+        if(data?.session){
 
-      if (error) {
-        throw error;
-      }
+          const session = data.session;
 
-      if (!session) {
-        console.log("⏳ Session not ready, retrying in 500ms...");
-        setTimeout(handleAuthCallback, 500);
-        return;
-      }
-
-      console.log("✅ Session found, sending to extension...");
-
-      if ((window as any).chrome?.runtime) {
-        console.log("📡 Sending message to extension...");
-
-        (window as any).chrome.runtime.sendMessage(
-          {
-            type: 'DENETRON_AUTH_SUCCESS',
-            data: {
-              access_token: session.access_token,
-              refresh_token: session.refresh_token,
-              expires_in: session.expires_in,
-              user: session.user,
-            },
-          },
-          (response: any) => {
-            console.log("📨 Extension response:", response);
-
-            if ((window as any).chrome.runtime.lastError) {
-              console.error("❌ Runtime error:",
-                (window as any).chrome.runtime.lastError);
-            }
-
-            console.log("🚪 Closing tab...");
-            window.close();
-          }
-        );
-      } else {
-        console.log("⚠️ chrome.runtime not available, using fallback");
-
-        localStorage.setItem(
-          'denetron_extension_auth',
-          JSON.stringify({
+          const payload = {
             access_token: session.access_token,
             refresh_token: session.refresh_token,
             expires_in: session.expires_in,
-            user: session.user,
-          })
-        );
+            user: session.user
+          };
 
-        alert('✅ Giriş başarılı! Extension popup\'ını açın.');
+          // extension'a aktarmak için localStorage
+          localStorage.setItem(
+            "denetron_extension_auth",
+            JSON.stringify(payload)
+          );
+
+          setSuccess(true);
+          setStatus("Giriş başarılı!");
+
+          // otomatik kapatma denemesi
+          setTimeout(()=>{
+            window.close();
+          },1500);
+
+          return;
+        }
+
+        await new Promise(r=>setTimeout(r,400));
+
       }
 
-    } catch (error) {
-      console.error("💥 Auth callback error:", error);
-      alert("Auth callback error. Console'a bak.");
+      setStatus("Session alınamadı");
+
+    }catch(e){
+
+      console.error(e);
+      setStatus("Giriş sırasında hata oluştu");
+
     }
+
   };
 
   return (
+
     <div style={{
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      minHeight: '100vh',
-      flexDirection: 'column',
-      gap: '1rem'
+      minHeight:"100vh",
+      display:"flex",
+      alignItems:"center",
+      justifyContent:"center",
+      background:"#020617",
+      color:"white",
+      flexDirection:"column",
+      gap:"20px",
+      textAlign:"center",
+      padding:"40px"
     }}>
+
       <div style={{
-        width: '40px',
-        height: '40px',
-        border: '4px solid #e2e8f0',
-        borderTopColor: '#3b82f6',
-        borderRadius: '50%',
-        animation: 'spin 0.8s linear infinite'
-      }} />
-      <p>Extension'a yönlendiriliyor...</p>
+        width:60,
+        height:60,
+        border:"4px solid #334155",
+        borderTopColor:"#6366f1",
+        borderRadius:"50%",
+        animation:"spin 1s linear infinite"
+      }}/>
+
+      <h2>{status}</h2>
+
+      {success && (
+
+        <div style={{maxWidth:420,opacity:.9}}>
+
+          <p>
+          ✅ <b>Denetron hesabınıza başarıyla giriş yaptınız.</b>
+          </p>
+
+          <p style={{marginTop:10}}>
+          Chrome Extension artık hesabınıza bağlandı.
+          </p>
+
+          <p style={{marginTop:10}}>
+          👉 Devam etmek için <b>tarayıcıdaki Denetron Extension popup'ını açın.</b>
+          </p>
+
+          <p style={{marginTop:10,fontSize:13,opacity:.7}}>
+          Bu sekme otomatik kapanmazsa aşağıdaki butona basabilirsiniz.
+          </p>
+
+        </div>
+
+      )}
+
+      <button
+        onClick={()=>window.close()}
+        style={{
+          marginTop:10,
+          padding:"10px 18px",
+          borderRadius:10,
+          background:"#4f46e5",
+          border:"none",
+          color:"white",
+          cursor:"pointer"
+        }}
+      >
+        Sekmeyi Kapat
+      </button>
+
+      <a
+        href="/auth/login"
+        style={{
+          marginTop:5,
+          fontSize:13,
+          opacity:.7,
+          color:"#94a3b8"
+        }}
+      >
+        Tekrar giriş yap
+      </a>
 
       <style>{`
         @keyframes spin {
           to { transform: rotate(360deg); }
         }
       `}</style>
+
     </div>
+
   );
+
 }

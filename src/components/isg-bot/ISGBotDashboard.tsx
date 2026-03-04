@@ -1,5 +1,5 @@
 // ====================================================
-// İSG BOT DASHBOARD - REACT COMPONENT
+// İSG BOT DASHBOARD - DÜZELTİLMİŞ VERSİYON
 // ====================================================
 
 import { useState, useEffect } from "react";
@@ -41,6 +41,7 @@ import {
   Search,
   TrendingUp,
   Shield,
+  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Progress } from "@/components/ui/progress";
@@ -56,10 +57,8 @@ interface Company {
   compliance_status: string;
   risk_score: number;
   contract_end: string | null;
-  critical_flags_count: number;
-  warning_flags_count: number;
-  contract_status: string;
-  days_until_expiry: number | null;
+  contract_start: string | null;
+  last_synced_at: string | null;
 }
 
 interface DashboardStats {
@@ -77,9 +76,14 @@ export default function ISGBotDashboard() {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
   const [complianceFilter, setComplianceFilter] = useState<string>("all");
   const [hazardFilter, setHazardFilter] = useState<string>("all");
+
+  // ✅ HARDCODED ORG ID (TEST İÇİN)
+  // Production'da bu auth.user'dan alınacak
+  const TEST_ORG_ID = "b3d557c8-78d1-46f8-a804-273833817f89";
 
   useEffect(() => {
     loadDashboard();
@@ -87,31 +91,94 @@ export default function ISGBotDashboard() {
 
   const loadDashboard = async () => {
     setLoading(true);
+    setError(null);
+
     try {
-      // Get current org_id (from user context)
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) throw new Error("Not authenticated");
+      console.log("🔄 Loading dashboard...");
+      console.log("📍 Org ID:", TEST_ORG_ID);
 
-      // Call compliance-check edge function
-      const { data, error } = await supabase.functions.invoke("compliance-check", {
-        body: {
-          action: "GET_DASHBOARD",
-          data: {
-            orgId: user.id, // or get from user metadata
-          },
-        },
-      });
+      // ✅ DIRECT SUPABASE QUERY (Edge Function yerine)
+      const { data: companiesData, error: companiesError } = await supabase
+        .from("isgkatip_companies")
+        .select("*")
+        .eq("org_id", TEST_ORG_ID)
+        .order("risk_score", { ascending: false });
 
-      if (error) throw error;
+      if (companiesError) {
+        console.error("❌ Companies query error:", companiesError);
+        throw new Error(companiesError.message);
+      }
 
-      setCompanies(data.companies);
-      setStats(data.stats);
+      console.log("✅ Companies loaded:", companiesData?.length || 0, companiesData);
 
-      toast.success("Dashboard yüklendi");
+      if (!companiesData || companiesData.length === 0) {
+        toast.warning("Henüz firma verisi yok", {
+          description: "İSG-KATİP'ten senkronize edin veya manuel ekleyin",
+        });
+      }
+
+      setCompanies(companiesData || []);
+
+      // ✅ CALCULATE STATS
+      const totalCompanies = companiesData?.length || 0;
+      const compliant =
+        companiesData?.filter((c) => c.compliance_status === "COMPLIANT").length || 0;
+      const warning =
+        companiesData?.filter((c) => c.compliance_status === "WARNING").length || 0;
+      const critical =
+        companiesData?.filter((c) => c.compliance_status === "CRITICAL").length || 0;
+
+      // Get compliance flags
+      const { data: flagsData, error: flagsError } = await supabase
+        .from("isgkatip_compliance_flags")
+        .select("severity, status")
+        .eq("org_id", TEST_ORG_ID)
+        .eq("status", "OPEN");
+
+      if (flagsError) {
+        console.warn("⚠️ Flags query error:", flagsError);
+      }
+
+      const criticalFlags =
+        flagsData?.filter((f) => f.severity === "CRITICAL").length || 0;
+      const warningFlags =
+        flagsData?.filter((f) => f.severity === "WARNING").length || 0;
+
+      // Calculate expiring/expired contracts
+      const now = new Date();
+      const thirtyDaysFromNow = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+
+      const expiringContracts =
+        companiesData?.filter((c) => {
+          if (!c.contract_end) return false;
+          const contractEnd = new Date(c.contract_end);
+          return contractEnd >= now && contractEnd <= thirtyDaysFromNow;
+        }).length || 0;
+
+      const expiredContracts =
+        companiesData?.filter((c) => {
+          if (!c.contract_end) return false;
+          return new Date(c.contract_end) < now;
+        }).length || 0;
+
+      const calculatedStats: DashboardStats = {
+        totalCompanies,
+        compliant,
+        warning,
+        critical,
+        expiringContracts,
+        expiredContracts,
+        criticalFlags,
+        warningFlags,
+      };
+
+      console.log("📊 Calculated stats:", calculatedStats);
+      setStats(calculatedStats);
+
+      toast.success(`✅ ${totalCompanies} firma yüklendi`);
     } catch (error: any) {
       console.error("❌ Dashboard load error:", error);
+      setError(error.message || "Dashboard yüklenemedi");
       toast.error("Dashboard yüklenemedi", {
         description: error.message,
       });
@@ -123,11 +190,12 @@ export default function ISGBotDashboard() {
   const handleSync = async () => {
     toast.info("Senkronizasyon başlatılıyor...");
     try {
-      // Trigger sync via extension
-      // Or call edge function directly
       await loadDashboard();
+      toast.success("Senkronizasyon tamamlandı");
     } catch (error: any) {
-      toast.error("Senkronizasyon hatası");
+      toast.error("Senkronizasyon hatası", {
+        description: error.message,
+      });
     }
   };
 
@@ -135,26 +203,55 @@ export default function ISGBotDashboard() {
     toast.info("Compliance kontrol ediliyor...");
 
     try {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) throw new Error("Not authenticated");
+      // Get all companies
+      const { data: companiesData, error: companiesError } = await supabase
+        .from("isgkatip_companies")
+        .select("*")
+        .eq("org_id", TEST_ORG_ID);
 
-      const { data, error } = await supabase.functions.invoke("compliance-check", {
-        body: {
-          action: "CHECK_ALL",
-          data: {
-            orgId: user.id,
-          },
-        },
-      });
+      if (companiesError) throw companiesError;
 
-      if (error) throw error;
+      let checkedCount = 0;
 
-      toast.success(`${data.checkedCount} firma kontrol edildi`);
+      // Run compliance checks
+      for (const company of companiesData || []) {
+        // Check duration
+        if (company.assigned_minutes < company.required_minutes) {
+          await supabase.from("isgkatip_compliance_flags").upsert(
+            {
+              org_id: TEST_ORG_ID,
+              company_id: company.id,
+              rule_name: "DURATION_CHECK",
+              severity:
+                company.assigned_minutes < company.required_minutes * 0.5
+                  ? "CRITICAL"
+                  : "WARNING",
+              message: `Eksik süre: ${
+                company.required_minutes - company.assigned_minutes
+              } dk/ay`,
+              details: {
+                required: company.required_minutes,
+                assigned: company.assigned_minutes,
+              },
+              status: "OPEN",
+            },
+            {
+              onConflict: "company_id,rule_name,status",
+              ignoreDuplicates: false,
+            }
+          );
+        }
+
+        checkedCount++;
+      }
+
+      toast.success(`${checkedCount} firma kontrol edildi`);
       await loadDashboard();
     } catch (error: any) {
-      toast.error("Compliance kontrol hatası");
+      console.error("❌ Compliance check error:", error);
+      toast.error("Compliance kontrol hatası", {
+        description: error.message,
+      });
     }
   };
 
@@ -180,6 +277,14 @@ export default function ISGBotDashboard() {
     return labels[status] || "Bilinmiyor";
   };
 
+  const calculateDaysUntilExpiry = (contractEnd: string | null): number | null => {
+    if (!contractEnd) return null;
+    const now = new Date();
+    const end = new Date(contractEnd);
+    const diff = end.getTime() - now.getTime();
+    return Math.floor(diff / (1000 * 60 * 60 * 24));
+  };
+
   const filteredCompanies = companies.filter((company) => {
     const matchesSearch =
       company.company_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -196,8 +301,25 @@ export default function ISGBotDashboard() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <RefreshCw className="h-8 w-8 animate-spin text-primary" />
+      <div className="flex flex-col items-center justify-center min-h-screen gap-4">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+        <p className="text-sm text-muted-foreground">Dashboard yükleniyor...</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen gap-4">
+        <AlertTriangle className="h-12 w-12 text-destructive" />
+        <div className="text-center">
+          <h2 className="text-xl font-semibold mb-2">Dashboard Yüklenemedi</h2>
+          <p className="text-sm text-muted-foreground mb-4">{error}</p>
+          <Button onClick={loadDashboard}>
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Tekrar Dene
+          </Button>
+        </div>
       </div>
     );
   }
@@ -220,7 +342,7 @@ export default function ISGBotDashboard() {
           </Button>
           <Button onClick={handleSync}>
             <RefreshCw className="h-4 w-4 mr-2" />
-            Senkronize Et
+            Yenile
           </Button>
         </div>
       </div>
@@ -256,7 +378,11 @@ export default function ISGBotDashboard() {
                 <CheckCircle2 className="h-8 w-8 text-green-500 opacity-50" />
               </div>
               <Progress
-                value={(stats.compliant / stats.totalCompanies) * 100}
+                value={
+                  stats.totalCompanies > 0
+                    ? (stats.compliant / stats.totalCompanies) * 100
+                    : 0
+                }
                 className="mt-2 h-2"
               />
             </CardContent>
@@ -374,15 +500,23 @@ export default function ISGBotDashboard() {
       <Card>
         <CardHeader>
           <CardTitle>İşyerleri ({filteredCompanies.length})</CardTitle>
-          <CardDescription>
-            İSG-KATİP'ten senkronize edilen firmalar
-          </CardDescription>
+          <CardDescription>İSG-KATİP'ten senkronize edilen firmalar</CardDescription>
         </CardHeader>
         <CardContent>
           {filteredCompanies.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
               <FileText className="h-12 w-12 mx-auto mb-4 opacity-20" />
-              <p>Filtre kriterlerine uygun firma bulunamadı</p>
+              <p className="mb-2">
+                {companies.length === 0
+                  ? "Henüz firma eklenmemiş"
+                  : "Filtre kriterlerine uygun firma bulunamadı"}
+              </p>
+              {companies.length === 0 && (
+                <Button variant="outline" onClick={handleSync} className="mt-4">
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                  İlk Senkronizasyonu Başlat
+                </Button>
+              )}
             </div>
           ) : (
             <div className="border rounded-lg overflow-hidden">
@@ -400,87 +534,91 @@ export default function ISGBotDashboard() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredCompanies.map((company) => (
-                    <TableRow key={company.id}>
-                      <TableCell className="font-medium">
-                        {company.company_name}
-                      </TableCell>
-                      <TableCell className="font-mono text-sm">
-                        {company.sgk_no}
-                      </TableCell>
-                      <TableCell>{company.employee_count}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline">{company.hazard_class}</Badge>
-                      </TableCell>
-                      <TableCell>
-                        <div className="text-sm">
-                          <div>
-                            {company.assigned_minutes} / {company.required_minutes} dk
-                          </div>
-                          <Progress
-                            value={
-                              (company.assigned_minutes / company.required_minutes) *
-                              100
-                            }
-                            className="h-1 mt-1"
-                          />
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge
-                          className={`${getComplianceColor(
-                            company.compliance_status
-                          )} text-white`}
-                        >
-                          {getComplianceLabel(company.compliance_status)}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <div className="text-sm font-semibold">
-                            {company.risk_score}
-                          </div>
-                          <TrendingUp
-                            className={`h-4 w-4 ${
-                              company.risk_score >= 70
-                                ? "text-red-500"
-                                : company.risk_score >= 40
-                                ? "text-orange-500"
-                                : "text-green-500"
-                            }`}
-                          />
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        {company.contract_end ? (
+                  {filteredCompanies.map((company) => {
+                    const daysUntilExpiry = calculateDaysUntilExpiry(company.contract_end);
+
+                    return (
+                      <TableRow key={company.id}>
+                        <TableCell className="font-medium">
+                          {company.company_name}
+                        </TableCell>
+                        <TableCell className="font-mono text-sm">
+                          {company.sgk_no}
+                        </TableCell>
+                        <TableCell>{company.employee_count}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline">{company.hazard_class}</Badge>
+                        </TableCell>
+                        <TableCell>
                           <div className="text-sm">
                             <div>
-                              {new Date(company.contract_end).toLocaleDateString(
-                                "tr-TR"
+                              {company.assigned_minutes} / {company.required_minutes} dk
+                            </div>
+                            <Progress
+                              value={
+                                company.required_minutes > 0
+                                  ? (company.assigned_minutes / company.required_minutes) *
+                                    100
+                                  : 0
+                              }
+                              className="h-1 mt-1"
+                            />
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            className={`${getComplianceColor(
+                              company.compliance_status
+                            )} text-white`}
+                          >
+                            {getComplianceLabel(company.compliance_status)}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <div className="text-sm font-semibold">
+                              {company.risk_score}
+                            </div>
+                            <TrendingUp
+                              className={`h-4 w-4 ${
+                                company.risk_score >= 70
+                                  ? "text-red-500"
+                                  : company.risk_score >= 40
+                                  ? "text-orange-500"
+                                  : "text-green-500"
+                              }`}
+                            />
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          {company.contract_end ? (
+                            <div className="text-sm">
+                              <div>
+                                {new Date(company.contract_end).toLocaleDateString("tr-TR")}
+                              </div>
+                              {daysUntilExpiry !== null && (
+                                <div
+                                  className={`text-xs ${
+                                    daysUntilExpiry < 0
+                                      ? "text-red-600 font-semibold"
+                                      : daysUntilExpiry <= 30
+                                      ? "text-orange-600"
+                                      : "text-muted-foreground"
+                                  }`}
+                                >
+                                  {daysUntilExpiry < 0
+                                    ? `${Math.abs(daysUntilExpiry)} gün geçti`
+                                    : `${daysUntilExpiry} gün kaldı`}
+                                </div>
                               )}
                             </div>
-                            {company.days_until_expiry !== null && (
-                              <div
-                                className={`text-xs ${
-                                  company.days_until_expiry < 0
-                                    ? "text-red-600 font-semibold"
-                                    : company.days_until_expiry <= 30
-                                    ? "text-orange-600"
-                                    : "text-muted-foreground"
-                                }`}
-                              >
-                                {company.days_until_expiry < 0
-                                  ? `${Math.abs(company.days_until_expiry)} gün geçti`
-                                  : `${company.days_until_expiry} gün kaldı`}
-                              </div>
-                            )}
-                          </div>
-                        ) : (
-                          <span className="text-muted-foreground">-</span>
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  ))}
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>

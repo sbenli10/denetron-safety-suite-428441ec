@@ -21,22 +21,32 @@ class PopupController {
   // ====================================================
 
   async init() {
+    console.log('🚀 Popup initialized');
 
-    console.log("🚀 Popup started");
+    // Check configuration
+    const isConfigured = await this.checkConfiguration();
 
-    this.showLoading();
-
-    // check auth returned from web callback
-    await this.checkLocalStorageAuth();
-
-    const isAuth = await this.authHandler.isAuthenticated();
-
-    if (!isAuth) {
-      this.showAuthScreen();
+    if (!isConfigured) {
+      this.showConfigurationRequired();
       return;
     }
 
-    await this.showMainApp();
+    this.authenticated = true;
+
+    // ✅ FORCE STATS RELOAD
+    console.log('📊 Requesting fresh stats...');
+    await this.loadStats();
+
+    // Setup event listeners
+    this.setupEventListeners();
+
+    // Load recent activities
+    await this.loadActivities();
+
+    // Update UI
+    this.updateUI();
+
+    console.log('✅ Popup ready');
   }
 
   // ====================================================
@@ -196,57 +206,35 @@ class PopupController {
   // ====================================================
 
   async loadStats() {
-
     try {
+      console.log('📊 Loading stats...');
 
-      const token = await this.authHandler.getAccessToken();
-      const user = await this.authHandler.getUser();
+      // ✅ GET_STATS mesajı gönder (background stats'ı yeniler)
+      const response = await chrome.runtime.sendMessage({
+        type: 'GET_STATS',
+      });
 
-      if (!token || !user) throw new Error("No auth");
-
-      const response = await fetch(
-        "https://elmdzekyyoepdrnfppn.supabase.co/functions/v1/compliance-check",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${token}`
-          },
-          body: JSON.stringify({
-            action: "GET_DASHBOARD",
-            data: {
-              orgId: user.id
-            }
-          })
+      if (response && response.success) {
+        this.stats = response.stats;
+        console.log('✅ Stats loaded:', this.stats);
+      } else {
+        console.warn('⚠️ Stats not available:', response);
+        // Use cached stats
+        const cached = await chrome.storage.local.get('stats');
+        if (cached.stats) {
+          this.stats = cached.stats;
+          console.log('📦 Using cached stats');
         }
-      );
-
-      if (!response.ok) throw new Error("API failed");
-
-      const data = await response.json();
-
-      this.stats = {
-        totalCompanies: data.stats?.totalCompanies || 0,
-        warningCount: data.stats?.warningCount || 0,
-        criticalCount: data.stats?.criticalCount || 0
-      };
-
-      this.updateStatsUI();
-
-    } catch (err) {
-
-      console.error("❌ Load stats error", err);
-
+      }
+    } catch (error) {
+      console.error('❌ Stats load error:', error);
+      // Fallback to default stats
       this.stats = {
         totalCompanies: 0,
         warningCount: 0,
-        criticalCount: 0
+        criticalCount: 0,
       };
-
-      this.updateStatsUI();
-
     }
-
   }
 
   updateStatsUI() {

@@ -2,7 +2,7 @@
 // POPUP CONTROLLER
 // ====================================================
 
-import { AuthHandler } from '../auth/auth-handler.js';
+import { AuthHandler } from "../auth/auth-handler.js";
 
 class PopupController {
 
@@ -21,33 +21,82 @@ class PopupController {
   // ====================================================
 
   async init() {
-    console.log('🚀 Popup initialized');
 
-    // Check configuration
-    const isConfigured = await this.checkConfiguration();
+  console.log("🚀 Popup initialized");
 
-    if (!isConfigured) {
-      this.showConfigurationRequired();
-      return;
-    }
+  this.showLoading();
 
-    this.authenticated = true;
+  const configured = await this.checkConfiguration();
 
-    // ✅ FORCE STATS RELOAD
-    console.log('📊 Requesting fresh stats...');
-    await this.loadStats();
+  if (!configured) {
 
-    // Setup event listeners
-    this.setupEventListeners();
+    console.warn("⚠️ Extension not configured");
 
-    // Load recent activities
-    await this.loadActivities();
+    this.showAuthScreen();
 
-    // Update UI
-    this.updateUI();
+    return;
 
-    console.log('✅ Popup ready');
   }
+
+  await this.checkLocalStorageAuth();
+
+  const isAuth = await this.authHandler.isAuthenticated();
+
+  if (!isAuth) {
+
+    console.log("🔐 Not authenticated");
+
+    this.showAuthScreen();
+
+    return;
+
+  }
+
+  console.log("✅ Authenticated");
+
+  await this.showMainApp();
+
+}
+  // ====================================================
+// CONFIG CHECK
+// ====================================================
+
+async checkConfiguration() {
+
+  return new Promise((resolve) => {
+
+    chrome.storage.local.get(
+      ["supabaseUrl", "supabaseKey", "orgId"],
+      (config) => {
+
+        console.log("⚙️ Config read from storage:", config);
+
+        if (!config.supabaseUrl) {
+          console.warn("supabaseUrl missing");
+          resolve(false);
+          return;
+        }
+
+        if (!config.supabaseKey) {
+          console.warn("supabaseKey missing");
+          resolve(false);
+          return;
+        }
+
+        if (!config.orgId) {
+          console.warn("orgId missing");
+          resolve(false);
+          return;
+        }
+
+        resolve(true);
+
+      }
+    );
+
+  });
+
+}
 
   // ====================================================
   // LOCAL STORAGE AUTH CHECK
@@ -81,6 +130,7 @@ class PopupController {
               localStorage.removeItem("denetron_extension_auth");
 
               return JSON.parse(auth);
+
             }
           });
 
@@ -88,7 +138,7 @@ class PopupController {
 
           if (authData) {
 
-            console.log("✅ Auth found from web callback");
+            console.log("✅ Auth received from web login");
 
             await this.authHandler.saveAuth(authData);
 
@@ -98,7 +148,7 @@ class PopupController {
 
         } catch (err) {
 
-          console.warn("⚠️ Tab access failed", tab.id);
+          console.warn("⚠️ Tab access failed:", tab.id);
 
         }
 
@@ -113,7 +163,7 @@ class PopupController {
   }
 
   // ====================================================
-  // SCREENS
+  // SCREEN MANAGEMENT
   // ====================================================
 
   showLoading() {
@@ -130,7 +180,8 @@ class PopupController {
     document.getElementById("authScreen").style.display = "flex";
     document.getElementById("mainApp").style.display = "none";
 
-    document.getElementById("btnLogin")
+    document
+      .getElementById("btnLogin")
       .addEventListener("click", () => this.handleLogin());
 
   }
@@ -144,8 +195,9 @@ class PopupController {
     this.setupEventListeners();
 
     await this.loadStats();
-
     await this.loadActivities();
+
+    this.updateStatsUI();
 
   }
 
@@ -157,13 +209,12 @@ class PopupController {
 
     const loginUrl = this.authHandler.getLoginUrl();
 
-    console.log("🔐 Opening login", loginUrl);
+    console.log("🔐 Opening login:", loginUrl);
 
     chrome.tabs.create({
       url: loginUrl
     });
 
-    // popup kapanır kullanıcı login yapar
     window.close();
 
   }
@@ -184,13 +235,16 @@ class PopupController {
 
   setupEventListeners() {
 
-    document.getElementById("btnLogout")
+    document
+      .getElementById("btnLogout")
       ?.addEventListener("click", () => this.handleLogout());
 
-    document.getElementById("btnSync")
+    document
+      .getElementById("btnSync")
       ?.addEventListener("click", () => this.handleSync());
 
-    document.getElementById("btnOpenDashboard")
+    document
+      .getElementById("btnOpenDashboard")
       ?.addEventListener("click", () => {
 
         chrome.tabs.create({
@@ -206,47 +260,38 @@ class PopupController {
   // ====================================================
 
   async loadStats() {
-    try {
-      console.log('📊 Loading stats...');
 
-      // ✅ GET_STATS mesajı gönder (background stats'ı yeniler)
-      const response = await chrome.runtime.sendMessage({
-        type: 'GET_STATS',
-      });
+  const config = await chrome.storage.local.get([
+    "supabaseUrl",
+    "supabaseKey",
+    "orgId"
+  ]);
 
-      if (response && response.success) {
-        this.stats = response.stats;
-        console.log('✅ Stats loaded:', this.stats);
-      } else {
-        console.warn('⚠️ Stats not available:', response);
-        // Use cached stats
-        const cached = await chrome.storage.local.get('stats');
-        if (cached.stats) {
-          this.stats = cached.stats;
-          console.log('📦 Using cached stats');
-        }
-      }
-    } catch (error) {
-      console.error('❌ Stats load error:', error);
-      // Fallback to default stats
-      this.stats = {
-        totalCompanies: 0,
-        warningCount: 0,
-        criticalCount: 0,
-      };
-    }
+  const supabaseUrl = config.supabaseUrl;
+  const supabaseKey = config.supabaseKey;
+  const orgId = config.orgId;
+
+  if (!supabaseUrl || !supabaseKey || !orgId) {
+    console.warn("⚠️ Missing config for stats");
+    return;
   }
 
+  this.supabaseUrl = supabaseUrl;
+  this.supabaseKey = supabaseKey;
+  this.orgId = orgId;
+
+  console.log("📊 Loading stats...");
+}
   updateStatsUI() {
 
     document.getElementById("totalCompanies").textContent =
-      this.stats.totalCompanies;
+      this.stats.totalCompanies ?? 0;
 
     document.getElementById("warningCount").textContent =
-      this.stats.warningCount;
+      this.stats.warningCount ?? 0;
 
     document.getElementById("criticalCount").textContent =
-      this.stats.criticalCount;
+      this.stats.criticalCount ?? 0;
 
   }
 
@@ -254,8 +299,7 @@ class PopupController {
 
     const list = document.getElementById("activityList");
 
-    list.innerHTML =
-      '<p class="empty-state">Henüz işlem yok</p>';
+    list.innerHTML = '<p class="empty-state">Henüz işlem yok</p>';
 
   }
 
@@ -279,6 +323,8 @@ class PopupController {
       });
 
       await this.loadStats();
+
+      this.updateStatsUI();
 
       btn.innerHTML = "✅ Tamamlandı";
 

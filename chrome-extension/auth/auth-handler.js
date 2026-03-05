@@ -24,22 +24,22 @@ export class AuthHandler {
   }
 
   async saveAuth(authData) {
-    try {
-      await chrome.storage.local.set({
-        [this.storageKey]: {
-          accessToken: authData.access_token,
-          refreshToken: authData.refresh_token,
-          expiresAt: Date.now() + (authData.expires_in * 1000),
-          user: authData.user,
-        }
-      });
-      console.log('✅ Auth saved');
-      return true;
-    } catch (error) {
-      console.error('❌ Save auth error:', error);
-      return false;
-    }
-  }
+
+  const data = {
+    denetron_auth: authData,
+
+    // gerekli config
+    supabaseUrl: "https://elmdzekyyoepdrpnfppn.supabase.co",
+    supabaseKey: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVsbWR6ZWt5eW9lcGRycG5mcHBuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIwMzcxNDIsImV4cCI6MjA4NzYxMzE0Mn0.IktoIuRqLLNocr6IOyux4N8RSaxCMF8Gs3WHW1tDl8A",
+
+    orgId: authData.user.id,
+    userId: authData.user.id
+  };
+
+  await chrome.storage.local.set(data);
+
+  console.log("✅ Auth + config saved:", data);
+}
 
   async clearAuth() {
     try {

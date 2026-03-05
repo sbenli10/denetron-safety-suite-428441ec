@@ -1,60 +1,78 @@
 // ====================================================
-// BACKGROUND SERVICE WORKER - DÜZELTİLMİŞ
+// BACKGROUND SERVICE WORKER - STABLE VERSION
 // ====================================================
 
-import { SyncManager } from './sync-manager.js';
-import { RuleEngine } from './rule-engine.js';
-import { QueueManager } from './queue-manager.js';
+import { SyncManager } from "./sync-manager.js";
+import { RuleEngine } from "./rule-engine.js";
+import { QueueManager } from "./queue-manager.js";
 
 class BackgroundService {
+
   constructor() {
+
     this.syncManager = new SyncManager();
     this.ruleEngine = new RuleEngine();
     this.queueManager = new QueueManager();
+
     this.supabaseUrl = null;
     this.supabaseKey = null;
     this.orgId = null;
+    this.userId = null;
+
     this.stats = {
       totalCompanies: 0,
       warningCount: 0,
-      criticalCount: 0,
+      criticalCount: 0
     };
+
     this.activities = [];
+
   }
+
+  // ====================================================
+  // INIT
+  // ====================================================
 
   async init() {
-    console.log('🔧 Background service started');
 
-    // Load config
+    console.log("🔧 Background service started");
+
     await this.loadConfig();
 
-    // Load initial stats
-    await this.loadStats();
-
-    // Setup message listener
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       this.handleMessage(message, sender, sendResponse);
-      return true; // Async response
+      return true;
     });
 
-    // Setup periodic sync
-    chrome.alarms.create('periodicSync', { periodInMinutes: 30 });
+    chrome.alarms.create("periodicSync", {
+      periodInMinutes: 30
+    });
+
     chrome.alarms.onAlarm.addListener((alarm) => {
-      if (alarm.name === 'periodicSync') {
+
+      if (alarm.name === "periodicSync") {
         this.syncAll();
       }
+
     });
 
-    console.log('✅ Background service ready');
+    console.log("✅ Background ready");
+
   }
 
+  // ====================================================
+  // LOAD CONFIG
+  // ====================================================
+
   async loadConfig() {
+
     try {
+
       const config = await chrome.storage.local.get([
-        'supabaseUrl',
-        'supabaseKey',
-        'orgId',
-        'userId',
+        "supabaseUrl",
+        "supabaseKey",
+        "orgId",
+        "userId"
       ]);
 
       this.supabaseUrl = config.supabaseUrl;
@@ -62,240 +80,211 @@ class BackgroundService {
       this.orgId = config.orgId;
       this.userId = config.userId;
 
-      if (this.supabaseUrl && this.supabaseKey && this.orgId) {
-        console.log('✅ Config loaded:', {
-          url: this.supabaseUrl?.substring(0, 30) + '...',
-          orgId: this.orgId,
-        });
-      } else {
-        console.warn('⚠️ Config incomplete');
-      }
-    } catch (error) {
-      console.error('❌ Config load error:', error);
+      console.log("📦 Config loaded", {
+        url: this.supabaseUrl,
+        orgId: this.orgId
+      });
+
+    } catch (err) {
+
+      console.error("❌ Config load error", err);
+
     }
+
   }
 
+  // ====================================================
+  // LOAD STATS
+  // ====================================================
+
   async loadStats() {
+
     if (!this.supabaseUrl || !this.supabaseKey || !this.orgId) {
-      console.warn('⚠️ Cannot load stats: Config missing');
-      return;
+
+      console.warn("⚠️ Missing config for stats");
+
+      return this.stats;
+
     }
 
     try {
-      console.log('📊 Loading stats from Supabase...');
 
-      // ✅ DIRECT SUPABASE REST API CALL
+      console.log("📊 Fetching companies...");
+
       const response = await fetch(
+
         `${this.supabaseUrl}/rest/v1/isgkatip_companies?org_id=eq.${this.orgId}&select=compliance_status`,
+
         {
+          method: "GET",
           headers: {
             apikey: this.supabaseKey,
             Authorization: `Bearer ${this.supabaseKey}`,
-          },
+            "Content-Type": "application/json"
+          }
         }
+
       );
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+
+        throw new Error(`HTTP ${response.status}`);
+
       }
 
       const companies = await response.json();
 
-      console.log('✅ Companies fetched:', companies.length);
+      console.log("📊 Companies:", companies.length);
+
+      const warning = companies.filter(
+        c => c.compliance_status === "WARNING"
+      ).length;
+
+      const critical = companies.filter(
+        c => c.compliance_status === "CRITICAL"
+      ).length;
 
       this.stats = {
         totalCompanies: companies.length,
-        warningCount: companies.filter((c) => c.compliance_status === 'WARNING').length,
-        criticalCount: companies.filter((c) => c.compliance_status === 'CRITICAL').length,
+        warningCount: warning,
+        criticalCount: critical
       };
 
-      console.log('📊 Stats updated:', this.stats);
+      await chrome.storage.local.set({
+        stats: this.stats
+      });
 
-      // Save to storage for quick access
-      await chrome.storage.local.set({ stats: this.stats });
-    } catch (error) {
-      console.error('❌ Stats load error:', error);
+      console.log("✅ Stats updated", this.stats);
+
+      return this.stats;
+
+    } catch (err) {
+
+      console.error("❌ Stats error", err);
+
+      return this.stats;
+
     }
+
   }
 
+  // ====================================================
+  // MESSAGE HANDLER
+  // ====================================================
+
   async handleMessage(message, sender, sendResponse) {
-    console.log('📩 Message received:', message.type);
 
     try {
+
       switch (message.type) {
-        case 'GET_STATS':
-          await this.loadStats(); // Refresh stats
-          sendResponse({ success: true, stats: this.stats });
+
+        case "GET_STATS":
+
+          const stats = await this.loadStats();
+
+          sendResponse({
+            success: true,
+            stats
+          });
+
           break;
 
-        case 'GET_RECENT_ACTIVITIES':
-          sendResponse({ success: true, activities: this.activities });
+        case "GET_RECENT_ACTIVITIES":
+
+          sendResponse({
+            success: true,
+            activities: this.activities
+          });
+
           break;
 
-        case 'SYNC_NOW':
+        case "SYNC_NOW":
+
           await this.syncAll();
+
           sendResponse({ success: true });
+
           break;
 
-        case 'RUN_COMPLIANCE_CHECK':
-          const result = await this.runComplianceCheck(message.data);
-          sendResponse({ success: true, ...result });
-          break;
+        case "CONFIG_UPDATED":
 
-        case 'COMPANY_DATA_PARSED':
-          await this.handleCompanyData(message.data);
-          sendResponse({ success: true });
-          break;
-
-        case 'CONFIG_UPDATED':
           await this.loadConfig();
           await this.loadStats();
-          sendResponse({ success: true });
-          break;
 
-        case 'BULK_DOWNLOAD_PDF':
-          await this.handleBulkDownload(message.data);
           sendResponse({ success: true });
+
           break;
 
         default:
-          sendResponse({ success: false, error: 'Unknown message type' });
-      }
-    } catch (error) {
-      console.error('❌ Message handler error:', error);
-      sendResponse({ success: false, error: error.message });
-    }
-  }
 
-  async handleCompanyData(data) {
-    try {
-      console.log('📥 Company data received:', data.sgkNo);
+          sendResponse({
+            success: false,
+            error: "Unknown message"
+          });
 
-      // Add to queue
-      await this.queueManager.add({
-        type: 'COMPANY_UPDATE',
-        data,
-        timestamp: Date.now(),
-      });
-
-      // Run compliance check
-      const complianceResult = await this.ruleEngine.checkCompliance(data);
-
-      // Sync to Supabase
-      if (this.syncManager && this.orgId) {
-        await this.syncManager.syncToSupabase({
-          ...data,
-          compliance: complianceResult,
-          orgId: this.orgId,
-        });
       }
 
-      // Add activity
-      this.activities.unshift({
-        type: 'sync',
-        message: `${data.companyName} senkronize edildi`,
-        timestamp: Date.now(),
+    } catch (err) {
+
+      console.error("❌ Message error", err);
+
+      sendResponse({
+        success: false,
+        error: err.message
       });
 
-      // Keep only last 10 activities
-      this.activities = this.activities.slice(0, 10);
-
-      // Reload stats
-      await this.loadStats();
-
-      console.log('✅ Company data processed:', data.sgkNo);
-    } catch (error) {
-      console.error('❌ Handle company data error:', error);
-
-      // Add error activity
-      this.activities.unshift({
-        type: 'error',
-        message: `Hata: ${data.companyName || 'Bilinmeyen firma'}`,
-        timestamp: Date.now(),
-      });
     }
+
   }
+
+  // ====================================================
+  // SYNC
+  // ====================================================
 
   async syncAll() {
-    console.log('🔄 Starting full sync...');
 
     try {
+
+      console.log("🔄 Sync started");
+
       const items = await this.queueManager.getAll();
 
       for (const item of items) {
+
         await this.syncManager.syncToSupabase(item.data);
+
         await this.queueManager.remove(item.id);
+
       }
 
       await this.loadStats();
 
       this.activities.unshift({
-        type: 'sync',
-        message: 'Tam senkronizasyon tamamlandı',
-        timestamp: Date.now(),
+        type: "sync",
+        message: "Senkronizasyon tamamlandı",
+        timestamp: Date.now()
       });
 
-      console.log('✅ Full sync completed');
-    } catch (error) {
-      console.error('❌ Sync error:', error);
+      this.activities = this.activities.slice(0, 10);
 
-      this.activities.unshift({
-        type: 'error',
-        message: 'Senkronizasyon hatası',
-        timestamp: Date.now(),
-      });
+      console.log("✅ Sync finished");
+
+    } catch (err) {
+
+      console.error("❌ Sync error", err);
+
     }
+
   }
 
-  async runComplianceCheck(data) {
-    console.log('🛡️ Running compliance check...');
-
-    try {
-      if (!this.supabaseUrl || !this.supabaseKey || !this.orgId) {
-        throw new Error('Config missing');
-      }
-
-      // Get all companies
-      const response = await fetch(
-        `${this.supabaseUrl}/rest/v1/isgkatip_companies?org_id=eq.${this.orgId}&select=*`,
-        {
-          headers: {
-            apikey: this.supabaseKey,
-            Authorization: `Bearer ${this.supabaseKey}`,
-          },
-        }
-      );
-
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-
-      const companies = await response.json();
-
-      // Count by status
-      const summary = {
-        compliant: companies.filter((c) => c.compliance_status === 'COMPLIANT').length,
-        warning: companies.filter((c) => c.compliance_status === 'WARNING').length,
-        critical: companies.filter((c) => c.compliance_status === 'CRITICAL').length,
-      };
-
-      console.log('✅ Compliance check completed:', summary);
-
-      return { summary };
-    } catch (error) {
-      console.error('❌ Compliance check error:', error);
-      throw error;
-    }
-  }
-
-  async handleBulkDownload(data) {
-    console.log('📥 Bulk download started');
-    // TODO: Implement PDF download logic
-  }
 }
 
 // ====================================================
-// INITIALIZE
+// START
 // ====================================================
+
 const backgroundService = new BackgroundService();
+
 backgroundService.init();
 
-console.log('🟢 Background service worker loaded');
+console.log("🟢 Service worker loaded");

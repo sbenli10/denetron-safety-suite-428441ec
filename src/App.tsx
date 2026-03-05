@@ -17,6 +17,7 @@ import BoardMeetingsGuide from "@/pages/BoardMeetingsGuide";
 import NotificationCenter from "@/pages/NotificationCenter";
 import AuthCallback from '@/pages/AuthCallback';
 import Index from '@/pages/Index';
+
 // ============================================
 // CORE PAGES
 // ============================================
@@ -34,10 +35,14 @@ const Auth = lazy(() => import("./pages/Auth"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 const ISGBotSetup = lazy(() => import("@/pages/ISGBotSetup"));
 const ISGBot = lazy(() => import("@/pages/ISGBot"));
+// ✅ NACE Module Pages
+const NaceHazardQuery = lazy(() => import("@/components/nace/NaceHazardQuery"));
+const NaceSectorList = lazy(() => import("@/components/nace/NaceSectorList"));
 
 // ============================================
 // RISK ASSESSMENT
 // ============================================
+
 const RiskAssessmentWizard = lazy(() => import("@/components/RiskAssessmentWizard"));
 const RiskAssessmentEditor = lazy(() => import("@/pages/RiskAssessmentEditor"));
 const RiskAssessments = lazy(() => import("@/pages/RiskAssessments"));
@@ -248,6 +253,9 @@ const App = () => (
                           {/* SAFETY LIBRARY */}
                           {/* ============================================ */}
                           <Route path="/safety-library" element={<SafetyLibrary />} />
+                          {/* ✅ NACE Module Routes */}
+                          <Route path="nace-query" element={<NaceHazardQuery />} />
+                          <Route path="nace-query/sectors" element={<NaceSectorList />} />
 
                           {/* ============================================ */}
                           {/* 404 NOT FOUND */}

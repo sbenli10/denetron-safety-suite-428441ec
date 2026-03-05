@@ -1,3 +1,7 @@
+// ====================================================
+// APP SIDEBAR - FIXED & COMPLETE
+// ====================================================
+
 import {
   LayoutDashboard,
   ClipboardCheck,
@@ -40,13 +44,33 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 
+// ====================================================
+// TYPES
+// ====================================================
+
+interface MenuItem {
+  title: string;
+  url: string;
+  icon: React.ComponentType<{ className?: string }>;
+  badge?: string | number | null;
+}
+
+interface MenuGroup {
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  items: MenuItem[];
+}
+
+// ====================================================
+// COMPONENT
+// ====================================================
 
 export function AppSidebar() {
   const { state, toggleSidebar } = useSidebar();
   const { signOut, user } = useAuth();
   const navigate = useNavigate();
   const collapsed = state === "collapsed";
-  
+
   const [collapsedGroups, setCollapsedGroups] = useState<string[]>([]);
   const [draftMeetingsCount, setDraftMeetingsCount] = useState(0);
 
@@ -75,81 +99,156 @@ export function AppSidebar() {
     }
   };
 
-  /// ✅ Hiyerarşik Gruplandırma
-const menuGroups = [
-  {
-    label: "GENEL",
-    icon: LayoutDashboard,
-    items: [
-      { title: "Panel", url: "/", icon: LayoutDashboard, badge: null },
-      { title: "Profilim", url: "/profile", icon: User, badge: null },
-    ],
-  },
-  {
-    label: "FİRMA YÖNETİMİ",
-    icon: Building2,
-    items: [
-      { title: "Firmalar", url: "/companies", icon: Building2, badge: null },
-      { title: "Denetimler", url: "/inspections", icon: ClipboardCheck, badge: null },
-      {
-        title: "Kurul Toplantıları",
-        url: "/board-meetings",
-        icon: Users,
-        badge: draftMeetingsCount > 0 ? draftMeetingsCount : null,
-      },
-    ],
-  },
-  {
-    label: "RİSK & GÜVENLİK",
-    icon: ShieldAlert,
-    items: [
-      { title: "Risk Sihirbazı", url: "/risk-wizard", icon: TrendingUp, badge: "AI" },
-      { title: "Klasik Risk Editörü", url: "/risk-editor", icon: FileText, badge: "NEW" },
-      { title: "DÖF Yönetimi", url: "/capa", icon: ShieldAlert, badge: null },
-      { title: "DÖF Oluştur", url: "/bulk-capa", icon: ShieldPlus, badge: null },
-      { title: "Acil Durum Planı", url: "/adep-wizard", icon: Flame, badge: null },
-      { title: "ADEP Planlarım", url: "/adep-plans", icon: FileText, badge: null },
-    ],
-  },
-  {
-    label: "YAPAY ZEKA ARAÇLARI",
-    icon: Brain,
-    items: [
-      { title: "AI Raporlar", url: "/reports", icon: Brain, badge: "Beta" },
-      { title: "AI Kroki Okuyucu", url: "/blueprint-analyzer", icon: Target, badge: "Pro" },
-    ],
-  },
-  {
-    // ✅ DÜZELTİLDİ
-    label: "İSG BOT",
-    icon: Bot,
-    items: [
-      { title: "Dashboard", url: "/isg-bot", icon: Bot, badge: "NEW" },
-      { title: "Denetime Hazır mıyım?", url: "/isg-bot?tab=audit", icon: ClipboardCheck, badge: null },
-      { title: "Compliance Raporu", url: "/isg-bot?tab=compliance", icon: Shield, badge: null },
-      { title: "Risk Analizi", url: "/isg-bot?tab=risk", icon: TrendingUp, badge: null },
-    ],
-  },
-  {
-    label: "PLANLAMA & RAPORLAMA",
-    icon: Calendar,
-    items: [
-      { title: "Yıllık Planlar", url: "/annual-plans", icon: Calendar, badge: null },
-      { title: "İSG Kütüphanesi", url: "/safety-library", icon: BookOpen, badge: null },
-    ],
-  },
-];
+  // ✅ Menu Groups Configuration
+  const menuGroups: MenuGroup[] = [
+    {
+      label: "GENEL",
+      icon: LayoutDashboard,
+      items: [
+        { title: "Panel", url: "/", icon: LayoutDashboard, badge: null },
+        { title: "Profilim", url: "/profile", icon: User, badge: null },
+      ],
+    },
+    {
+      label: "FİRMA YÖNETİMİ",
+      icon: Building2,
+      items: [
+        { title: "Firmalar", url: "/companies", icon: Building2, badge: null },
+        {
+          title: "Denetimler",
+          url: "/inspections",
+          icon: ClipboardCheck,
+          badge: null,
+        },
+        {
+          title: "Kurul Toplantıları",
+          url: "/board-meetings",
+          icon: Users,
+          badge: draftMeetingsCount > 0 ? draftMeetingsCount : null,
+        },
+      ],
+    },
+    {
+      label: "RİSK & GÜVENLİK",
+      icon: ShieldAlert,
+      items: [
+        {
+          title: "Risk Sihirbazı",
+          url: "/risk-wizard",
+          icon: TrendingUp,
+          badge: "AI",
+        },
+        {
+          title: "Klasik Risk Editörü",
+          url: "/risk-editor",
+          icon: FileText,
+          badge: "NEW",
+        },
+        { title: "DÖF Yönetimi", url: "/capa", icon: ShieldAlert, badge: null },
+        {
+          title: "DÖF Oluştur",
+          url: "/bulk-capa",
+          icon: ShieldPlus,
+          badge: null,
+        },
+        {
+          title: "Acil Durum Planı",
+          url: "/adep-wizard",
+          icon: Flame,
+          badge: null,
+        },
+        {
+          title: "ADEP Planlarım",
+          url: "/adep-plans",
+          icon: FileText,
+          badge: null,
+        },
+      ],
+    },
+    {
+      label: "YAPAY ZEKA ARAÇLARI",
+      icon: Brain,
+      items: [
+        { title: "AI Raporlar", url: "/reports", icon: Brain, badge: "Beta" },
+        {
+          title: "AI Kroki Okuyucu",
+          url: "/blueprint-analyzer",
+          icon: Target,
+          badge: "Pro",
+        },
+      ],
+    },
+    {
+      label: "İSG BOT",
+      icon: Bot,
+      items: [
+        { title: "Dashboard", url: "/isg-bot", icon: Bot, badge: "NEW" },
+        {
+          title: "Denetime Hazır mıyım?",
+          url: "/isg-bot?tab=audit",
+          icon: ClipboardCheck,
+          badge: null,
+        },
+        {
+          title: "Compliance Raporu",
+          url: "/isg-bot?tab=compliance",
+          icon: Shield,
+          badge: null,
+        },
+        {
+          title: "Risk Analizi",
+          url: "/isg-bot?tab=risk",
+          icon: TrendingUp,
+          badge: null,
+        },
+      ],
+    },
+    {
+      label: "NACE TEHLİKE SORGU",
+      icon: Shield,
+      items: [
+        {
+          title: "Kod Sorgula",
+          url: "/nace-query",
+          icon: Shield,
+          badge: "AI",
+        },
+        {
+          title: "Sektör Listesi",
+          url: "/nace-query/sectors",
+          icon: BookOpen,
+          badge: null,
+        },
+      ],
+    },
+    {
+      label: "PLANLAMA & RAPORLAMA",
+      icon: Calendar,
+      items: [
+        {
+          title: "Yıllık Planlar",
+          url: "/annual-plans",
+          icon: Calendar,
+          badge: null,
+        },
+        {
+          title: "İSG Kütüphanesi",
+          url: "/safety-library",
+          icon: BookOpen,
+          badge: null,
+        },
+      ],
+    },
+  ];
 
-  const bottomItems = [
-    { title: "Ayarlar", url: "/settings", icon: Settings },
+  const bottomItems: MenuItem[] = [
+    { title: "Ayarlar", url: "/settings", icon: Settings, badge: null },
   ];
 
   const toggleGroup = (label: string) => {
     if (collapsed) return;
-    setCollapsedGroups(prev =>
-      prev.includes(label)
-        ? prev.filter(g => g !== label)
-        : [...prev, label]
+    setCollapsedGroups((prev) =>
+      prev.includes(label) ? prev.filter((g) => g !== label) : [...prev, label]
     );
   };
 
@@ -159,10 +258,7 @@ const menuGroups = [
   };
 
   return (
-    <Sidebar 
-      collapsible="icon" 
-      className="border-r border-slate-800 bg-slate-950"
-    >
+    <Sidebar collapsible="icon" className="border-r border-slate-800 bg-slate-950">
       {/* HEADER - LOGO & BRANDING */}
       <SidebarHeader className="border-b border-slate-800 p-4">
         <div className="flex items-center gap-3 group/brand cursor-pointer">
@@ -190,7 +286,7 @@ const menuGroups = [
             <button
               onClick={() => toggleGroup(group.label)}
               className={`flex items-center justify-between w-full px-3 py-2 text-[9px] font-black uppercase tracking-[0.15em] text-slate-500 hover:text-slate-400 transition-all rounded-lg ${
-                !collapsed ? 'hover:bg-slate-900/50' : ''
+                !collapsed ? "hover:bg-slate-900/50" : ""
               }`}
               disabled={collapsed}
             >
@@ -200,10 +296,10 @@ const menuGroups = [
                     <group.icon className="h-3 w-3" />
                     <span>{group.label}</span>
                   </div>
-                  <ChevronDown 
+                  <ChevronDown
                     className={`h-3 w-3 transition-transform duration-200 ${
-                      collapsedGroups.includes(group.label) ? '-rotate-90' : ''
-                    }`} 
+                      collapsedGroups.includes(group.label) ? "-rotate-90" : ""
+                    }`}
                   />
                 </>
               ) : (
@@ -216,7 +312,7 @@ const menuGroups = [
               <SidebarGroupContent>
                 <SidebarMenu className="gap-0.5 mt-1">
                   {group.items.map((item) => (
-                    <SidebarMenuItem key={item.title}>
+                    <SidebarMenuItem key={item.url}>
                       <SidebarMenuButton asChild tooltip={item.title}>
                         <NavLink
                           to={item.url}
@@ -226,28 +322,30 @@ const menuGroups = [
                         >
                           {/* Active Indicator */}
                           <div className="absolute inset-y-0 left-0 w-1 bg-white rounded-r-full opacity-0 group-[.active]:opacity-100 transition-opacity" />
-                          
+
                           <item.icon className="h-[17px] w-[17px] shrink-0 transition-transform group-hover:scale-110" />
-                          
+
                           {!collapsed && (
                             <>
                               <span className="flex-1 truncate transition-transform group-hover:translate-x-0.5">
                                 {item.title}
                               </span>
                               {item.badge && (
-                                <span className={`text-[8px] font-black px-2 py-0.5 rounded-full border uppercase tracking-wider ${
-                                  item.badge === "AI"
-                                    ? "bg-purple-500/20 text-purple-300 border-purple-500/30 shadow-sm shadow-purple-500/20"
-                                    : item.badge === "Pro"
-                                    ? "bg-amber-500/20 text-amber-300 border-amber-500/30 shadow-sm shadow-amber-500/20"
-                                    : item.badge === "Beta"
-                                    ? "bg-blue-500/20 text-blue-300 border-blue-500/30 shadow-sm shadow-blue-500/20"
-                                    : item.badge === "NEW"
-                                    ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/30 shadow-sm shadow-emerald-500/20"
-                                    : typeof item.badge === "number"
-                                    ? "bg-yellow-500/20 text-yellow-300 border-yellow-500/30 shadow-sm shadow-yellow-500/20"
-                                    : "bg-slate-500/20 text-slate-300 border-slate-500/30"
-                                }`}>
+                                <span
+                                  className={`text-[8px] font-black px-2 py-0.5 rounded-full border uppercase tracking-wider ${
+                                    item.badge === "AI"
+                                      ? "bg-purple-500/20 text-purple-300 border-purple-500/30 shadow-sm shadow-purple-500/20"
+                                      : item.badge === "Pro"
+                                      ? "bg-amber-500/20 text-amber-300 border-amber-500/30 shadow-sm shadow-amber-500/20"
+                                      : item.badge === "Beta"
+                                      ? "bg-blue-500/20 text-blue-300 border-blue-500/30 shadow-sm shadow-blue-500/20"
+                                      : item.badge === "NEW"
+                                      ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/30 shadow-sm shadow-emerald-500/20"
+                                      : typeof item.badge === "number"
+                                      ? "bg-yellow-500/20 text-yellow-300 border-yellow-500/30 shadow-sm shadow-yellow-500/20"
+                                      : "bg-slate-500/20 text-slate-300 border-slate-500/30"
+                                  }`}
+                                >
                                   {item.badge}
                                 </span>
                               )}
@@ -274,7 +372,7 @@ const menuGroups = [
           <SidebarGroupContent>
             <SidebarMenu className="gap-0.5">
               {bottomItems.map((item) => (
-                <SidebarMenuItem key={item.title}>
+                <SidebarMenuItem key={item.url}>
                   <SidebarMenuButton asChild tooltip={item.title}>
                     <NavLink
                       to={item.url}
@@ -330,7 +428,9 @@ const menuGroups = [
             ) : (
               <>
                 <ChevronLeft className="h-4 w-4 transition-transform group-hover:-translate-x-0.5" />
-                <span className="text-[10px] font-bold uppercase tracking-wider">Daralt</span>
+                <span className="text-[10px] font-bold uppercase tracking-wider">
+                  Daralt
+                </span>
               </>
             )}
           </button>

@@ -20,42 +20,88 @@ class PopupController {
   // INIT
   // ====================================================
 
-  async init() {
-
+async init() {
   console.log("🚀 Popup initialized");
 
-  this.showLoading();
+  // Check configuration
+  const isConfigured = await this.checkConfiguration();
 
-  const configured = await this.checkConfiguration();
-
-  if (!configured) {
-
+  if (!isConfigured) {
     console.warn("⚠️ Extension not configured");
-
     this.showAuthScreen();
-
     return;
-
   }
 
-  await this.checkLocalStorageAuth();
+  console.log("✅ Configuration valid");
 
-  const isAuth = await this.authHandler.isAuthenticated();
-
-  if (!isAuth) {
-
-    console.log("🔐 Not authenticated");
-
-    this.showAuthScreen();
-
-    return;
-
+  // ✅ Get authenticated user's org_id
+  const auth = await chrome.storage.local.get("denetron_auth");
+  
+  if (auth.denetron_auth && auth.denetron_auth.user) {
+    const userId = auth.denetron_auth.user.id;
+    console.log("📍 Authenticated user ID:", userId);
+    
+    // Update orgId in storage if different
+    const config = await chrome.storage.local.get("orgId");
+    if (config.orgId !== userId) {
+      console.log("🔄 Updating orgId to match user ID");
+      await chrome.storage.local.set({ orgId: userId });
+    }
   }
-
-  console.log("✅ Authenticated");
 
   await this.showMainApp();
+}
 
+async loadStats() {
+  if (!this.supabaseUrl || !this.supabaseKey || !this.orgId) {
+    console.error("❌ Missing config for stats");
+    return;
+  }
+
+  console.log("📊 Loading stats from Supabase...");
+  console.log("📍 Using org_id:", this.orgId);
+
+  try {
+    const response = await fetch(
+      `${this.supabaseUrl}/rest/v1/isgkatip_companies?org_id=eq.${this.orgId}&select=compliance_status`,
+      {
+        headers: {
+          apikey: this.supabaseKey,
+          Authorization: `Bearer ${this.supabaseKey}`,
+        },
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const companies = await response.json();
+
+    console.log("✅ Companies fetched:", companies.length);
+
+    this.stats = {
+      totalCompanies: companies.length,
+      warningCount: companies.filter((c) => c.compliance_status === "WARNING")
+        .length,
+      criticalCount: companies.filter((c) => c.compliance_status === "CRITICAL")
+        .length,
+    };
+
+    console.log("📊 Stats calculated:", this.stats);
+
+    // Cache stats
+    await chrome.storage.local.set({ stats: this.stats });
+  } catch (error) {
+    console.error("❌ Stats load error:", error);
+
+    // Try to use cached stats
+    const cached = await chrome.storage.local.get("stats");
+    if (cached.stats) {
+      this.stats = cached.stats;
+      console.log("📦 Using cached stats:", this.stats);
+    }
+  }
 }
   // ====================================================
 // CONFIG CHECK

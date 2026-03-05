@@ -65,33 +65,42 @@ class BackgroundService {
   // ====================================================
 
   async loadConfig() {
+  try {
+    const config = await chrome.storage.local.get([
+      'supabaseUrl',
+      'supabaseKey',
+      'orgId',
+      'userId',
+      'denetron_auth',
+    ]);
 
-    try {
-
-      const config = await chrome.storage.local.get([
-        "supabaseUrl",
-        "supabaseKey",
-        "orgId",
-        "userId"
-      ]);
-
-      this.supabaseUrl = config.supabaseUrl;
-      this.supabaseKey = config.supabaseKey;
+    this.supabaseUrl = config.supabaseUrl;
+    this.supabaseKey = config.supabaseKey;
+    
+    // ✅ Önce authenticated user'ın ID'sini kontrol et
+    if (config.denetron_auth && config.denetron_auth.user) {
+      this.orgId = config.denetron_auth.user.id;
+      console.log('✅ Using authenticated user ID as org_id:', this.orgId);
+      
+      // Storage'da da güncelle
+      await chrome.storage.local.set({ orgId: this.orgId });
+    } else {
       this.orgId = config.orgId;
-      this.userId = config.userId;
-
-      console.log("📦 Config loaded", {
-        url: this.supabaseUrl,
-        orgId: this.orgId
-      });
-
-    } catch (err) {
-
-      console.error("❌ Config load error", err);
-
+      console.log('✅ Using stored org_id:', this.orgId);
     }
 
+    if (this.supabaseUrl && this.supabaseKey && this.orgId) {
+      console.log('✅ Config loaded:', {
+        url: this.supabaseUrl?.substring(0, 30) + '...',
+        orgId: this.orgId,
+      });
+    } else {
+      console.warn('⚠️ Config incomplete');
+    }
+  } catch (error) {
+    console.error('❌ Config load error:', error);
   }
+}
 
   // ====================================================
   // LOAD STATS

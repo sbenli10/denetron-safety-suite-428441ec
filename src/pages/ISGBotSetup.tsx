@@ -275,7 +275,7 @@ export default function ISGBotSetup() {
                 <div className="mt-2">
                   <Button variant="outline" size="sm" asChild>
                     <a
-                      href="https://isgkatip.csgb.gov.tr/Isyeri/IsyeriListesi"
+                      href="https://isgkatip.csgb.gov.tr/kisi-kurum/kisi-karti/kisi-kartim"
                       target="_blank"
                       rel="noopener noreferrer"
                     >

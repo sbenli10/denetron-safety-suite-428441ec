@@ -276,6 +276,8 @@ class BackgroundService {
     return Math.min(score, 100);
   }
 
+  // chrome-extension/background/service-worker.js
+
   async saveSyncLog(logData) {
     try {
       await fetch(`${this.supabaseUrl}/rest/v1/isgkatip_sync_logs`, {
@@ -287,12 +289,17 @@ class BackgroundService {
         },
         body: JSON.stringify({
           org_id: this.orgId,
-          ...logData,
-          synced_at: new Date().toISOString(),
+          source: logData.source,
+          total_companies: logData.total_companies,
+          success_count: logData.success_count,
+          error_count: logData.error_count,
+          metadata: logData.metadata,
+          // created_at otomatik ekleniyor (DEFAULT NOW())
         }),
       });
     } catch (error) {
-      console.error("❌ Sync log hatası:", error);
+      console.warn("⚠️ Sync log hatası:", error.message);
+      // Hata fırlatma, devam et
     }
   }
 

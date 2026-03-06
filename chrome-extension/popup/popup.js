@@ -251,30 +251,47 @@ class PopupController {
       });
   }
 
-  // ====================================================
-  // İSG-KATİP SYNC HANDLER (GELİŞMİŞ)
-  // ====================================================
+// chrome-extension/popup/popup.js
 
-  async handleISGKatipSync() {
-    console.log("🔗 Checking İSG-KATİP session...");
+async handleISGKatipSync() {
+  console.log('🔗 Checking İSG-KATİP session...');
 
-    try {
-      // Mevcut İSG-KATİP tab'ini bul
-      const tabs = await chrome.tabs.query({
-        url: "https://isgkatip.csgb.gov.tr/*",
-      });
+  try {
+    // Mevcut İSG-KATİP tab'ini bul
+    const tabs = await chrome.tabs.query({
+      url: "https://isgkatip.csgb.gov.tr/*",
+    });
 
-      if (tabs.length > 0) {
-        // Zaten açık bir İSG-KATİP tab'i var
-        const tab = tabs[0];
+    if (tabs.length > 0) {
+      // Zaten açık bir İSG-KATİP tab'i var
+      const tab = tabs[0];
 
-        console.log("✅ İSG-KATİP tab bulundu:", tab.id);
+      console.log("✅ İSG-KATİP tab bulundu:", tab.id);
 
-        // O tab'e geç
-        await chrome.tabs.update(tab.id, { active: true });
-        await chrome.windows.update(tab.windowId, { focused: true });
+      // O tab'e geç
+      await chrome.tabs.update(tab.id, { active: true });
+      await chrome.windows.update(tab.windowId, { focused: true });
 
-        // Content script'e mesaj gönder (manuel scrape tetikle)
+      // ✅ DOĞRU URL'E YÖNLENDİR
+      const currentUrl = tab.url || '';
+      if (!currentUrl.includes('/kisi-kurum/kisi-karti/kisi-kartim')) {
+        console.log('🔄 Kişi Kartı sayfasına yönlendiriliyor...');
+        
+        await chrome.tabs.update(tab.id, {
+          url: "https://isgkatip.csgb.gov.tr/kisi-kurum/kisi-karti/kisi-kartim",
+        });
+
+        chrome.notifications.create({
+          type: "basic",
+          iconUrl: "/icons/icon128.png",
+          title: "İSG-KATİP'e Yönlendiriliyorsunuz",
+          message: "Kişi Kartı sayfası yükleniyor... Extension otomatik veri çekecek.",
+          priority: 1,
+        });
+      } else {
+        // Zaten doğru sayfada, manuel trigger gönder
+        console.log('✅ Zaten doğru sayfada, manuel scrape tetikleniyor...');
+        
         try {
           await chrome.tabs.sendMessage(tab.id, {
             type: "TRIGGER_MANUAL_SCRAPE",
@@ -284,83 +301,57 @@ class PopupController {
             type: "basic",
             iconUrl: "/icons/icon128.png",
             title: "İSG-KATİP Senkronizasyonu",
-            message:
-              "Veriler toplanıyor... İşyeri listesi sayfasındaysanız otomatik çekilecek.",
+            message: "Veriler toplanıyor...",
             priority: 1,
           });
         } catch (error) {
-          console.warn("⚠️ Content script mesajı gönderilemedi:", error);
-
-          // Content script yüklü değil, işyeri listesine yönlendir
-          const currentUrl = tab.url;
-          if (!currentUrl.includes("/Isyeri/IsyeriListesi")) {
-            await chrome.tabs.update(tab.id, {
-              url: "https://isgkatip.csgb.gov.tr/Isyeri/IsyeriListesi",
-            });
-
-            chrome.notifications.create({
-              type: "basic",
-              iconUrl: "/icons/icon128.png",
-              title: "İSG-KATİP'e Yönlendiriliyorsunuz",
-              message: "İşyeri listesi yükleniyor... Extension otomatik veri çekecek.",
-              priority: 1,
-            });
-          } else {
-            // Zaten işyeri listesinde, sayfayı yenile
-            await chrome.tabs.reload(tab.id);
-
-            chrome.notifications.create({
-              type: "basic",
-              iconUrl: "/icons/icon128.png",
-              title: "Sayfa Yenileniyor",
-              message: "Extension otomatik olarak verileri çekecek...",
-              priority: 1,
-            });
-          }
+          console.warn("⚠️ Content script mesajı gönderilemedi, sayfa yenileniyor...");
+          await chrome.tabs.reload(tab.id);
         }
-      } else {
-        // İSG-KATİP açık değil, yeni tab aç
-        console.log("ℹ️ İSG-KATİP tab yok, yeni açılıyor...");
-
-        await chrome.tabs.create({
-          url: "https://isgkatip.csgb.gov.tr",
-        });
-
-        chrome.notifications.create({
-          type: "basic",
-          iconUrl: "/icons/icon128.png",
-          title: "İSG-KATİP'e Hoş Geldiniz",
-          message:
-            "1️⃣ Giriş yapın\n2️⃣ İşyeri Listesi sayfasına gidin\n3️⃣ Extension otomatik verileri çekecek ✅",
-          priority: 2,
-        });
-
-        // Badge göster
-        chrome.action.setBadgeText({ text: "📋" });
-        chrome.action.setBadgeBackgroundColor({ color: "#10b981" });
       }
+    } else {
+      // İSG-KATİP açık değil, yeni tab aç
+      console.log("ℹ️ İSG-KATİP tab yok, yeni açılıyor...");
 
-      // Popup'ı kapat
-      window.close();
-    } catch (error) {
-      console.error("❌ İSG-KATİP sync hatası:", error);
-
-      // Fallback: Direkt aç
-      chrome.tabs.create({
-        url: "https://isgkatip.csgb.gov.tr",
+      // ✅ DOĞRU URL'İ AÇ
+      await chrome.tabs.create({
+        url: "https://isgkatip.csgb.gov.tr/kisi-kurum/kisi-karti/kisi-kartim",
       });
 
       chrome.notifications.create({
         type: "basic",
         iconUrl: "/icons/icon128.png",
-        title: "İSG-KATİP",
-        message: "Giriş yapın ve İşyeri Listesi sayfasına gidin.",
-        priority: 1,
+        title: "İSG-KATİP'e Hoş Geldiniz",
+        message: "Giriş yapın, Kişi Kartı sayfasında extension otomatik çalışacak.",
+        priority: 2,
       });
 
-      window.close();
+      // Badge göster
+      chrome.action.setBadgeText({ text: "📋" });
+      chrome.action.setBadgeBackgroundColor({ color: "#10b981" });
     }
+
+    // Popup'ı kapat
+    window.close();
+  } catch (error) {
+    console.error("❌ İSG-KATİP sync hatası:", error);
+
+    // Fallback: Direkt doğru URL'i aç
+    chrome.tabs.create({
+      url: "https://isgkatip.csgb.gov.tr/kisi-kurum/kisi-karti/kisi-kartim",
+    });
+
+    chrome.notifications.create({
+      type: "basic",
+      iconUrl: "/icons/icon128.png",
+      title: "İSG-KATİP",
+      message: "Giriş yapın ve Kişi Kartı sayfasına gidin.",
+      priority: 1,
+    });
+
+    window.close();
   }
+}
 
   // ====================================================
   // LOAD STATS

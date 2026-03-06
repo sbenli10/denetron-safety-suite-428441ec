@@ -743,778 +743,915 @@ export default function ISGBotDashboard() {
   }
 
   // ====================================================
-  // MAIN RENDER
-  // ====================================================
+// MAIN RENDER
+// ====================================================
 
-  return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="space-y-1">
-          <h1 className="text-3xl font-bold tracking-tight">
-            İSG Bot Dashboard
-          </h1>
-          <p className="text-muted-foreground">
-            İSG-KATİP entegrasyonu ve gerçek zamanlı compliance takibi
-          </p>
-        </div>
+return (
+  <div className="space-y-6">
+    {/* DEBUG INFO - Geçici olarak ekle */}
+    {process.env.NODE_ENV === "development" && (
+      <Card className="bg-yellow-50 dark:bg-yellow-900/10 border-yellow-200">
+        <CardHeader>
+          <CardTitle className="text-sm">🔍 Debug Info</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="text-xs space-y-1">
+            <p>Total Companies: {companies.length}</p>
+            <p>Filtered Companies: {filteredCompanies.length}</p>
+            <p>Search Term: "{searchTerm}"</p>
+            <p>Compliance Filter: {complianceFilter}</p>
+            <p>Hazard Filter: {hazardFilter}</p>
+          </div>
+        </CardContent>
+      </Card>
+    )}
 
-        <div className="flex items-center gap-2">
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  onClick={handleRunComplianceCheck}
-                  variant="outline"
-                  disabled={syncing || companies.length === 0}
-                >
-                  {syncing ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Shield className="h-4 w-4" />
-                  )}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>Compliance Kontrol Çalıştır</p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-
-          <Button onClick={handleSync} disabled={syncing}>
-            {syncing ? (
-              <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Yenileniyor...
-              </>
-            ) : (
-              <>
-                <RefreshCw className="h-4 w-4 mr-2" />
-                Yenile
-              </>
-            )}
-          </Button>
-
-          {/* Senkron Bitirme Butonu */}
-          {companies.length > 0 && (
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button
-                  variant="destructive"
-                  disabled={terminatingSync}
-                >
-                  {terminatingSync ? (
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  ) : (
-                    <Trash2 className="h-4 w-4 mr-2" />
-                  )}
-                  Senkronu Bitir
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle className="flex items-center gap-2 text-destructive">
-                    <AlertTriangle className="h-5 w-5" />
-                    İSG-KATİP Senkronizasyonunu Sonlandır?
-                  </AlertDialogTitle>
-                  <AlertDialogDescription className="space-y-2">
-                    <p className="font-semibold text-destructive">
-                      ⚠️ UYARI: Bu işlem GERİ ALINAMAZ!
-                    </p>
-                    <div className="space-y-1 text-sm">
-                      <p>• Tüm firma verileri silinecek ({companies.length} firma)</p>
-                      <p>• Compliance bayrakları temizlenecek</p>
-                      <p>• Senkronizasyon logları silinecek</p>
-                      <p>• Silme geçmişi temizlenecek</p>
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-4">
-                      İSG-KATİP verilerini tamamen kaldırmak ve temiz başlamak
-                      için bu işlemi kullanın. Yeniden senkronize etmek
-                      isterseniz Chrome Extension'dan tekrar veri çekebilirsiniz.
-                    </p>
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>İptal</AlertDialogCancel>
-                  <AlertDialogAction
-                    onClick={handleTerminateSync}
-                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-                  >
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    Evet, Tüm Verileri Sil
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-          )}
-        </div>
+    {/* Header */}
+    <div className="flex items-center justify-between">
+      <div className="space-y-1">
+        <h1 className="text-3xl font-bold tracking-tight">
+          İSG Bot Dashboard
+        </h1>
+        <p className="text-muted-foreground">
+          İSG-KATİP entegrasyonu ve gerçek zamanlı compliance takibi
+        </p>
       </div>
 
-      {/* Critical Alerts */}
-      {stats && (stats.expiredContracts > 0 || stats.criticalFlags > 0) && (
-        <Alert variant="destructive" className="border-2">
-          <AlertCircle className="h-5 w-5" />
-          <AlertTitle className="font-bold text-lg">
-            Acil Dikkat Gerektiren Durumlar
-          </AlertTitle>
-          <AlertDescription className="mt-2 space-y-1">
-            {stats.expiredContracts > 0 && (
-              <div className="flex items-center gap-2">
-                <Clock className="h-4 w-4" />
-                <span className="font-semibold">
-                  {stats.expiredContracts} sözleşme süresi dolmuş
-                </span>
-              </div>
-            )}
-            {stats.criticalFlags > 0 && (
-              <div className="flex items-center gap-2">
-                <AlertTriangle className="h-4 w-4" />
-                <span className="font-semibold">
-                  {stats.criticalFlags} kritik compliance bayrağı açık
-                </span>
-              </div>
-            )}
-          </AlertDescription>
-        </Alert>
-      )}
-
-      {/* Stats Cards */}
-      {stats && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {/* Total Companies */}
-          <Card className="relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full -translate-y-16 translate-x-16" />
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
-                  Toplam Firma
-                </CardTitle>
-                <Building2 className="h-4 w-4 text-muted-foreground" />
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold">{stats.totalCompanies}</div>
-              <p className="text-xs text-muted-foreground mt-1">
-                {stats.totalEmployees.toLocaleString("tr-TR")} toplam çalışan
-              </p>
-              <div className="flex items-center gap-1 mt-2 text-xs text-emerald-600">
-                <TrendingUp className="h-3 w-3" />
-                <span>Aktif</span>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Compliant */}
-          <Card className="relative overflow-hidden border-emerald-200 dark:border-emerald-900">
-            <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full -translate-y-16 translate-x-16" />
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
-                  Uyumlu Firmalar
-                </CardTitle>
-                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-emerald-600">
-                {stats.compliant}
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                %{stats.complianceRate} uyum oranı
-              </p>
-              <Progress value={stats.complianceRate} className="h-2 mt-2" />
-            </CardContent>
-          </Card>
-
-          {/* Warning */}
-          <Card className="relative overflow-hidden border-amber-200 dark:border-amber-900">
-            <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/10 rounded-full -translate-y-16 translate-x-16" />
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
-                  Uyarı Durumu
-                </CardTitle>
-                <AlertTriangle className="h-4 w-4 text-amber-600" />
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-amber-600">
-                {stats.warning}
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                {stats.warningFlags} açık bayrak
-              </p>
-              <div className="flex items-center gap-1 mt-2 text-xs text-amber-600">
-                <Clock className="h-3 w-3" />
-                <span>Dikkat gerekiyor</span>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Critical */}
-          <Card className="relative overflow-hidden border-rose-200 dark:border-rose-900">
-            <div className="absolute inset-0 bg-gradient-to-br from-rose-500/5 to-transparent" />
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
-                  Kritik Durumlar
-                </CardTitle>
-                <AlertCircle className="h-4 w-4 text-rose-600" />
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-rose-600">
-                {stats.critical}
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                {stats.criticalFlags} kritik bayrak
-              </p>
-              <div className="flex items-center gap-1 mt-2 text-xs text-rose-600">
-                <Zap className="h-3 w-3" />
-                <span>Acil müdahale</span>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Average Risk */}
-          <Card className="relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-32 h-32 bg-violet-500/10 rounded-full -translate-y-16 translate-x-16" />
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
-                  Ortalama Risk Skoru
-                </CardTitle>
-                <Activity className="h-4 w-4 text-muted-foreground" />
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div
-                className={`text-3xl font-bold ${getRiskColor(
-                  stats.avgRiskScore
-                )}`}
+      <div className="flex items-center gap-2">
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                onClick={handleRunComplianceCheck}
+                variant="outline"
+                disabled={syncing || companies.length === 0}
               >
-                {stats.avgRiskScore}
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                {stats.highRiskCompanies} yüksek riskli firma
-              </p>
-              <Progress value={stats.avgRiskScore} className="h-2 mt-2" />
-            </CardContent>
-          </Card>
+                {syncing ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Shield className="h-4 w-4" />
+                )}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>Compliance Kontrol Çalıştır</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
 
-          {/* Expiring Contracts */}
-          <Card className="relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-32 h-32 bg-orange-500/10 rounded-full -translate-y-16 translate-x-16" />
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-medium text-muted-foreground">
-                  Yaklaşan Süreler
-                </CardTitle>
-                <Calendar className="h-4 w-4 text-muted-foreground" />
-              </div>
-            </CardHeader>
-            <CardContent>
-              <div className="text-3xl font-bold text-orange-600">
-                {stats.expiringContracts}
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                30 gün içinde dolacak
-              </p>
-              {stats.expiredContracts > 0 && (
-                <div className="flex items-center gap-1 mt-2 text-xs text-rose-600">
-                  <AlertTriangle className="h-3 w-3" />
-                  <span>{stats.expiredContracts} dolmuş</span>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+        <Button onClick={handleSync} disabled={syncing}>
+          {syncing ? (
+            <>
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              Yenileniyor...
+            </>
+          ) : (
+            <>
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Yenile
+            </>
+          )}
+        </Button>
 
-          {/* Compliance Distribution */}
-          <Card className="md:col-span-2 relative overflow-hidden">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-sm font-medium">
-                Uyum Durumu Dağılımı
+        {/* Senkron Bitirme Butonu */}
+        {companies.length > 0 && (
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button variant="destructive" disabled={terminatingSync}>
+                {terminatingSync ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Trash2 className="h-4 w-4 mr-2" />
+                )}
+                Senkronu Bitir
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle className="flex items-center gap-2 text-destructive">
+                  <AlertTriangle className="h-5 w-5" />
+                  İSG-KATİP Senkronizasyonunu Sonlandır?
+                </AlertDialogTitle>
+                <AlertDialogDescription className="space-y-2">
+                  <p className="font-semibold text-destructive">
+                    ⚠️ UYARI: Bu işlem GERİ ALINAMAZ!
+                  </p>
+                  <div className="space-y-1 text-sm">
+                    <p>
+                      • Tüm firma verileri silinecek ({companies.length} firma)
+                    </p>
+                    <p>• Compliance bayrakları temizlenecek</p>
+                    <p>• Senkronizasyon logları silinecek</p>
+                    <p>• Silme geçmişi temizlenecek</p>
+                  </div>
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>İptal</AlertDialogCancel>
+                <AlertDialogAction
+                  onClick={handleTerminateSync}
+                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                >
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Evet, Tüm Verileri Sil
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+        )}
+      </div>
+    </div>
+
+    {/* Critical Alerts */}
+    {stats && (stats.expiredContracts > 0 || stats.criticalFlags > 0) && (
+      <Alert variant="destructive" className="border-2">
+        <AlertCircle className="h-5 w-5" />
+        <AlertTitle className="font-bold text-lg">
+          Acil Dikkat Gerektiren Durumlar
+        </AlertTitle>
+        <AlertDescription className="mt-2 space-y-1">
+          {stats.expiredContracts > 0 && (
+            <div className="flex items-center gap-2">
+              <Clock className="h-4 w-4" />
+              <span className="font-semibold">
+                {stats.expiredContracts} sözleşme süresi dolmuş
+              </span>
+            </div>
+          )}
+          {stats.criticalFlags > 0 && (
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4" />
+              <span className="font-semibold">
+                {stats.criticalFlags} kritik compliance bayrağı açık
+              </span>
+            </div>
+          )}
+        </AlertDescription>
+      </Alert>
+    )}
+
+    {/* Stats Cards */}
+    {stats && (
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        {/* Total Companies */}
+        <Card className="relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full -translate-y-16 translate-x-16" />
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Toplam Firma
               </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                <div className="flex items-center gap-3">
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-sm font-medium flex items-center gap-2">
-                        <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                        Uyumlu
-                      </span>
-                      <span className="text-sm font-bold">
-                        {stats.compliant}
-                      </span>
-                    </div>
-                    <Progress
-                      value={
-                        stats.totalCompanies
-                          ? (stats.compliant / stats.totalCompanies) * 100
-                          : 0
-                      }
-                      className="h-2"
-                    />
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-sm font-medium flex items-center gap-2">
-                        <AlertTriangle className="h-4 w-4 text-amber-600" />
-                        Sınırda
-                      </span>
-                      <span className="text-sm font-bold">{stats.warning}</span>
-                    </div>
-                    <Progress
-                      value={
-                        stats.totalCompanies
-                          ? (stats.warning / stats.totalCompanies) * 100
-                          : 0
-                      }
-                      className="h-2"
-                    />
-                  </div>
-                </div>
-                <div className="flex items-center gap-3">
-                  <div className="flex-1">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-sm font-medium flex items-center gap-2">
-                        <AlertCircle className="h-4 w-4 text-rose-600" />
-                        Kritik
-                      </span>
-                      <span className="text-sm font-bold">
-                        {stats.critical}
-                      </span>
-                    </div>
-                    <Progress
-                      value={
-                        stats.totalCompanies
-                          ? (stats.critical / stats.totalCompanies) * 100
-                          : 0
-                      }
-                      className="h-2"
-                    />
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-      )}
-
-      {/* Recent Flags */}
-      {flags.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Shield className="h-5 w-5" />
-              Son Compliance Bayrakları
-            </CardTitle>
-            <CardDescription>
-              Sistemin tespit ettiği son uyumsuzluklar
-            </CardDescription>
+              <Building2 className="h-4 w-4 text-muted-foreground" />
+            </div>
           </CardHeader>
           <CardContent>
-            <ScrollArea className="h-[200px]">
-              <div className="space-y-2">
-                {flags.map((flag) => (
-                  <div
-                    key={flag.id}
-                    className="flex items-start gap-3 p-3 rounded-lg border hover:bg-accent/50 transition-colors"
-                  >
-                    <div
-                      className={`p-2 rounded-full ${
-                        flag.severity === "CRITICAL"
-                          ? "bg-rose-100 text-rose-600 dark:bg-rose-900/20"
-                          : "bg-amber-100 text-amber-600 dark:bg-amber-900/20"
-                      }`}
-                    >
-                      {flag.severity === "CRITICAL" ? (
-                        <AlertCircle className="h-4 w-4" />
-                      ) : (
-                        <AlertTriangle className="h-4 w-4" />
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-1">
-                        <Badge
-                          variant={
-                            flag.severity === "CRITICAL"
-                              ? "destructive"
-                              : "secondary"
-                          }
-                          className="text-xs"
-                        >
-                          {flag.severity}
-                        </Badge>
-                        <span className="text-xs text-muted-foreground">
-                          {new Date(flag.created_at).toLocaleDateString(
-                            "tr-TR"
-                          )}
-                        </span>
-                      </div>
-                      <p className="text-sm font-medium">{flag.message}</p>
-                      {flag.company && (
-                        <p className="text-xs text-muted-foreground mt-1">
-                          {(flag.company as any).company_name}
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </ScrollArea>
+            <div className="text-3xl font-bold">{stats.totalCompanies}</div>
+            <p className="text-xs text-muted-foreground mt-1">
+              {stats.totalEmployees.toLocaleString("tr-TR")} toplam çalışan
+            </p>
+            <div className="flex items-center gap-1 mt-2 text-xs text-emerald-600">
+              <TrendingUp className="h-3 w-3" />
+              <span>Aktif</span>
+            </div>
           </CardContent>
         </Card>
-      )}
 
-      {/* Filters */}
-      {companies.length > 0 && (
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex flex-col md:flex-row gap-4">
-              <div className="flex-1">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Firma adı veya SGK sicil no ara..."
-                    className="pl-10"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
+        {/* Compliant */}
+        <Card className="relative overflow-hidden border-emerald-200 dark:border-emerald-900">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 rounded-full -translate-y-16 translate-x-16" />
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Uyumlu Firmalar
+              </CardTitle>
+              <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold text-emerald-600">
+              {stats.compliant}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              %{stats.complianceRate} uyum oranı
+            </p>
+            <Progress value={stats.complianceRate} className="h-2 mt-2" />
+          </CardContent>
+        </Card>
+
+        {/* Warning */}
+        <Card className="relative overflow-hidden border-amber-200 dark:border-amber-900">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/10 rounded-full -translate-y-16 translate-x-16" />
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Uyarı Durumu
+              </CardTitle>
+              <AlertTriangle className="h-4 w-4 text-amber-600" />
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold text-amber-600">
+              {stats.warning}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              {stats.warningFlags} açık bayrak
+            </p>
+            <div className="flex items-center gap-1 mt-2 text-xs text-amber-600">
+              <Clock className="h-3 w-3" />
+              <span>Dikkat gerekiyor</span>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Critical */}
+        <Card className="relative overflow-hidden border-rose-200 dark:border-rose-900">
+          <div className="absolute inset-0 bg-gradient-to-br from-rose-500/5 to-transparent" />
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Kritik Durumlar
+              </CardTitle>
+              <AlertCircle className="h-4 w-4 text-rose-600" />
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold text-rose-600">
+              {stats.critical}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              {stats.criticalFlags} kritik bayrak
+            </p>
+            <div className="flex items-center gap-1 mt-2 text-xs text-rose-600">
+              <Zap className="h-3 w-3" />
+              <span>Acil müdahale</span>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Average Risk */}
+        <Card className="relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-violet-500/10 rounded-full -translate-y-16 translate-x-16" />
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Ortalama Risk Skoru
+              </CardTitle>
+              <Activity className="h-4 w-4 text-muted-foreground" />
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div
+              className={`text-3xl font-bold ${getRiskColor(
+                stats.avgRiskScore
+              )}`}
+            >
+              {stats.avgRiskScore}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              {stats.highRiskCompanies} yüksek riskli firma
+            </p>
+            <Progress value={stats.avgRiskScore} className="h-2 mt-2" />
+          </CardContent>
+        </Card>
+
+        {/* Expiring Contracts */}
+        <Card className="relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-orange-500/10 rounded-full -translate-y-16 translate-x-16" />
+          <CardHeader className="pb-2">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm font-medium text-muted-foreground">
+                Yaklaşan Süreler
+              </CardTitle>
+              <Calendar className="h-4 w-4 text-muted-foreground" />
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="text-3xl font-bold text-orange-600">
+              {stats.expiringContracts}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1">
+              30 gün içinde dolacak
+            </p>
+            {stats.expiredContracts > 0 && (
+              <div className="flex items-center gap-1 mt-2 text-xs text-rose-600">
+                <AlertTriangle className="h-3 w-3" />
+                <span>{stats.expiredContracts} dolmuş</span>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Compliance Distribution */}
+        <Card className="md:col-span-2 relative overflow-hidden">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm font-medium">
+              Uyum Durumu Dağılımı
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              <div className="flex items-center gap-3">
+                <div className="flex-1">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-sm font-medium flex items-center gap-2">
+                      <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                      Uyumlu
+                    </span>
+                    <span className="text-sm font-bold">{stats.compliant}</span>
+                  </div>
+                  <Progress
+                    value={
+                      stats.totalCompanies
+                        ? (stats.compliant / stats.totalCompanies) * 100
+                        : 0
+                    }
+                    className="h-2"
                   />
                 </div>
               </div>
+              <div className="flex items-center gap-3">
+                <div className="flex-1">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-sm font-medium flex items-center gap-2">
+                      <AlertTriangle className="h-4 w-4 text-amber-600" />
+                      Sınırda
+                    </span>
+                    <span className="text-sm font-bold">{stats.warning}</span>
+                  </div>
+                  <Progress
+                    value={
+                      stats.totalCompanies
+                        ? (stats.warning / stats.totalCompanies) * 100
+                        : 0
+                    }
+                    className="h-2"
+                  />
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="flex-1">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-sm font-medium flex items-center gap-2">
+                      <AlertCircle className="h-4 w-4 text-rose-600" />
+                      Kritik
+                    </span>
+                    <span className="text-sm font-bold">{stats.critical}</span>
+                  </div>
+                  <Progress
+                    value={
+                      stats.totalCompanies
+                        ? (stats.critical / stats.totalCompanies) * 100
+                        : 0
+                    }
+                    className="h-2"
+                  />
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )}
 
-              <Select
-                value={complianceFilter}
-                onValueChange={setComplianceFilter}
+    {/* Recent Flags */}
+    {flags.length > 0 && (
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Shield className="h-5 w-5" />
+            Son Compliance Bayrakları
+          </CardTitle>
+          <CardDescription>
+            Sistemin tespit ettiği son uyumsuzluklar
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <ScrollArea className="h-[200px]">
+            <div className="space-y-2">
+              {flags.map((flag) => (
+                <div
+                  key={flag.id}
+                  className="flex items-start gap-3 p-3 rounded-lg border hover:bg-accent/50 transition-colors"
+                >
+                  <div
+                    className={`p-2 rounded-full ${
+                      flag.severity === "CRITICAL"
+                        ? "bg-rose-100 text-rose-600 dark:bg-rose-900/20"
+                        : "bg-amber-100 text-amber-600 dark:bg-amber-900/20"
+                    }`}
+                  >
+                    {flag.severity === "CRITICAL" ? (
+                      <AlertCircle className="h-4 w-4" />
+                    ) : (
+                      <AlertTriangle className="h-4 w-4" />
+                    )}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Badge
+                        variant={
+                          flag.severity === "CRITICAL"
+                            ? "destructive"
+                            : "secondary"
+                        }
+                        className="text-xs"
+                      >
+                        {flag.severity}
+                      </Badge>
+                      <span className="text-xs text-muted-foreground">
+                        {new Date(flag.created_at).toLocaleDateString("tr-TR")}
+                      </span>
+                    </div>
+                    <p className="text-sm font-medium">{flag.message}</p>
+                    {flag.company && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {(flag.company as any).company_name}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </ScrollArea>
+        </CardContent>
+      </Card>
+    )}
+
+    {/* Filters */}
+    {companies.length > 0 && (
+      <Card>
+        <CardContent className="pt-6">
+          <div className="flex flex-col md:flex-row gap-4">
+            <div className="flex-1">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Firma adı veya SGK sicil no ara..."
+                  className="pl-10"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <Select value={complianceFilter} onValueChange={setComplianceFilter}>
+              <SelectTrigger className="w-[200px]">
+                <Filter className="h-4 w-4 mr-2" />
+                <SelectValue placeholder="Uyum Durumu" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Tüm Durumlar</SelectItem>
+                <SelectItem value="COMPLIANT">✅ Uyumlu</SelectItem>
+                <SelectItem value="WARNING">⚠️ Sınırda</SelectItem>
+                <SelectItem value="CRITICAL">🔴 Kritik</SelectItem>
+                <SelectItem value="EXCESS">📊 Fazla</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Select value={hazardFilter} onValueChange={setHazardFilter}>
+              <SelectTrigger className="w-[200px]">
+                <SelectValue placeholder="Tehlike Sınıfı" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Tüm Sınıflar</SelectItem>
+                <SelectItem value="Az Tehlikeli">Az Tehlikeli</SelectItem>
+                <SelectItem value="Tehlikeli">Tehlikeli</SelectItem>
+                <SelectItem value="Çok Tehlikeli">Çok Tehlikeli</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <Button variant="outline" size="icon">
+              <Download className="h-4 w-4" />
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    )}
+
+    {/* Companies Table */}
+    {companies.length > 0 ? (
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>İşyerleri ({filteredCompanies.length})</CardTitle>
+              <CardDescription>
+                İSG-KATİP'ten senkronize edilen tüm firmalar
+              </CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {filteredCompanies.length === 0 ? (
+            <div className="text-center py-12">
+              <FileText className="h-16 w-16 mx-auto mb-4 text-muted-foreground opacity-20" />
+              <p className="text-muted-foreground mb-2">
+                Filtre kriterlerine uygun firma bulunamadı
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setSearchTerm("");
+                  setComplianceFilter("all");
+                  setHazardFilter("all");
+                }}
               >
-                <SelectTrigger className="w-[200px]">
-                  <Filter className="h-4 w-4 mr-2" />
-                  <SelectValue placeholder="Uyum Durumu" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Tüm Durumlar</SelectItem>
-                  <SelectItem value="COMPLIANT">✅ Uyumlu</SelectItem>
-                  <SelectItem value="WARNING">⚠️ Sınırda</SelectItem>
-                  <SelectItem value="CRITICAL">🔴 Kritik</SelectItem>
-                  <SelectItem value="EXCESS">📊 Fazla</SelectItem>
-                </SelectContent>
-              </Select>
-
-              <Select value={hazardFilter} onValueChange={setHazardFilter}>
-                <SelectTrigger className="w-[200px]">
-                  <SelectValue placeholder="Tehlike Sınıfı" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Tüm Sınıflar</SelectItem>
-                  <SelectItem value="Az Tehlikeli">Az Tehlikeli</SelectItem>
-                  <SelectItem value="Tehlikeli">Tehlikeli</SelectItem>
-                  <SelectItem value="Çok Tehlikeli">Çok Tehlikeli</SelectItem>
-                </SelectContent>
-              </Select>
-
-              <Button variant="outline" size="icon">
-                <Download className="h-4 w-4" />
+                Filtreleri Temizle
               </Button>
             </div>
-          </CardContent>
-        </Card>
-      )}
+          ) : (
+            <div className="border rounded-lg overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-muted/50">
+                    <TableHead className="font-semibold">Firma</TableHead>
+                    <TableHead className="font-semibold">SGK No</TableHead>
+                    <TableHead className="font-semibold">Çalışan</TableHead>
+                    <TableHead className="font-semibold">Tehlike</TableHead>
+                    <TableHead className="font-semibold">Süre</TableHead>
+                    <TableHead className="font-semibold">Uyum</TableHead>
+                    <TableHead className="font-semibold">Risk</TableHead>
+                    <TableHead className="font-semibold">Sözleşme</TableHead>
+                    <TableHead className="text-right font-semibold">
+                      İşlem
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredCompanies.map((company) => {
+                    const daysUntilExpiry = calculateDaysUntilExpiry(
+                      company.contract_end
+                    );
+                    const compliancePercentage =
+                      company.required_minutes > 0
+                        ? Math.round(
+                            (company.assigned_minutes /
+                              company.required_minutes) *
+                              100
+                          )
+                        : 0;
 
-      {/* Companies Table - Dropdown Actions Güncelle */}
-      {companies.length > 0 && (
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
+                    return (
+                      <TableRow
+                        key={company.id}
+                        className="hover:bg-muted/30 transition-colors"
+                      >
+                        <TableCell>
+                          <div>
+                            <div className="font-medium">
+                              {company.company_name}
+                            </div>
+                            {company.service_provider_name && (
+                              <div className="text-xs text-muted-foreground">
+                                {company.service_provider_name}
+                              </div>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell className="font-mono text-xs">
+                          {company.sgk_no}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <Users className="h-4 w-4 text-muted-foreground" />
+                            <span className="font-medium">
+                              {company.employee_count}
+                            </span>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            variant={
+                              company.hazard_class === "Çok Tehlikeli"
+                                ? "destructive"
+                                : company.hazard_class === "Tehlikeli"
+                                ? "secondary"
+                                : "outline"
+                            }
+                          >
+                            {company.hazard_class}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div className="space-y-1">
+                            <div className="text-sm font-medium">
+                              {company.assigned_minutes} /{" "}
+                              {company.required_minutes} dk
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <Progress
+                                value={compliancePercentage}
+                                className="h-1.5 flex-1"
+                              />
+                              <span className="text-xs text-muted-foreground">
+                                %{compliancePercentage}
+                              </span>
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            {getComplianceIcon(company.compliance_status)}
+                            <Badge
+                              variant={getComplianceBadgeVariant(
+                                company.compliance_status
+                              )}
+                            >
+                              {getComplianceLabel(company.compliance_status)}
+                            </Badge>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`text-lg font-bold ${getRiskColor(
+                                company.risk_score
+                              )}`}
+                            >
+                              {company.risk_score}
+                            </span>
+                            {getRiskBadge(company.risk_score)}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          {company.contract_end ? (
+                            <div>
+                              <div className="text-sm font-medium">
+                                {new Date(
+                                  company.contract_end
+                                ).toLocaleDateString("tr-TR")}
+                              </div>
+                              {daysUntilExpiry !== null && (
+                                <Badge
+                                  variant={
+                                    daysUntilExpiry < 0
+                                      ? "destructive"
+                                      : daysUntilExpiry <= 30
+                                      ? "secondary"
+                                      : "outline"
+                                  }
+                                  className="text-xs mt-1"
+                                >
+                                  {daysUntilExpiry < 0
+                                    ? `${Math.abs(daysUntilExpiry)} gün geçti`
+                                    : `${daysUntilExpiry} gün kaldı`}
+                                </Badge>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground">-</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon">
+                                <MoreVertical className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuLabel>İşlemler</DropdownMenuLabel>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                onClick={() => setSelectedCompany(company)}
+                              >
+                                <Eye className="h-4 w-4 mr-2" />
+                                Detayları Gör
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => handleGenerateReport(company)}
+                              >
+                                <FileBarChart className="h-4 w-4 mr-2" />
+                                Rapor Oluştur
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem
+                                className="text-red-600"
+                                onClick={() => setCompanyToDelete(company)}
+                              >
+                                <Trash2 className="h-4 w-4 mr-2" />
+                                Sil
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    ) : (
+      <Card>
+        <CardContent className="py-12">
+          <div className="text-center">
+            <Building2 className="h-16 w-16 mx-auto mb-4 text-muted-foreground opacity-20" />
+            <h3 className="text-lg font-semibold mb-2">Henüz Firma Yok</h3>
+            <p className="text-sm text-muted-foreground mb-4">
+              İSG-KATİP'ten veri senkronize etmek için Chrome Extension'ı
+              kullanın
+            </p>
+            <Button onClick={handleSync}>
+              <RefreshCw className="h-4 w-4 mr-2" />
+              İlk Senkronizasyonu Başlat
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    )}
+
+    {/* Company Details Dialog */}
+    {selectedCompany && (
+      <Dialog
+        open={!!selectedCompany}
+        onOpenChange={() => setSelectedCompany(null)}
+      >
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-2xl">
+              {selectedCompany.company_name}
+            </DialogTitle>
+            <DialogDescription>
+              Firma detayları ve compliance bilgileri
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-6 py-4">
+            <div className="flex flex-wrap gap-2">
+              <Badge
+                variant={getComplianceBadgeVariant(
+                  selectedCompany.compliance_status
+                )}
+              >
+                {getComplianceLabel(selectedCompany.compliance_status)}
+              </Badge>
+              {getRiskBadge(selectedCompany.risk_score)}
+              <Badge variant="outline">
+                {selectedCompany.employee_count} Çalışan
+              </Badge>
+              <Badge variant="outline">{selectedCompany.hazard_class}</Badge>
+            </div>
+
+            <Separator />
+
+            <div className="grid grid-cols-2 gap-6">
               <div>
-                <CardTitle>İşyerleri ({filteredCompanies.length})</CardTitle>
-                <CardDescription>
-                  İSG-KATİP'ten senkronize edilen tüm firmalar
-                </CardDescription>
+                <h3 className="font-semibold mb-3 flex items-center gap-2">
+                  <Building2 className="h-4 w-4" />
+                  Firma Bilgileri
+                </h3>
+                <dl className="space-y-2 text-sm">
+                  <div>
+                    <dt className="text-muted-foreground">SGK Sicil No</dt>
+                    <dd className="font-mono">{selectedCompany.sgk_no}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-muted-foreground">NACE Kodu</dt>
+                    <dd>{selectedCompany.nace_code || "-"}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-muted-foreground">Çalışan Sayısı</dt>
+                    <dd>{selectedCompany.employee_count}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-muted-foreground">Tehlike Sınıfı</dt>
+                    <dd>{selectedCompany.hazard_class}</dd>
+                  </div>
+                </dl>
+              </div>
+
+              <div>
+                <h3 className="font-semibold mb-3 flex items-center gap-2">
+                  <Clock className="h-4 w-4" />
+                  Süre Bilgileri
+                </h3>
+                <dl className="space-y-2 text-sm">
+                  <div>
+                    <dt className="text-muted-foreground">Atanan Süre</dt>
+                    <dd className="font-semibold">
+                      {selectedCompany.assigned_minutes} dk/ay
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-muted-foreground">Gerekli Süre</dt>
+                    <dd className="font-semibold">
+                      {selectedCompany.required_minutes} dk/ay
+                    </dd>
+                  </div>
+                  <div>
+                    <dt className="text-muted-foreground">Uyum Oranı</dt>
+                    <dd>
+                      <div className="flex items-center gap-2">
+                        <Progress
+                          value={
+                            selectedCompany.required_minutes > 0
+                              ? (selectedCompany.assigned_minutes /
+                                  selectedCompany.required_minutes) *
+                                100
+                              : 0
+                          }
+                          className="flex-1"
+                        />
+                        <span className="font-semibold">
+                          %
+                          {selectedCompany.required_minutes > 0
+                            ? Math.round(
+                                (selectedCompany.assigned_minutes /
+                                  selectedCompany.required_minutes) *
+                                  100
+                              )
+                            : 0}
+                        </span>
+                      </div>
+                    </dd>
+                  </div>
+                </dl>
               </div>
             </div>
-          </CardHeader>
-          <CardContent>
-            {filteredCompanies.length === 0 ? (
-              <div className="text-center py-12">
-                <FileText className="h-16 w-16 mx-auto mb-4 text-muted-foreground opacity-20" />
-                <p className="text-muted-foreground">
-                  Filtre kriterlerine uygun firma bulunamadı
-                </p>
-              </div>
-            ) : (
-              <div className="border rounded-lg overflow-hidden">
-                <Table>
-                  {/* ... (TableHeader aynı) */}
-                  <TableBody>
-                    {filteredCompanies.map((company) => {
-                      const daysUntilExpiry = calculateDaysUntilExpiry(
-                        company.contract_end
-                      );
-                      const compliancePercentage =
-                        company.required_minutes > 0
-                          ? Math.round(
-                              (company.assigned_minutes /
-                                company.required_minutes) *
-                                100
-                            )
-                          : 0;
 
-                      return (
-                        <TableRow
-                          key={company.id}
-                          className="hover:bg-muted/30 transition-colors"
-                        >
-                          {/* ... (TableCell'ler aynı) */}
-
-                          <TableCell className="text-right">
-                            <DropdownMenu>
-                              <DropdownMenuTrigger asChild>
-                                <Button variant="ghost" size="icon">
-                                  <MoreVertical className="h-4 w-4" />
-                                </Button>
-                              </DropdownMenuTrigger>
-                              <DropdownMenuContent align="end">
-                                <DropdownMenuLabel>İşlemler</DropdownMenuLabel>
-                                <DropdownMenuSeparator />
-                                
-                                {/* Detayları Gör */}
-                                <DropdownMenuItem
-                                  onClick={() => setSelectedCompany(company)}
-                                >
-                                  <Eye className="h-4 w-4 mr-2" />
-                                  Detayları Gör
-                                </DropdownMenuItem>
-
-                                {/* Rapor Oluştur */}
-                                <DropdownMenuItem
-                                  onClick={() => handleGenerateReport(company)}
-                                >
-                                  <FileBarChart className="h-4 w-4 mr-2" />
-                                  Rapor Oluştur
-                                </DropdownMenuItem>
-
-                                <DropdownMenuSeparator />
-
-                                {/* Sil */}
-                                <DropdownMenuItem
-                                  className="text-red-600"
-                                  onClick={() => setCompanyToDelete(company)}
-                                >
-                                  <Trash2 className="h-4 w-4 mr-2" />
-                                  Sil
-                                </DropdownMenuItem>
-                              </DropdownMenuContent>
-                            </DropdownMenu>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Company Details Dialog */}
-      {selectedCompany && (
-        <Dialog
-          open={!!selectedCompany}
-          onOpenChange={() => setSelectedCompany(null)}
-        >
-          <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle className="text-2xl">
-                {selectedCompany.company_name}
-              </DialogTitle>
-              <DialogDescription>
-                Firma detayları ve compliance bilgileri
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className="space-y-6 py-4">
-              {/* Status Badges */}
-              <div className="flex flex-wrap gap-2">
-                <Badge
-                  variant={getComplianceBadgeVariant(
-                    selectedCompany.compliance_status
-                  )}
-                >
-                  {getComplianceLabel(selectedCompany.compliance_status)}
-                </Badge>
-                {getRiskBadge(selectedCompany.risk_score)}
-                <Badge variant="outline">
-                  {selectedCompany.employee_count} Çalışan
-                </Badge>
-                <Badge variant="outline">
-                  {selectedCompany.hazard_class}
-                </Badge>
-              </div>
-
-              <Separator />
-
-              {/* Details Grid */}
-              <div className="grid grid-cols-2 gap-6">
+            {selectedCompany.contract_end && (
+              <>
+                <Separator />
                 <div>
                   <h3 className="font-semibold mb-3 flex items-center gap-2">
-                    <Building2 className="h-4 w-4" />
-                    Firma Bilgileri
+                    <Calendar className="h-4 w-4" />
+                    Sözleşme Bilgileri
                   </h3>
                   <dl className="space-y-2 text-sm">
-                    <div>
-                      <dt className="text-muted-foreground">SGK Sicil No</dt>
-                      <dd className="font-mono">{selectedCompany.sgk_no}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-muted-foreground">NACE Kodu</dt>
-                      <dd>{selectedCompany.nace_code || "-"}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-muted-foreground">Çalışan Sayısı</dt>
-                      <dd>{selectedCompany.employee_count}</dd>
-                    </div>
-                    <div>
-                      <dt className="text-muted-foreground">Tehlike Sınıfı</dt>
-                      <dd>{selectedCompany.hazard_class}</dd>
-                    </div>
-                  </dl>
-                </div>
-
-                <div>
-                  <h3 className="font-semibold mb-3 flex items-center gap-2">
-                    <Clock className="h-4 w-4" />
-                    Süre Bilgileri
-                  </h3>
-                  <dl className="space-y-2 text-sm">
-                    <div>
-                      <dt className="text-muted-foreground">Atanan Süre</dt>
-                      <dd className="font-semibold">
-                        {selectedCompany.assigned_minutes} dk/ay
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="text-muted-foreground">Gerekli Süre</dt>
-                      <dd className="font-semibold">
-                        {selectedCompany.required_minutes} dk/ay
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="text-muted-foreground">Uyum Oranı</dt>
-                      <dd>
-                        <div className="flex items-center gap-2">
-                          <Progress
-                            value={
-                              selectedCompany.required_minutes > 0
-                                ? (selectedCompany.assigned_minutes /
-                                    selectedCompany.required_minutes) *
-                                  100
-                                : 0
-                            }
-                            className="flex-1"
-                          />
-                          <span className="font-semibold">
-                            %
-                            {selectedCompany.required_minutes > 0
-                              ? Math.round(
-                                  (selectedCompany.assigned_minutes /
-                                    selectedCompany.required_minutes) *
-                                    100
-                                )
-                              : 0}
-                          </span>
-                        </div>
-                      </dd>
-                    </div>
-                  </dl>
-                </div>
-              </div>
-
-              {selectedCompany.contract_end && (
-                <>
-                  <Separator />
-                  <div>
-                    <h3 className="font-semibold mb-3 flex items-center gap-2">
-                      <Calendar className="h-4 w-4" />
-                      Sözleşme Bilgileri
-                    </h3>
-                    <dl className="space-y-2 text-sm">
-                      {selectedCompany.contract_start && (
-                        <div>
-                          <dt className="text-muted-foreground">
-                            Başlangıç Tarihi
-                          </dt>
-                          <dd>
-                            {new Date(
-                              selectedCompany.contract_start
-                            ).toLocaleDateString("tr-TR")}
-                          </dd>
-                        </div>
-                      )}
+                    {selectedCompany.contract_start && (
                       <div>
-                        <dt className="text-muted-foreground">Bitiş Tarihi</dt>
+                        <dt className="text-muted-foreground">
+                          Başlangıç Tarihi
+                        </dt>
                         <dd>
                           {new Date(
-                            selectedCompany.contract_end
+                            selectedCompany.contract_start
                           ).toLocaleDateString("tr-TR")}
                         </dd>
                       </div>
-                      <div>
-                        <dt className="text-muted-foreground">Kalan Süre</dt>
-                        <dd>
-                          {(() => {
-                            const days = calculateDaysUntilExpiry(
-                              selectedCompany.contract_end
-                            );
-                            return days !== null
-                              ? days < 0
-                                ? `${Math.abs(days)} gün önce doldu`
-                                : `${days} gün kaldı`
-                              : "-";
-                          })()}
-                        </dd>
-                      </div>
-                    </dl>
-                  </div>
-                </>
-              )}
-            </div>
-          </DialogContent>
-        </Dialog>
-      )}
+                    )}
+                    <div>
+                      <dt className="text-muted-foreground">Bitiş Tarihi</dt>
+                      <dd>
+                        {new Date(
+                          selectedCompany.contract_end
+                        ).toLocaleDateString("tr-TR")}
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted-foreground">Kalan Süre</dt>
+                      <dd>
+                        {(() => {
+                          const days = calculateDaysUntilExpiry(
+                            selectedCompany.contract_end
+                          );
+                          return days !== null
+                            ? days < 0
+                              ? `${Math.abs(days)} gün önce doldu`
+                              : `${days} gün kaldı`
+                            : "-";
+                        })()}
+                      </dd>
+                    </div>
+                  </dl>
+                </div>
+              </>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+    )}
 
-      {/* Delete Confirmation Dialog */}
-      {companyToDelete && (
-        <AlertDialog
-          open={!!companyToDelete}
-          onOpenChange={() => setCompanyToDelete(null)}
-        >
-          <AlertDialogContent>
-            <AlertDialogHeader>
-              <AlertDialogTitle>Firmayı Sil?</AlertDialogTitle>
-              <AlertDialogDescription>
-                <strong>{companyToDelete.company_name}</strong> firması
-                silinecek. Firma "Silme Geçmişi" bölümünden geri
-                getirilebilir.
-              </AlertDialogDescription>
-            </AlertDialogHeader>
-            <AlertDialogFooter>
-              <AlertDialogCancel>İptal</AlertDialogCancel>
-              <AlertDialogAction
-                onClick={() => handleDeleteCompany(companyToDelete)}
-                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              >
-                Sil
-              </AlertDialogAction>
-            </AlertDialogFooter>
-          </AlertDialogContent>
-        </AlertDialog>
-      )}
-    </div>
-  );
+    {/* Delete Confirmation Dialog */}
+    {companyToDelete && (
+      <AlertDialog
+        open={!!companyToDelete}
+        onOpenChange={() => setCompanyToDelete(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Firmayı Sil?</AlertDialogTitle>
+            <AlertDialogDescription>
+              <strong>{companyToDelete.company_name}</strong> firması silinecek.
+              Firma "Silme Geçmişi" bölümünden geri getirilebilir.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>İptal</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => handleDeleteCompany(companyToDelete)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Sil
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    )}
+  </div>
+);
 }

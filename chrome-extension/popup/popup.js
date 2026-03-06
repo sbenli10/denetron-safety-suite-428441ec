@@ -1,7 +1,7 @@
 // chrome-extension/popup/popup.js
 
 // ====================================================
-// POPUP CONTROLLER - TAM DÜZELTİLMİŞ (İSG-KATİP Gelişmiş)
+// POPUP CONTROLLER - TAM DÜZELTİLMİŞ
 // ====================================================
 
 import { AuthHandler } from "../auth/auth-handler.js";
@@ -28,7 +28,10 @@ class PopupController {
 
     this.showLoading();
 
-    // ✅ First: Load config
+    // ✅ Auto-configure if needed
+    await this.autoConfigureIfNeeded();
+
+    // ✅ Load config
     const configLoaded = await this.loadConfig();
 
     if (!configLoaded) {
@@ -39,7 +42,7 @@ class PopupController {
 
     console.log("✅ Configuration loaded");
 
-    // ✅ Second: Check auth
+    // ✅ Check auth
     await this.checkLocalStorageAuth();
 
     const isAuth = await this.authHandler.isAuthenticated();
@@ -52,11 +55,44 @@ class PopupController {
 
     console.log("✅ Authenticated");
 
-    // ✅ Third: Sync org_id with user_id
+    // ✅ Sync org_id with user_id
     await this.syncOrgIdWithUser();
 
-    // ✅ Fourth: Show app
+    // ✅ Show app
     await this.showMainApp();
+  }
+
+  // ====================================================
+  // AUTO CONFIGURE
+  // ====================================================
+
+  async autoConfigureIfNeeded() {
+    try {
+      const config = await chrome.storage.local.get([
+        "supabaseUrl",
+        "supabaseKey",
+        "autoConfigured",
+      ]);
+
+      // Eğer config yoksa, otomatik ayarla
+      if (!config.supabaseUrl || !config.supabaseKey) {
+        console.log("🔧 Auto-configuring extension...");
+
+        const supabaseUrl = "https://elmdzekyyoepdrpnfppn.supabase.co";
+        const supabaseKey =
+          "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVsbWR6ZWt5eW9lcGRycG5mcHBuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzY3MDI0NzcsImV4cCI6MjA1MjI3ODQ3N30.0u3dGmwXE1lHZIYNBIWWWX8d8UGCZxL0kWN2P-YBMPI";
+
+        await chrome.storage.local.set({
+          supabaseUrl,
+          supabaseKey,
+          autoConfigured: true,
+        });
+
+        console.log("✅ Auto-configuration complete");
+      }
+    } catch (error) {
+      console.error("❌ Auto-configure error:", error);
+    }
   }
 
   // ====================================================
@@ -92,7 +128,7 @@ class PopupController {
       // Save to instance
       this.supabaseUrl = config.supabaseUrl;
       this.supabaseKey = config.supabaseKey;
-      this.orgId = config.orgId; // Can be null initially
+      this.orgId = config.orgId;
 
       return true;
     } catch (error) {
@@ -109,11 +145,10 @@ class PopupController {
     try {
       const auth = await chrome.storage.local.get("denetron_auth");
 
-      if (auth.denetron_auth && auth.denetron_auth.user) {
+      if (auth.denetron_auth?.user?.id) {
         const userId = auth.denetron_auth.user.id;
         console.log("📍 Authenticated user ID:", userId);
 
-        // Update orgId if different or missing
         if (this.orgId !== userId) {
           console.log("🔄 Updating orgId to match user ID");
           this.orgId = userId;
@@ -172,15 +207,23 @@ class PopupController {
   // ====================================================
 
   showLoading() {
-    document.getElementById("loadingScreen").style.display = "flex";
-    document.getElementById("authScreen").style.display = "none";
-    document.getElementById("mainApp").style.display = "none";
+    const loadingScreen = document.getElementById("loadingScreen");
+    const authScreen = document.getElementById("authScreen");
+    const mainApp = document.getElementById("mainApp");
+
+    if (loadingScreen) loadingScreen.style.display = "flex";
+    if (authScreen) authScreen.style.display = "none";
+    if (mainApp) mainApp.style.display = "none";
   }
 
   showAuthScreen() {
-    document.getElementById("loadingScreen").style.display = "none";
-    document.getElementById("authScreen").style.display = "flex";
-    document.getElementById("mainApp").style.display = "none";
+    const loadingScreen = document.getElementById("loadingScreen");
+    const authScreen = document.getElementById("authScreen");
+    const mainApp = document.getElementById("mainApp");
+
+    if (loadingScreen) loadingScreen.style.display = "none";
+    if (authScreen) authScreen.style.display = "flex";
+    if (mainApp) mainApp.style.display = "none";
 
     document
       .getElementById("btnLogin")
@@ -188,9 +231,13 @@ class PopupController {
   }
 
   async showMainApp() {
-    document.getElementById("loadingScreen").style.display = "none";
-    document.getElementById("authScreen").style.display = "none";
-    document.getElementById("mainApp").style.display = "block";
+    const loadingScreen = document.getElementById("loadingScreen");
+    const authScreen = document.getElementById("authScreen");
+    const mainApp = document.getElementById("mainApp");
+
+    if (loadingScreen) loadingScreen.style.display = "none";
+    if (authScreen) authScreen.style.display = "none";
+    if (mainApp) mainApp.style.display = "block";
 
     this.setupEventListeners();
 
@@ -241,9 +288,7 @@ class PopupController {
         });
       });
 
-    // ====================================================
-    // İSG-KATİP SYNC BUTTON (GELİŞMİŞ)
-    // ====================================================
+    // İSG-KATİP sync button
     document
       .getElementById("btnSyncISGKatip")
       ?.addEventListener("click", async () => {
@@ -252,66 +297,117 @@ class PopupController {
   }
 
   // ====================================================
-  // İSG-KATİP SYNC HANDLER (GELİŞMİŞ)
+  // İSG-KATİP SYNC HANDLER
   // ====================================================
+
+  // chrome-extension/popup/popup.js
+
+// handleISGKatipSync fonksiyonunu güncelle:
 
   async handleISGKatipSync() {
     console.log("🔗 Checking İSG-KATİP session...");
 
-    const LIST_URL = "https://isgkatip.csgb.gov.tr/Isyeri/IsyeriListesi";
-
     try {
+      // Mevcut İSG-KATİP tab'ini bul
       const tabs = await chrome.tabs.query({
         url: "https://isgkatip.csgb.gov.tr/*",
       });
 
       if (tabs.length > 0) {
+        // Zaten açık bir İSG-KATİP tab'i var
         const tab = tabs[0];
 
+        console.log("✅ İSG-KATİP tab bulundu:", tab.id);
+
+        // O tab'e geç
         await chrome.tabs.update(tab.id, { active: true });
         await chrome.windows.update(tab.windowId, { focused: true });
 
-        await chrome.storage.local.set({ pendingIsgkatipManualSync: true });
+        // Content script'e mesaj gönder (manuel scrape tetikle)
+        try {
+          await chrome.tabs.sendMessage(tab.id, {
+            type: "TRIGGER_MANUAL_SCRAPE",
+          });
 
-        const isListPage = tab.url?.includes("/Isyeri/IsyeriListesi");
-        if (!isListPage) {
-          await chrome.tabs.update(tab.id, { url: LIST_URL });
+          chrome.notifications.create({
+            type: "basic",
+            iconUrl: "/icons/icon128.png",
+            title: "İSG-KATİP Senkronizasyonu",
+            message:
+              "Veriler toplanıyor... İşyeri listesi sayfasındaysanız otomatik çekilecek.",
+            priority: 1,
+          });
+        } catch (error) {
+          console.warn("⚠️ Content script mesajı gönderilemedi:", error);
+
+          // Content script yüklü değil, işyeri listesine yönlendir
+          const currentUrl = tab.url;
+          if (!currentUrl.includes("/Isyeri/IsyeriListesi")) {
+            await chrome.tabs.update(tab.id, {
+              url: "https://isgkatip.csgb.gov.tr/Isyeri/IsyeriListesi",
+            });
+
+            chrome.notifications.create({
+              type: "basic",
+              iconUrl: "/icons/icon128.png",
+              title: "İSG-KATİP'e Yönlendiriliyorsunuz",
+              message: "İşyeri listesi yükleniyor... Extension otomatik veri çekecek.",
+              priority: 1,
+            });
+          } else {
+            // Zaten işyeri listesinde, sayfayı yenile
+            await chrome.tabs.reload(tab.id);
+
+            chrome.notifications.create({
+              type: "basic",
+              iconUrl: "/icons/icon128.png",
+              title: "Sayfa Yenileniyor",
+              message: "Extension otomatik olarak verileri çekecek...",
+              priority: 1,
+            });
+          }
         }
-
-        chrome.notifications.create({
-          type: "basic",
-          iconUrl: "assets/icon-128.png",
-          title: "İSG-KATİP Senkronizasyonu",
-          message:
-            "Tek tık senkronizasyon başlatıldı. İşyeri listesi açılınca veriler otomatik aktarılacak.",
-          priority: 1,
-        });
       } else {
-        await chrome.storage.local.set({ pendingIsgkatipManualSync: true });
-        await chrome.tabs.create({ url: LIST_URL });
+        // İSG-KATİP açık değil, yeni tab aç
+        console.log("ℹ️ İSG-KATİP tab yok, yeni açılıyor...");
+
+        await chrome.tabs.create({
+          url: "https://isgkatip.csgb.gov.tr",
+        });
 
         chrome.notifications.create({
           type: "basic",
-          iconUrl: "assets/icon-128.png",
-          title: "İSG-KATİP Açılıyor",
-          message: "Liste sayfası yüklenince veriler Denetron'a otomatik aktarılacak.",
+          iconUrl: "/icons/icon128.png",
+          title: "İSG-KATİP'e Hoş Geldiniz",
+          message:
+            "1️⃣ Giriş yapın\n2️⃣ İşyeri Listesi sayfasına gidin\n3️⃣ Extension otomatik verileri çekecek ✅",
           priority: 2,
         });
 
+        // Badge göster
         chrome.action.setBadgeText({ text: "📋" });
         chrome.action.setBadgeBackgroundColor({ color: "#10b981" });
       }
 
+      // Popup'ı kapat
       window.close();
     } catch (error) {
       console.error("❌ İSG-KATİP sync hatası:", error);
+
+      // Fallback: Direkt aç
+      chrome.tabs.create({
+        url: "https://isgkatip.csgb.gov.tr",
+      });
+
       chrome.notifications.create({
         type: "basic",
-        iconUrl: "assets/icon-128.png",
-        title: "Senkronizasyon Başlatılamadı",
-        message: "Lütfen İSG-KATİP'e giriş yapıp tekrar deneyin.",
+        iconUrl: "/icons/icon128.png",
+        title: "İSG-KATİP",
+        message: "Giriş yapın ve İşyeri Listesi sayfasına gidin.",
         priority: 1,
       });
+
+      window.close();
     }
   }
 
@@ -388,14 +484,13 @@ class PopupController {
   // ====================================================
 
   updateStatsUI() {
-    document.getElementById("totalCompanies").textContent =
-      this.stats.totalCompanies ?? 0;
+    const totalEl = document.getElementById("totalCompanies");
+    const warningEl = document.getElementById("warningCount");
+    const criticalEl = document.getElementById("criticalCount");
 
-    document.getElementById("warningCount").textContent =
-      this.stats.warningCount ?? 0;
-
-    document.getElementById("criticalCount").textContent =
-      this.stats.criticalCount ?? 0;
+    if (totalEl) totalEl.textContent = this.stats.totalCompanies ?? 0;
+    if (warningEl) warningEl.textContent = this.stats.warningCount ?? 0;
+    if (criticalEl) criticalEl.textContent = this.stats.criticalCount ?? 0;
 
     console.log("✅ Stats UI updated");
   }
@@ -413,6 +508,8 @@ class PopupController {
 
   async handleSync() {
     const btn = document.getElementById("btnSync");
+    if (!btn) return;
+
     const original = btn.innerHTML;
 
     try {

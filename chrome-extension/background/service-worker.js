@@ -1,7 +1,7 @@
 // chrome-extension/background/service-worker.js
 
 // ====================================================
-// BACKGROUND SERVICE WORKER
+// BACKGROUND SERVICE WORKER - TAM DÜZELTİLMİŞ
 // ====================================================
 
 import { AuthHandler } from "../auth/auth-handler.js";
@@ -21,10 +21,45 @@ class BackgroundService {
   async init() {
     console.log("🔧 Background service started");
 
+    // ✅ Auto-configure önce
+    await this.autoConfigureIfNeeded();
+
     await this.loadConfig();
     await this.setupListeners();
 
     console.log("✅ Background ready");
+  }
+
+  // ====================================================
+  // AUTO CONFIGURE
+  // ====================================================
+
+  async autoConfigureIfNeeded() {
+    try {
+      const config = await chrome.storage.local.get([
+        "supabaseUrl",
+        "supabaseKey",
+        "autoConfigured",
+      ]);
+
+      if (!config.supabaseUrl || !config.supabaseKey) {
+        console.log("🔧 Auto-configuring service worker...");
+
+        const supabaseUrl = "https://elmdzekyyoepdrpnfppn.supabase.co";
+        const supabaseKey =
+          "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVsbWR6ZWt5eW9lcGRycG5mcHBuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzY3MDI0NzcsImV4cCI6MjA1MjI3ODQ3N30.0u3dGmwXE1lHZIYNBIWWWX8d8UGCZxL0kWN2P-YBMPI";
+
+        await chrome.storage.local.set({
+          supabaseUrl,
+          supabaseKey,
+          autoConfigured: true,
+        });
+
+        console.log("✅ Auto-configuration complete");
+      }
+    } catch (error) {
+      console.error("❌ Auto-configure error:", error);
+    }
   }
 
   // ====================================================
@@ -40,6 +75,9 @@ class BackgroundService {
         "denetron_auth",
       ]);
 
+      this.supabaseUrl = config.supabaseUrl;
+      this.supabaseKey = config.supabaseKey;
+
       // Authenticated user ID'yi org_id olarak kullan
       if (config.denetron_auth?.user?.id) {
         this.orgId = config.denetron_auth.user.id;
@@ -49,11 +87,9 @@ class BackgroundService {
         console.log("✅ Using stored org_id:", this.orgId);
       }
 
-      this.supabaseUrl = config.supabaseUrl;
-      this.supabaseKey = config.supabaseKey;
-
       console.log("✅ Config loaded:", {
         url: this.supabaseUrl,
+        key: this.supabaseKey ? "✓" : "✗",
         orgId: this.orgId,
       });
 
@@ -74,13 +110,11 @@ class BackgroundService {
   // ====================================================
 
   async setupListeners() {
-    // Message listener
     chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       this.handleMessage(message, sender, sendResponse);
-      return true; // Async response için
+      return true;
     });
 
-    // Tab update listener
     chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
       if (changeInfo.status === "complete") {
         this.handleTabUpdate(tabId, tab);
@@ -132,117 +166,278 @@ class BackgroundService {
       sendResponse({ success: false, error: error.message });
     }
   }
-
   // ====================================================
-  // İSG-KATİP SYNC HANDLER (YENİ!)
+  // İSG-KATİP SYNC HANDLER
   // ====================================================
 
-  async handleISGKatipSync(companies, metadata) {
-    console.log("📦 İSG-KATİP verisi alındı");
-    console.log("📊 Toplam işyeri:", companies.length);
-    console.log("📅 Tarih:", metadata.scrapedAt);
-    console.log("🔗 Kaynak:", metadata.sourceUrl);
+  // chrome-extension/background/service-worker.js
 
-    try {
-      // Config kontrol
-      if (!this.supabaseUrl || !this.supabaseKey || !this.orgId) {
-        console.error("❌ Config eksik!");
-        throw new Error("Supabase config eksik");
-      }
+// ====================================================
+// İSG-KATİP SYNC HANDLER - TAM DÜZELTİLMİŞ
+// ====================================================
 
-      // Auth token al
-      const authData = await chrome.storage.local.get("denetron_auth");
-      const accessToken = authData.denetron_auth?.session?.access_token;
+async handleISGKatipSync(companies, metadata) {
+  console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+  console.log("📦 İSG-KATİP SYNC BAŞLATILDI");
+  console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+  console.log("📊 Toplam işyeri:", companies.length);
+  console.log("📅 Tarih:", metadata.scrapedAt);
+  console.log("🔗 Kaynak:", metadata.sourceUrl);
 
-      const headers = {
-        apikey: this.supabaseKey,
-        Authorization: accessToken
-          ? `Bearer ${accessToken}`
-          : `Bearer ${this.supabaseKey}`,
-        "Content-Type": "application/json",
-        Prefer: "resolution=merge-duplicates",
-      };
+  try {
+    // ====================================================
+    // 1. CONFIG KONTROLÜ
+    // ====================================================
+    
+    if (!this.supabaseUrl || !this.supabaseKey || !this.orgId) {
+      console.error("❌ CONFIG EKSİK:");
+      console.error("  - Supabase URL:", this.supabaseUrl ? "✓" : "✗");
+      console.error("  - Supabase Key:", this.supabaseKey ? "✓" : "✗");
+      console.error("  - Org ID:", this.orgId || "✗");
+      throw new Error("Supabase configuration eksik. Lütfen extension ayarlarını kontrol edin.");
+    }
 
-      // Supabase'e kaydet
-      let successCount = 0;
-      let errorCount = 0;
+    console.log("✅ Config doğrulandı");
+    console.log("  - Supabase URL:", this.supabaseUrl);
+    console.log("  - Org ID:", this.orgId);
 
-      for (const company of companies) {
-        try {
-          const response = await fetch(
-            `${this.supabaseUrl}/rest/v1/isgkatip_companies`,
-            {
-              method: "POST",
-              headers,
-              body: JSON.stringify({
-                org_id: this.orgId,
-                sgk_no: company.sgk_no,
-                company_name: company.company_name,
-                employee_count: company.employee_count,
-                hazard_class: company.hazard_class,
-                assigned_minutes: company.assigned_minutes || 0,
-                required_minutes: company.required_minutes || 0,
-                compliance_status: this.calculateComplianceStatus(
-                  company.assigned_minutes,
-                  company.required_minutes
-                ),
-                risk_score: this.calculateRiskScore(company),
-                contract_start: company.contract_start || null,
-                contract_end: company.contract_end || null,
-                last_synced_at: new Date().toISOString(),
-              }),
-            }
-          );
+    // ====================================================
+    // 2. AUTH TOKEN KONTROLÜ
+    // ====================================================
+    
+    const authData = await chrome.storage.local.get("denetron_auth");
+    const accessToken = authData.denetron_auth?.session?.access_token;
 
-          if (response.ok) {
-            successCount++;
-          } else {
-            errorCount++;
-            console.error(
-              "❌ Kayıt hatası:",
-              company.company_name,
-              response.status
-            );
-          }
-        } catch (error) {
+    console.log("🔑 Auth durumu:", accessToken ? "✓ Token var" : "✗ Token yok");
+
+    // ====================================================
+    // 3. HEADERS HAZIRLA
+    // ====================================================
+    
+    const headers = {
+      apikey: this.supabaseKey,
+      Authorization: `Bearer ${this.supabaseKey}`, // Anon key kullan
+      "Content-Type": "application/json",
+      Prefer: "resolution=merge-duplicates",
+    };
+
+    console.log("📡 Request headers hazırlandı");
+
+    // ====================================================
+    // 4. VERİLERİ SUPABASE'E KAYDET
+    // ====================================================
+    
+    let successCount = 0;
+    let errorCount = 0;
+    const errors = [];
+    const successfulCompanies = [];
+
+    console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    console.log("🔄 VERİ KAYDETME BAŞLADI");
+    console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+
+    for (let i = 0; i < companies.length; i++) {
+      const company = companies[i];
+      
+      try {
+        // ====================================================
+        // VERİ TEMİZLİĞİ VE VALIDATION
+        // ====================================================
+        
+        const cleanData = {
+          org_id: this.orgId,
+          sgk_no: this.cleanString(company.sgk_no),
+          company_name: this.cleanString(company.company_name),
+          employee_count: this.cleanNumber(company.employee_count),
+          hazard_class: this.cleanString(company.hazard_class) || "Az Tehlikeli",
+          nace_code: this.cleanString(company.nace_code) || null,
+          assigned_minutes: this.cleanNumber(company.assigned_minutes),
+          required_minutes: this.cleanNumber(company.required_minutes),
+          compliance_status: this.calculateComplianceStatus(
+            this.cleanNumber(company.assigned_minutes),
+            this.cleanNumber(company.required_minutes)
+          ),
+          risk_score: this.calculateRiskScore(company),
+          
+          // ✅ TARİHLERİ VALIDATE ET
+          contract_start: this.validateDate(company.contract_start),
+          contract_end: this.validateDate(company.contract_end),
+          
+          last_synced_at: new Date().toISOString(),
+        };
+
+        // ====================================================
+        // ZORUNLU ALAN KONTROLÜ
+        // ====================================================
+        
+        if (!cleanData.sgk_no || !cleanData.company_name) {
+          console.warn(`⚠️ [${i + 1}/${companies.length}] GEÇERSİZ VERİ (SGK No veya Firma Adı eksik):`, {
+            sgk_no: cleanData.sgk_no,
+            company_name: cleanData.company_name,
+          });
           errorCount++;
-          console.error("❌ Fetch hatası:", company.company_name, error);
+          errors.push({
+            index: i + 1,
+            company: company.company_name || "İsimsiz",
+            error: "SGK No veya Firma Adı eksik",
+          });
+          continue;
         }
+
+        // ====================================================
+        // SUPABASE'E INSERT
+        // ====================================================
+        
+        const response = await fetch(
+          `${this.supabaseUrl}/rest/v1/isgkatip_companies`,
+          {
+            method: "POST",
+            headers,
+            body: JSON.stringify(cleanData),
+          }
+        );
+
+        if (response.ok) {
+          successCount++;
+          successfulCompanies.push(cleanData.company_name);
+          console.log(`✅ [${successCount}/${companies.length}] ${cleanData.company_name}`);
+        } else {
+          const errorText = await response.text();
+          let errorJson;
+          
+          try {
+            errorJson = JSON.parse(errorText);
+          } catch {
+            errorJson = { message: errorText };
+          }
+          
+          errorCount++;
+          errors.push({
+            index: i + 1,
+            company: cleanData.company_name,
+            status: response.status,
+            error: errorJson.message || errorJson.code || "Unknown error",
+            details: errorJson,
+          });
+          
+          console.error(`❌ [${i + 1}/${companies.length}] ${cleanData.company_name}`);
+          console.error(`   → HTTP ${response.status}: ${errorJson.message || errorText}`);
+        }
+      } catch (error) {
+        errorCount++;
+        errors.push({
+          index: i + 1,
+          company: company.company_name || "İsimsiz",
+          error: error.message,
+        });
+        console.error(`❌ [${i + 1}/${companies.length}] FETCH HATASI:`, error.message);
       }
+    }
 
-      console.log(`✅ Başarılı: ${successCount}`);
-      console.log(`❌ Hatalı: ${errorCount}`);
+    // ====================================================
+    // 5. SONUÇLARI LOGLA
+    // ====================================================
+    
+    console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    console.log("📊 SYNC SONUÇLARI");
+    console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    console.log(`✅ Başarılı: ${successCount}/${companies.length}`);
+    console.log(`❌ Hatalı: ${errorCount}/${companies.length}`);
+    console.log(`📈 Başarı Oranı: ${((successCount / companies.length) * 100).toFixed(1)}%`);
 
-      // Sync log kaydet
+    if (successCount > 0) {
+      console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      console.log("✅ BAŞARILI FİRMALAR (İlk 10):");
+      successfulCompanies.slice(0, 10).forEach((name, idx) => {
+        console.log(`   ${idx + 1}. ${name}`);
+      });
+      if (successfulCompanies.length > 10) {
+        console.log(`   ... ve ${successfulCompanies.length - 10} firma daha`);
+      }
+    }
+
+    if (errors.length > 0) {
+      console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      console.log("❌ HATALAR (İlk 5):");
+      errors.slice(0, 5).forEach((err) => {
+        console.error(`   [${err.index}] ${err.company}`);
+        console.error(`       → ${err.error}`);
+        if (err.details) {
+          console.error(`       → Detay:`, err.details);
+        }
+      });
+      if (errors.length > 5) {
+        console.log(`   ... ve ${errors.length - 5} hata daha`);
+      }
+    }
+
+    // ====================================================
+    // 6. SYNC LOG KAYDET
+    // ====================================================
+    
+    try {
       await this.saveSyncLog({
         source: "ISGKATIP_SCRAPER",
         total_companies: companies.length,
         success_count: successCount,
         error_count: errorCount,
-        metadata,
+        metadata: {
+          ...metadata,
+          errors: errors.slice(0, 10),
+          successful_companies: successfulCompanies.slice(0, 10),
+        },
       });
+      console.log("✅ Sync log kaydedildi");
+    } catch (logError) {
+      console.warn("⚠️ Sync log kaydedilemedi:", logError.message);
+    }
 
-      // Badge güncelle
-      chrome.action.setBadgeText({ text: successCount.toString() });
-      chrome.action.setBadgeBackgroundColor({ color: "#4CAF50" });
+    // ====================================================
+    // 7. UI GÜNCELLEMELERİ
+    // ====================================================
+    
+    // Badge
+    chrome.action.setBadgeText({ text: successCount.toString() });
+    chrome.action.setBadgeBackgroundColor({
+      color: successCount > 0 ? "#4CAF50" : "#F44336",
+    });
 
-      // Notification göster
-      chrome.notifications.create({
+    // Notification
+    const notificationTitle = successCount > 0
+      ? "✅ İSG-KATİP Senkronizasyonu Tamamlandı"
+      : "❌ İSG-KATİP Senkronizasyon Hatası";
+
+    const notificationMessage = successCount > 0
+      ? `${successCount} işyeri başarıyla senkronize edildi!${errorCount > 0 ? ` (${errorCount} hata)` : ""}`
+      : `${errorCount} işyeri kaydedilemedi. Lütfen console log'larını kontrol edin.`;
+
+    chrome.notifications.create({
         type: "basic",
-        iconUrl: "assets/icon-128.png",
+        iconUrl: "/icons/icon128.png",
         title: "İSG-KATİP Senkronizasyonu",
         message: `${successCount} işyeri başarıyla senkronize edildi!`,
         priority: 2,
       });
 
-      // Stats'ı güncelle
-      await this.loadStats();
-    } catch (error) {
-      console.error("❌ Senkronizasyon hatası:", error);
+    // Stats güncelle
+    console.log("🔄 Stats güncelleniyor...");
+    await this.loadStats();
+    console.log("✅ Stats güncellendi");
+
+    console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    console.log("✅ İSG-KATİP SYNC TAMAMLANDI");
+    console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+
+  } catch (error) {
+    console.error("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    console.error("❌ KRİTİK HATA - SYNC DURDU");
+    console.error("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+    console.error("Hata:", error);
+    console.error("Stack:", error.stack);
 
       chrome.notifications.create({
         type: "basic",
-        iconUrl: "assets/icon-128.png",
+        iconUrl: "/icons/icon128.png",
         title: "Senkronizasyon Hatası",
         message: error.message || "Veriler kaydedilemedi",
         priority: 2,
@@ -250,43 +445,107 @@ class BackgroundService {
     }
   }
 
-  // ====================================================
-  // HELPER FUNCTIONS (YENİ!)
-  // ====================================================
+// ====================================================
+// HELPER FUNCTIONS
+// ====================================================
 
-  calculateComplianceStatus(assigned, required) {
-    if (!required || required === 0) return "UNKNOWN";
-    if (assigned >= required) return "COMPLIANT";
-    if (assigned >= required * 0.8) return "WARNING";
-    return "CRITICAL";
+// ✅ String Temizleme
+cleanString(value) {
+  if (!value) return "";
+  return String(value).trim();
+}
+
+// ✅ Number Temizleme
+cleanNumber(value) {
+  const num = parseInt(value);
+  return isNaN(num) ? 0 : num;
+}
+
+// ✅ Tarih Validate Et
+validateDate(dateStr) {
+  if (!dateStr) return null;
+
+  try {
+    // Zaten ISO format mı?
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(dateStr)) {
+      const date = new Date(dateStr);
+      if (!isNaN(date.getTime())) {
+        return date.toISOString();
+      }
+    }
+
+    // "dd.mm.yyyy HH:mm:ss" formatı mı?
+    const match = dateStr.match(/(\d{2})\.(\d{2})\.(\d{4})\s+(\d{2}):(\d{2}):(\d{2})/);
+    
+    if (match) {
+      const [, day, month, year, hour, minute, second] = match;
+      const isoDate = `${year}-${month}-${day}T${hour}:${minute}:${second}`;
+      const date = new Date(isoDate);
+      
+      if (!isNaN(date.getTime())) {
+        return date.toISOString();
+      }
+    }
+
+    console.warn("⚠️ Tarih parse edilemedi:", dateStr);
+    return null;
+  } catch (error) {
+    console.error("❌ Tarih validate hatası:", dateStr, error);
+    return null;
+  }
+}
+
+// ✅ Compliance Status Hesapla
+calculateComplianceStatus(assigned, required) {
+  if (!required || required === 0) return "UNKNOWN";
+  if (assigned >= required) return "COMPLIANT";
+  if (assigned >= required * 0.8) return "WARNING";
+  return "CRITICAL";
+}
+
+// ✅ Risk Score Hesapla
+calculateRiskScore(company) {
+  let score = 50;
+
+  // Tehlike sınıfı
+  const hazardClass = String(company.hazard_class || "");
+  if (hazardClass.includes("Çok Tehlikeli")) {
+    score += 30;
+  } else if (hazardClass.includes("Tehlikeli")) {
+    score += 15;
   }
 
-  calculateRiskScore(company) {
-    let score = 50; // Base score
-
-    // Tehlike sınıfı
-    if (company.hazard_class?.includes("Çok Tehlikeli")) score += 30;
-    else if (company.hazard_class?.includes("Tehlikeli")) score += 15;
-
-    // Çalışan sayısı
-    if (company.employee_count > 100) score += 10;
-    else if (company.employee_count > 50) score += 5;
-
-    // Compliance durumu
-    const complianceStatus = this.calculateComplianceStatus(
-      company.assigned_minutes,
-      company.required_minutes
-    );
-
-    if (complianceStatus === "CRITICAL") score += 20;
-    else if (complianceStatus === "WARNING") score += 10;
-
-    return Math.min(score, 100);
+  // Çalışan sayısı
+  const employeeCount = this.cleanNumber(company.employee_count);
+  if (employeeCount > 100) {
+    score += 10;
+  } else if (employeeCount > 50) {
+    score += 5;
   }
 
-  async saveSyncLog(logData) {
-    try {
-      await fetch(`${this.supabaseUrl}/rest/v1/isgkatip_sync_logs`, {
+  // Compliance durumu
+  const complianceStatus = this.calculateComplianceStatus(
+    this.cleanNumber(company.assigned_minutes),
+    this.cleanNumber(company.required_minutes)
+  );
+
+  if (complianceStatus === "CRITICAL") {
+    score += 20;
+  } else if (complianceStatus === "WARNING") {
+    score += 10;
+  }
+
+  return Math.min(score, 100);
+}
+
+// ✅ Sync Log Kaydet
+async saveSyncLog(logData) {
+  try {
+    console.log("📝 Sync log kaydediliyor...");
+    
+    const response = await fetch(
+      `${this.supabaseUrl}/rest/v1/isgkatip_sync_logs`,
+      {
         method: "POST",
         headers: {
           apikey: this.supabaseKey,
@@ -295,14 +554,25 @@ class BackgroundService {
         },
         body: JSON.stringify({
           org_id: this.orgId,
-          ...logData,
-          synced_at: new Date().toISOString(),
+          source: logData.source,
+          total_companies: logData.total_companies,
+          success_count: logData.success_count,
+          error_count: logData.error_count,
+          metadata: logData.metadata,
         }),
-      });
-    } catch (error) {
-      console.error("❌ Sync log hatası:", error);
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.warn("⚠️ Sync log kaydedilemedi:", response.status, errorText);
+    } else {
+      console.log("✅ Sync log başarıyla kaydedildi");
     }
+  } catch (error) {
+    console.warn("⚠️ Sync log kayıt hatası:", error.message);
   }
+}
 
   // ====================================================
   // STATS
@@ -362,11 +632,8 @@ class BackgroundService {
   // ====================================================
 
   async handleTabUpdate(tabId, tab) {
-    // İSG-KATİP sitesinde mi?
     if (tab.url?.includes("isgkatip.csgb.gov.tr")) {
       console.log("📍 İSG-KATİP sitesi tespit edildi");
-
-      // Badge göster
       chrome.action.setBadgeText({ tabId, text: "🔍" });
       chrome.action.setBadgeBackgroundColor({ color: "#2196F3" });
     }

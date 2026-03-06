@@ -1,32 +1,17 @@
+// chrome-extension/background/service-worker.js
+
 // ====================================================
-// BACKGROUND SERVICE WORKER - STABLE VERSION
+// BACKGROUND SERVICE WORKER
 // ====================================================
 
-import { SyncManager } from "./sync-manager.js";
-import { RuleEngine } from "./rule-engine.js";
-import { QueueManager } from "./queue-manager.js";
+import { AuthHandler } from "../auth/auth-handler.js";
 
 class BackgroundService {
-
   constructor() {
-
-    this.syncManager = new SyncManager();
-    this.ruleEngine = new RuleEngine();
-    this.queueManager = new QueueManager();
-
+    this.authHandler = new AuthHandler();
     this.supabaseUrl = null;
     this.supabaseKey = null;
     this.orgId = null;
-    this.userId = null;
-
-    this.stats = {
-      totalCompanies: 0,
-      warningCount: 0,
-      criticalCount: 0
-    };
-
-    this.activities = [];
-
   }
 
   // ====================================================
@@ -34,147 +19,73 @@ class BackgroundService {
   // ====================================================
 
   async init() {
-
     console.log("🔧 Background service started");
 
     await this.loadConfig();
-
-    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-      this.handleMessage(message, sender, sendResponse);
-      return true;
-    });
-
-    chrome.alarms.create("periodicSync", {
-      periodInMinutes: 30
-    });
-
-    chrome.alarms.onAlarm.addListener((alarm) => {
-
-      if (alarm.name === "periodicSync") {
-        this.syncAll();
-      }
-
-    });
+    await this.setupListeners();
 
     console.log("✅ Background ready");
-
   }
 
   // ====================================================
-  // LOAD CONFIG
+  // CONFIG
   // ====================================================
 
   async loadConfig() {
-  try {
-    const config = await chrome.storage.local.get([
-      'supabaseUrl',
-      'supabaseKey',
-      'orgId',
-      'userId',
-      'denetron_auth',
-    ]);
-
-    this.supabaseUrl = config.supabaseUrl;
-    this.supabaseKey = config.supabaseKey;
-    
-    // ✅ Önce authenticated user'ın ID'sini kontrol et
-    if (config.denetron_auth && config.denetron_auth.user) {
-      this.orgId = config.denetron_auth.user.id;
-      console.log('✅ Using authenticated user ID as org_id:', this.orgId);
-      
-      // Storage'da da güncelle
-      await chrome.storage.local.set({ orgId: this.orgId });
-    } else {
-      this.orgId = config.orgId;
-      console.log('✅ Using stored org_id:', this.orgId);
-    }
-
-    if (this.supabaseUrl && this.supabaseKey && this.orgId) {
-      console.log('✅ Config loaded:', {
-        url: this.supabaseUrl?.substring(0, 30) + '...',
-        orgId: this.orgId,
-      });
-    } else {
-      console.warn('⚠️ Config incomplete');
-    }
-  } catch (error) {
-    console.error('❌ Config load error:', error);
-  }
-}
-
-  // ====================================================
-  // LOAD STATS
-  // ====================================================
-
-  async loadStats() {
-
-    if (!this.supabaseUrl || !this.supabaseKey || !this.orgId) {
-
-      console.warn("⚠️ Missing config for stats");
-
-      return this.stats;
-
-    }
-
     try {
+      const config = await chrome.storage.local.get([
+        "supabaseUrl",
+        "supabaseKey",
+        "orgId",
+        "denetron_auth",
+      ]);
 
-      console.log("📊 Fetching companies...");
-
-      const response = await fetch(
-
-        `${this.supabaseUrl}/rest/v1/isgkatip_companies?org_id=eq.${this.orgId}&select=compliance_status`,
-
-        {
-          method: "GET",
-          headers: {
-            apikey: this.supabaseKey,
-            Authorization: `Bearer ${this.supabaseKey}`,
-            "Content-Type": "application/json"
-          }
-        }
-
-      );
-
-      if (!response.ok) {
-
-        throw new Error(`HTTP ${response.status}`);
-
+      // Authenticated user ID'yi org_id olarak kullan
+      if (config.denetron_auth?.user?.id) {
+        this.orgId = config.denetron_auth.user.id;
+        console.log("✅ Using authenticated user ID as org_id:", this.orgId);
+      } else if (config.orgId) {
+        this.orgId = config.orgId;
+        console.log("✅ Using stored org_id:", this.orgId);
       }
 
-      const companies = await response.json();
+      this.supabaseUrl = config.supabaseUrl;
+      this.supabaseKey = config.supabaseKey;
 
-      console.log("📊 Companies:", companies.length);
-
-      const warning = companies.filter(
-        c => c.compliance_status === "WARNING"
-      ).length;
-
-      const critical = companies.filter(
-        c => c.compliance_status === "CRITICAL"
-      ).length;
-
-      this.stats = {
-        totalCompanies: companies.length,
-        warningCount: warning,
-        criticalCount: critical
-      };
-
-      await chrome.storage.local.set({
-        stats: this.stats
+      console.log("✅ Config loaded:", {
+        url: this.supabaseUrl,
+        orgId: this.orgId,
       });
 
-      console.log("✅ Stats updated", this.stats);
+      if (!this.supabaseUrl || !this.supabaseKey) {
+        console.warn("⚠️ Config incomplete");
+        return false;
+      }
 
-      return this.stats;
-
-    } catch (err) {
-
-      console.error("❌ Stats error", err);
-
-      return this.stats;
-
+      return true;
+    } catch (error) {
+      console.error("❌ Config load error:", error);
+      return false;
     }
+  }
 
+  // ====================================================
+  // LISTENERS
+  // ====================================================
+
+  async setupListeners() {
+    // Message listener
+    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+      this.handleMessage(message, sender, sendResponse);
+      return true; // Async response için
+    });
+
+    // Tab update listener
+    chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+      if (changeInfo.status === "complete") {
+        this.handleTabUpdate(tabId, tab);
+      }
+    });
   }
 
   // ====================================================
@@ -182,118 +93,283 @@ class BackgroundService {
   // ====================================================
 
   async handleMessage(message, sender, sendResponse) {
+    console.log("📨 Message received:", message.type);
 
     try {
-
       switch (message.type) {
-
-        case "GET_STATS":
-
-          const stats = await this.loadStats();
-
-          sendResponse({
-            success: true,
-            stats
-          });
-
-          break;
-
-        case "GET_RECENT_ACTIVITIES":
-
-          sendResponse({
-            success: true,
-            activities: this.activities
-          });
-
-          break;
-
         case "SYNC_NOW":
-
-          await this.syncAll();
-
+          await this.handleManualSync();
           sendResponse({ success: true });
-
           break;
 
-        case "CONFIG_UPDATED":
-
-          await this.loadConfig();
-          await this.loadStats();
-
+        case "ISGKATIP_COMPANIES_SCRAPED":
+          await this.handleISGKatipSync(message.data, message.metadata);
           sendResponse({ success: true });
+          break;
 
+        case "GET_CONFIG":
+          sendResponse({
+            supabaseUrl: this.supabaseUrl,
+            supabaseKey: this.supabaseKey,
+            orgId: this.orgId,
+          });
           break;
 
         default:
-
-          sendResponse({
-            success: false,
-            error: "Unknown message"
-          });
-
+          console.warn("⚠️ Unknown message type:", message.type);
+          sendResponse({ success: false, error: "Unknown message type" });
       }
-
-    } catch (err) {
-
-      console.error("❌ Message error", err);
-
-      sendResponse({
-        success: false,
-        error: err.message
-      });
-
+    } catch (error) {
+      console.error("❌ Message handler error:", error);
+      sendResponse({ success: false, error: error.message });
     }
-
   }
 
   // ====================================================
-  // SYNC
+  // İSG-KATİP SYNC HANDLER (YENİ!)
   // ====================================================
 
-  async syncAll() {
+  async handleISGKatipSync(companies, metadata) {
+    console.log("📦 İSG-KATİP verisi alındı");
+    console.log("📊 Toplam işyeri:", companies.length);
+    console.log("📅 Tarih:", metadata.scrapedAt);
+    console.log("🔗 Kaynak:", metadata.sourceUrl);
 
     try {
-
-      console.log("🔄 Sync started");
-
-      const items = await this.queueManager.getAll();
-
-      for (const item of items) {
-
-        await this.syncManager.syncToSupabase(item.data);
-
-        await this.queueManager.remove(item.id);
-
+      // Config kontrol
+      if (!this.supabaseUrl || !this.supabaseKey || !this.orgId) {
+        console.error("❌ Config eksik!");
+        throw new Error("Supabase config eksik");
       }
 
-      await this.loadStats();
+      // Auth token al
+      const authData = await chrome.storage.local.get("denetron_auth");
+      const accessToken = authData.denetron_auth?.session?.access_token;
 
-      this.activities.unshift({
-        type: "sync",
-        message: "Senkronizasyon tamamlandı",
-        timestamp: Date.now()
+      const headers = {
+        apikey: this.supabaseKey,
+        Authorization: accessToken
+          ? `Bearer ${accessToken}`
+          : `Bearer ${this.supabaseKey}`,
+        "Content-Type": "application/json",
+        Prefer: "resolution=merge-duplicates",
+      };
+
+      // Supabase'e kaydet
+      let successCount = 0;
+      let errorCount = 0;
+
+      for (const company of companies) {
+        try {
+          const response = await fetch(
+            `${this.supabaseUrl}/rest/v1/isgkatip_companies`,
+            {
+              method: "POST",
+              headers,
+              body: JSON.stringify({
+                org_id: this.orgId,
+                sgk_no: company.sgk_no,
+                company_name: company.company_name,
+                employee_count: company.employee_count,
+                hazard_class: company.hazard_class,
+                assigned_minutes: company.assigned_minutes || 0,
+                required_minutes: company.required_minutes || 0,
+                compliance_status: this.calculateComplianceStatus(
+                  company.assigned_minutes,
+                  company.required_minutes
+                ),
+                risk_score: this.calculateRiskScore(company),
+                contract_start: company.contract_start || null,
+                contract_end: company.contract_end || null,
+                last_synced_at: new Date().toISOString(),
+              }),
+            }
+          );
+
+          if (response.ok) {
+            successCount++;
+          } else {
+            errorCount++;
+            console.error(
+              "❌ Kayıt hatası:",
+              company.company_name,
+              response.status
+            );
+          }
+        } catch (error) {
+          errorCount++;
+          console.error("❌ Fetch hatası:", company.company_name, error);
+        }
+      }
+
+      console.log(`✅ Başarılı: ${successCount}`);
+      console.log(`❌ Hatalı: ${errorCount}`);
+
+      // Sync log kaydet
+      await this.saveSyncLog({
+        source: "ISGKATIP_SCRAPER",
+        total_companies: companies.length,
+        success_count: successCount,
+        error_count: errorCount,
+        metadata,
       });
 
-      this.activities = this.activities.slice(0, 10);
+      // Badge güncelle
+      chrome.action.setBadgeText({ text: successCount.toString() });
+      chrome.action.setBadgeBackgroundColor({ color: "#4CAF50" });
 
-      console.log("✅ Sync finished");
+      // Notification göster
+      chrome.notifications.create({
+        type: "basic",
+        iconUrl: "/icons/icon128.png",
+        title: "İSG-KATİP Senkronizasyonu",
+        message: `${successCount} işyeri başarıyla senkronize edildi!`,
+        priority: 2,
+      });
 
-    } catch (err) {
+      // Stats'ı güncelle
+      await this.loadStats();
+    } catch (error) {
+      console.error("❌ Senkronizasyon hatası:", error);
 
-      console.error("❌ Sync error", err);
-
+      chrome.notifications.create({
+        type: "basic",
+        iconUrl: "/icons/icon128.png",
+        title: "Senkronizasyon Hatası",
+        message: error.message || "Veriler kaydedilemedi",
+        priority: 2,
+      });
     }
-
   }
 
+  // ====================================================
+  // HELPER FUNCTIONS (YENİ!)
+  // ====================================================
+
+  calculateComplianceStatus(assigned, required) {
+    if (!required || required === 0) return "UNKNOWN";
+    if (assigned >= required) return "COMPLIANT";
+    if (assigned >= required * 0.8) return "WARNING";
+    return "CRITICAL";
+  }
+
+  calculateRiskScore(company) {
+    let score = 50; // Base score
+
+    // Tehlike sınıfı
+    if (company.hazard_class?.includes("Çok Tehlikeli")) score += 30;
+    else if (company.hazard_class?.includes("Tehlikeli")) score += 15;
+
+    // Çalışan sayısı
+    if (company.employee_count > 100) score += 10;
+    else if (company.employee_count > 50) score += 5;
+
+    // Compliance durumu
+    const complianceStatus = this.calculateComplianceStatus(
+      company.assigned_minutes,
+      company.required_minutes
+    );
+
+    if (complianceStatus === "CRITICAL") score += 20;
+    else if (complianceStatus === "WARNING") score += 10;
+
+    return Math.min(score, 100);
+  }
+
+  async saveSyncLog(logData) {
+    try {
+      await fetch(`${this.supabaseUrl}/rest/v1/isgkatip_sync_logs`, {
+        method: "POST",
+        headers: {
+          apikey: this.supabaseKey,
+          Authorization: `Bearer ${this.supabaseKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          org_id: this.orgId,
+          ...logData,
+          synced_at: new Date().toISOString(),
+        }),
+      });
+    } catch (error) {
+      console.error("❌ Sync log hatası:", error);
+    }
+  }
+
+  // ====================================================
+  // STATS
+  // ====================================================
+
+  async loadStats() {
+    if (!this.supabaseUrl || !this.supabaseKey || !this.orgId) {
+      console.warn("⚠️ Missing config for stats");
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `${this.supabaseUrl}/rest/v1/isgkatip_companies?org_id=eq.${this.orgId}&select=compliance_status`,
+        {
+          headers: {
+            apikey: this.supabaseKey,
+            Authorization: `Bearer ${this.supabaseKey}`,
+          },
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const companies = await response.json();
+
+      const stats = {
+        totalCompanies: companies.length,
+        warningCount: companies.filter((c) => c.compliance_status === "WARNING")
+          .length,
+        criticalCount: companies.filter(
+          (c) => c.compliance_status === "CRITICAL"
+        ).length,
+      };
+
+      await chrome.storage.local.set({ stats });
+
+      console.log("📊 Stats updated:", stats);
+    } catch (error) {
+      console.error("❌ Stats load error:", error);
+    }
+  }
+
+  // ====================================================
+  // MANUAL SYNC
+  // ====================================================
+
+  async handleManualSync() {
+    console.log("🔄 Manual sync triggered");
+    await this.loadStats();
+  }
+
+  // ====================================================
+  // TAB UPDATE
+  // ====================================================
+
+  async handleTabUpdate(tabId, tab) {
+    // İSG-KATİP sitesinde mi?
+    if (tab.url?.includes("isgkatip.csgb.gov.tr")) {
+      console.log("📍 İSG-KATİP sitesi tespit edildi");
+
+      // Badge göster
+      chrome.action.setBadgeText({ tabId, text: "🔍" });
+      chrome.action.setBadgeBackgroundColor({ color: "#2196F3" });
+    }
+  }
 }
 
 // ====================================================
 // START
 // ====================================================
 
-const backgroundService = new BackgroundService();
-
-backgroundService.init();
+const service = new BackgroundService();
+service.init();
 
 console.log("🟢 Service worker loaded");

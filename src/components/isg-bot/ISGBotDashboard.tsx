@@ -143,6 +143,8 @@ export default function ISGBotDashboard() {
 
       setCompanies(companiesData || []);
 
+      
+
       // ✅ Calculate stats
       const totalCompanies = companiesData?.length || 0;
       const compliant =

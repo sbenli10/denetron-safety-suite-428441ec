@@ -1,18 +1,21 @@
+// chrome-extension/popup/popup.js
+
 // ====================================================
-// POPUP CONTROLLER
+// POPUP CONTROLLER - TAM DÜZELTİLMİŞ (İSG-KATİP Gelişmiş)
 // ====================================================
 
 import { AuthHandler } from "../auth/auth-handler.js";
 
 class PopupController {
-
   constructor() {
     this.authHandler = new AuthHandler();
-
+    this.supabaseUrl = null;
+    this.supabaseKey = null;
+    this.orgId = null;
     this.stats = {
       totalCompanies: 0,
       warningCount: 0,
-      criticalCount: 0
+      criticalCount: 0,
     };
   }
 
@@ -20,192 +23,148 @@ class PopupController {
   // INIT
   // ====================================================
 
-async init() {
-  console.log("🚀 Popup initialized");
+  async init() {
+    console.log("🚀 Popup initialized");
 
-  // Check configuration
-  const isConfigured = await this.checkConfiguration();
+    this.showLoading();
 
-  if (!isConfigured) {
-    console.warn("⚠️ Extension not configured");
-    this.showAuthScreen();
-    return;
-  }
+    // ✅ First: Load config
+    const configLoaded = await this.loadConfig();
 
-  console.log("✅ Configuration valid");
-
-  // ✅ Get authenticated user's org_id
-  const auth = await chrome.storage.local.get("denetron_auth");
-  
-  if (auth.denetron_auth && auth.denetron_auth.user) {
-    const userId = auth.denetron_auth.user.id;
-    console.log("📍 Authenticated user ID:", userId);
-    
-    // Update orgId in storage if different
-    const config = await chrome.storage.local.get("orgId");
-    if (config.orgId !== userId) {
-      console.log("🔄 Updating orgId to match user ID");
-      await chrome.storage.local.set({ orgId: userId });
-    }
-  }
-
-  await this.showMainApp();
-}
-
-async loadStats() {
-  if (!this.supabaseUrl || !this.supabaseKey || !this.orgId) {
-    console.error("❌ Missing config for stats");
-    return;
-  }
-
-  console.log("📊 Loading stats from Supabase...");
-  console.log("📍 Using org_id:", this.orgId);
-
-  try {
-    const response = await fetch(
-      `${this.supabaseUrl}/rest/v1/isgkatip_companies?org_id=eq.${this.orgId}&select=compliance_status`,
-      {
-        headers: {
-          apikey: this.supabaseKey,
-          Authorization: `Bearer ${this.supabaseKey}`,
-        },
-      }
-    );
-
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    if (!configLoaded) {
+      console.warn("⚠️ Extension not configured");
+      this.showAuthScreen();
+      return;
     }
 
-    const companies = await response.json();
+    console.log("✅ Configuration loaded");
 
-    console.log("✅ Companies fetched:", companies.length);
+    // ✅ Second: Check auth
+    await this.checkLocalStorageAuth();
 
-    this.stats = {
-      totalCompanies: companies.length,
-      warningCount: companies.filter((c) => c.compliance_status === "WARNING")
-        .length,
-      criticalCount: companies.filter((c) => c.compliance_status === "CRITICAL")
-        .length,
-    };
+    const isAuth = await this.authHandler.isAuthenticated();
 
-    console.log("📊 Stats calculated:", this.stats);
-
-    // Cache stats
-    await chrome.storage.local.set({ stats: this.stats });
-  } catch (error) {
-    console.error("❌ Stats load error:", error);
-
-    // Try to use cached stats
-    const cached = await chrome.storage.local.get("stats");
-    if (cached.stats) {
-      this.stats = cached.stats;
-      console.log("📦 Using cached stats:", this.stats);
+    if (!isAuth) {
+      console.log("🔐 Not authenticated");
+      this.showAuthScreen();
+      return;
     }
+
+    console.log("✅ Authenticated");
+
+    // ✅ Third: Sync org_id with user_id
+    await this.syncOrgIdWithUser();
+
+    // ✅ Fourth: Show app
+    await this.showMainApp();
   }
-}
+
   // ====================================================
-// CONFIG CHECK
-// ====================================================
+  // LOAD CONFIG
+  // ====================================================
 
-async checkConfiguration() {
+  async loadConfig() {
+    try {
+      const config = await chrome.storage.local.get([
+        "supabaseUrl",
+        "supabaseKey",
+        "orgId",
+        "autoConfigured",
+      ]);
 
-  return new Promise((resolve) => {
+      console.log("⚙️ Config from storage:", {
+        hasUrl: !!config.supabaseUrl,
+        hasKey: !!config.supabaseKey,
+        hasOrgId: !!config.orgId,
+        autoConfigured: config.autoConfigured,
+      });
 
-    chrome.storage.local.get(
-      ["supabaseUrl", "supabaseKey", "orgId"],
-      (config) => {
-
-        console.log("⚙️ Config read from storage:", config);
-
-        if (!config.supabaseUrl) {
-          console.warn("supabaseUrl missing");
-          resolve(false);
-          return;
-        }
-
-        if (!config.supabaseKey) {
-          console.warn("supabaseKey missing");
-          resolve(false);
-          return;
-        }
-
-        if (!config.orgId) {
-          console.warn("orgId missing");
-          resolve(false);
-          return;
-        }
-
-        resolve(true);
-
+      if (!config.supabaseUrl) {
+        console.error("❌ Missing supabaseUrl");
+        return false;
       }
-    );
 
-  });
+      if (!config.supabaseKey) {
+        console.error("❌ Missing supabaseKey");
+        return false;
+      }
 
-}
+      // Save to instance
+      this.supabaseUrl = config.supabaseUrl;
+      this.supabaseKey = config.supabaseKey;
+      this.orgId = config.orgId; // Can be null initially
+
+      return true;
+    } catch (error) {
+      console.error("❌ Config load error:", error);
+      return false;
+    }
+  }
+
+  // ====================================================
+  // SYNC ORG ID WITH USER
+  // ====================================================
+
+  async syncOrgIdWithUser() {
+    try {
+      const auth = await chrome.storage.local.get("denetron_auth");
+
+      if (auth.denetron_auth && auth.denetron_auth.user) {
+        const userId = auth.denetron_auth.user.id;
+        console.log("📍 Authenticated user ID:", userId);
+
+        // Update orgId if different or missing
+        if (this.orgId !== userId) {
+          console.log("🔄 Updating orgId to match user ID");
+          this.orgId = userId;
+          await chrome.storage.local.set({ orgId: userId });
+        }
+      } else {
+        console.warn("⚠️ No authenticated user found");
+      }
+    } catch (error) {
+      console.error("❌ Sync org ID error:", error);
+    }
+  }
 
   // ====================================================
   // LOCAL STORAGE AUTH CHECK
   // ====================================================
 
   async checkLocalStorageAuth() {
-
     try {
-
       const tabs = await chrome.tabs.query({
-        url: [
-          "https://www.denetron.me/*",
-          "https://denetron.me/*"
-        ]
+        url: ["https://www.denetron.me/*", "https://denetron.me/*"],
       });
 
       for (const tab of tabs) {
-
         if (!tab.id) continue;
 
         try {
-
           const result = await chrome.scripting.executeScript({
             target: { tabId: tab.id },
             func: () => {
-
               const auth = localStorage.getItem("denetron_extension_auth");
-
               if (!auth) return null;
-
               localStorage.removeItem("denetron_extension_auth");
-
               return JSON.parse(auth);
-
-            }
+            },
           });
 
           const authData = result?.[0]?.result;
 
           if (authData) {
-
             console.log("✅ Auth received from web login");
-
             await this.authHandler.saveAuth(authData);
-
             return;
-
           }
-
         } catch (err) {
-
-          console.warn("⚠️ Tab access failed:", tab.id);
-
+          console.warn("⚠️ Tab access failed:", tab.id, err.message);
         }
-
       }
-
     } catch (err) {
-
       console.error("❌ LocalStorage auth check error", err);
-
     }
-
   }
 
   // ====================================================
@@ -213,27 +172,22 @@ async checkConfiguration() {
   // ====================================================
 
   showLoading() {
-
     document.getElementById("loadingScreen").style.display = "flex";
     document.getElementById("authScreen").style.display = "none";
     document.getElementById("mainApp").style.display = "none";
-
   }
 
   showAuthScreen() {
-
     document.getElementById("loadingScreen").style.display = "none";
     document.getElementById("authScreen").style.display = "flex";
     document.getElementById("mainApp").style.display = "none";
 
     document
       .getElementById("btnLogin")
-      .addEventListener("click", () => this.handleLogin());
-
+      ?.addEventListener("click", () => this.handleLogin());
   }
 
   async showMainApp() {
-
     document.getElementById("loadingScreen").style.display = "none";
     document.getElementById("authScreen").style.display = "none";
     document.getElementById("mainApp").style.display = "block";
@@ -244,92 +198,243 @@ async checkConfiguration() {
     await this.loadActivities();
 
     this.updateStatsUI();
-
   }
 
   // ====================================================
-  // LOGIN
+  // LOGIN / LOGOUT
   // ====================================================
 
   handleLogin() {
-
     const loginUrl = this.authHandler.getLoginUrl();
-
     console.log("🔐 Opening login:", loginUrl);
-
-    chrome.tabs.create({
-      url: loginUrl
-    });
-
+    chrome.tabs.create({ url: loginUrl });
     window.close();
-
   }
 
   async handleLogout() {
-
     if (!confirm("Çıkış yapmak istediğinizden emin misiniz?")) return;
-
     await this.authHandler.clearAuth();
-
     window.location.reload();
-
   }
 
   // ====================================================
-  // EVENTS
+  // EVENT LISTENERS
   // ====================================================
 
   setupEventListeners() {
-
+    // Logout button
     document
       .getElementById("btnLogout")
       ?.addEventListener("click", () => this.handleLogout());
 
+    // Manual sync button
     document
       .getElementById("btnSync")
       ?.addEventListener("click", () => this.handleSync());
 
+    // Dashboard button
     document
       .getElementById("btnOpenDashboard")
       ?.addEventListener("click", () => {
-
         chrome.tabs.create({
-          url: "https://www.denetron.me/isg-bot"
+          url: "https://www.denetron.me/isg-bot",
         });
-
       });
 
+    // ====================================================
+    // İSG-KATİP SYNC BUTTON (GELİŞMİŞ)
+    // ====================================================
+    document
+      .getElementById("btnSyncISGKatip")
+      ?.addEventListener("click", async () => {
+        await this.handleISGKatipSync();
+      });
   }
 
   // ====================================================
-  // DATA
+  // İSG-KATİP SYNC HANDLER (GELİŞMİŞ)
+  // ====================================================
+
+  async handleISGKatipSync() {
+    console.log("🔗 Checking İSG-KATİP session...");
+
+    try {
+      // Mevcut İSG-KATİP tab'ini bul
+      const tabs = await chrome.tabs.query({
+        url: "https://isgkatip.csgb.gov.tr/*",
+      });
+
+      if (tabs.length > 0) {
+        // Zaten açık bir İSG-KATİP tab'i var
+        const tab = tabs[0];
+
+        console.log("✅ İSG-KATİP tab bulundu:", tab.id);
+
+        // O tab'e geç
+        await chrome.tabs.update(tab.id, { active: true });
+        await chrome.windows.update(tab.windowId, { focused: true });
+
+        // Content script'e mesaj gönder (manuel scrape tetikle)
+        try {
+          await chrome.tabs.sendMessage(tab.id, {
+            type: "TRIGGER_MANUAL_SCRAPE",
+          });
+
+          chrome.notifications.create({
+            type: "basic",
+            iconUrl: "/icons/icon128.png",
+            title: "İSG-KATİP Senkronizasyonu",
+            message:
+              "Veriler toplanıyor... İşyeri listesi sayfasındaysanız otomatik çekilecek.",
+            priority: 1,
+          });
+        } catch (error) {
+          console.warn("⚠️ Content script mesajı gönderilemedi:", error);
+
+          // Content script yüklü değil, işyeri listesine yönlendir
+          const currentUrl = tab.url;
+          if (!currentUrl.includes("/Isyeri/IsyeriListesi")) {
+            await chrome.tabs.update(tab.id, {
+              url: "https://isgkatip.csgb.gov.tr/Isyeri/IsyeriListesi",
+            });
+
+            chrome.notifications.create({
+              type: "basic",
+              iconUrl: "/icons/icon128.png",
+              title: "İSG-KATİP'e Yönlendiriliyorsunuz",
+              message: "İşyeri listesi yükleniyor... Extension otomatik veri çekecek.",
+              priority: 1,
+            });
+          } else {
+            // Zaten işyeri listesinde, sayfayı yenile
+            await chrome.tabs.reload(tab.id);
+
+            chrome.notifications.create({
+              type: "basic",
+              iconUrl: "/icons/icon128.png",
+              title: "Sayfa Yenileniyor",
+              message: "Extension otomatik olarak verileri çekecek...",
+              priority: 1,
+            });
+          }
+        }
+      } else {
+        // İSG-KATİP açık değil, yeni tab aç
+        console.log("ℹ️ İSG-KATİP tab yok, yeni açılıyor...");
+
+        await chrome.tabs.create({
+          url: "https://isgkatip.csgb.gov.tr",
+        });
+
+        chrome.notifications.create({
+          type: "basic",
+          iconUrl: "/icons/icon128.png",
+          title: "İSG-KATİP'e Hoş Geldiniz",
+          message:
+            "1️⃣ Giriş yapın\n2️⃣ İşyeri Listesi sayfasına gidin\n3️⃣ Extension otomatik verileri çekecek ✅",
+          priority: 2,
+        });
+
+        // Badge göster
+        chrome.action.setBadgeText({ text: "📋" });
+        chrome.action.setBadgeBackgroundColor({ color: "#10b981" });
+      }
+
+      // Popup'ı kapat
+      window.close();
+    } catch (error) {
+      console.error("❌ İSG-KATİP sync hatası:", error);
+
+      // Fallback: Direkt aç
+      chrome.tabs.create({
+        url: "https://isgkatip.csgb.gov.tr",
+      });
+
+      chrome.notifications.create({
+        type: "basic",
+        iconUrl: "/icons/icon128.png",
+        title: "İSG-KATİP",
+        message: "Giriş yapın ve İşyeri Listesi sayfasına gidin.",
+        priority: 1,
+      });
+
+      window.close();
+    }
+  }
+
+  // ====================================================
+  // LOAD STATS
   // ====================================================
 
   async loadStats() {
+    if (!this.supabaseUrl || !this.supabaseKey || !this.orgId) {
+      console.warn("⚠️ Missing config for stats:", {
+        hasUrl: !!this.supabaseUrl,
+        hasKey: !!this.supabaseKey,
+        hasOrgId: !!this.orgId,
+      });
+      return;
+    }
 
-  const config = await chrome.storage.local.get([
-    "supabaseUrl",
-    "supabaseKey",
-    "orgId"
-  ]);
+    console.log("📊 Loading stats from Supabase...");
+    console.log("📍 Using org_id:", this.orgId);
 
-  const supabaseUrl = config.supabaseUrl;
-  const supabaseKey = config.supabaseKey;
-  const orgId = config.orgId;
+    try {
+      // Auth token al
+      const authData = await chrome.storage.local.get("denetron_auth");
+      const accessToken = authData.denetron_auth?.session?.access_token;
 
-  if (!supabaseUrl || !supabaseKey || !orgId) {
-    console.warn("⚠️ Missing config for stats");
-    return;
+      const headers = {
+        apikey: this.supabaseKey,
+        Authorization: accessToken
+          ? `Bearer ${accessToken}`
+          : `Bearer ${this.supabaseKey}`,
+        "Content-Type": "application/json",
+      };
+
+      const response = await fetch(
+        `${this.supabaseUrl}/rest/v1/isgkatip_companies?org_id=eq.${this.orgId}&select=compliance_status`,
+        { headers }
+      );
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const companies = await response.json();
+
+      console.log("✅ Companies fetched:", companies.length);
+
+      this.stats = {
+        totalCompanies: companies.length,
+        warningCount: companies.filter((c) => c.compliance_status === "WARNING")
+          .length,
+        criticalCount: companies.filter(
+          (c) => c.compliance_status === "CRITICAL"
+        ).length,
+      };
+
+      console.log("📊 Stats calculated:", this.stats);
+
+      // Cache stats
+      await chrome.storage.local.set({ stats: this.stats });
+    } catch (error) {
+      console.error("❌ Stats load error:", error);
+
+      // Try to use cached stats
+      const cached = await chrome.storage.local.get("stats");
+      if (cached.stats) {
+        this.stats = cached.stats;
+        console.log("📦 Using cached stats:", this.stats);
+      }
+    }
   }
 
-  this.supabaseUrl = supabaseUrl;
-  this.supabaseKey = supabaseKey;
-  this.orgId = orgId;
+  // ====================================================
+  // UPDATE UI
+  // ====================================================
 
-  console.log("📊 Loading stats...");
-}
   updateStatsUI() {
-
     document.getElementById("totalCompanies").textContent =
       this.stats.totalCompanies ?? 0;
 
@@ -339,65 +444,54 @@ async checkConfiguration() {
     document.getElementById("criticalCount").textContent =
       this.stats.criticalCount ?? 0;
 
+    console.log("✅ Stats UI updated");
   }
 
   async loadActivities() {
-
     const list = document.getElementById("activityList");
+    if (!list) return;
 
     list.innerHTML = '<p class="empty-state">Henüz işlem yok</p>';
-
   }
 
   // ====================================================
-  // SYNC
+  // MANUAL SYNC
   // ====================================================
 
   async handleSync() {
-
     const btn = document.getElementById("btnSync");
-
     const original = btn.innerHTML;
 
     try {
-
       btn.disabled = true;
       btn.innerHTML = "⏳ Senkronize ediliyor...";
 
-      await chrome.runtime.sendMessage({
-        type: "SYNC_NOW"
-      });
+      console.log("🔄 Manual sync started");
 
+      // Service worker'a mesaj gönder
+      await chrome.runtime.sendMessage({ type: "SYNC_NOW" });
+
+      // Reload stats
       await this.loadStats();
-
       this.updateStatsUI();
 
       btn.innerHTML = "✅ Tamamlandı";
 
       setTimeout(() => {
-
         btn.innerHTML = original;
         btn.disabled = false;
-
       }, 2000);
-
     } catch (err) {
-
       console.error("❌ Sync error", err);
 
       btn.innerHTML = "❌ Hata";
 
       setTimeout(() => {
-
         btn.innerHTML = original;
         btn.disabled = false;
-
       }, 2000);
-
     }
-
   }
-
 }
 
 // ====================================================
@@ -405,9 +499,6 @@ async checkConfiguration() {
 // ====================================================
 
 document.addEventListener("DOMContentLoaded", () => {
-
   const controller = new PopupController();
-
   controller.init();
-
 });

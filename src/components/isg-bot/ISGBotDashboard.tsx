@@ -75,6 +75,25 @@ import { Progress } from "@/components/ui/progress";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+
 
 // ====================================================
 // TYPES
@@ -228,6 +247,9 @@ export default function ISGBotDashboard() {
   const [searchTerm, setSearchTerm] = useState("");
   const [complianceFilter, setComplianceFilter] = useState<string>("all");
   const [hazardFilter, setHazardFilter] = useState<string>("all");
+  const [selectedCompany, setSelectedCompany] = useState<Company | null>(null);
+  const [companyToDelete, setCompanyToDelete] = useState<Company | null>(null);
+  const [terminatingSync, setTerminatingSync] = useState(false);
 
   // ====================================================
   // EFFECTS
@@ -238,6 +260,172 @@ export default function ISGBotDashboard() {
       loadDashboard();
     }
   }, [user]);
+
+  // ====================================================
+  // DELETE COMPANY
+  // ====================================================
+
+  const handleDeleteCompany = async (company: Company) => {
+    try {
+      console.log("🗑️ Deleting company:", company.id);
+
+      const { error } = await supabase.rpc("soft_delete_isgkatip_company", {
+        p_company_id: company.id,
+        p_deletion_reason: "Kullanıcı tarafından silindi",
+      });
+
+      if (error) throw error;
+
+      toast.success(`${company.company_name} silindi`, {
+        description: "Firma silme geçmişinden geri getirilebilir",
+      });
+
+      setCompanyToDelete(null);
+      await loadDashboard();
+    } catch (error: any) {
+      console.error("❌ Delete error:", error);
+      toast.error("Firma silinemedi", {
+        description: error.message,
+      });
+    }
+  };
+
+  // ====================================================
+  // TERMINATE SYNC
+  // ====================================================
+
+  const handleTerminateSync = async () => {
+    if (
+      !confirm(
+        "⚠️ UYARI: İSG-KATİP senkronizasyonu sonlandırılacak!\n\n" +
+          "• Tüm firma verileri silinecek\n" +
+          "• Compliance bayrakları temizlenecek\n" +
+          "• Bu işlem GERİ ALINAMAZ\n\n" +
+          "Devam etmek istediğinizden emin misiniz?"
+      )
+    ) {
+      return;
+    }
+
+    setTerminatingSync(true);
+    toast.info("Senkronizasyon sonlandırılıyor...");
+
+    try {
+      const orgId = user!.id;
+
+      console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      console.log("🔴 SENKRON SONLANDIRMA BAŞLADI");
+      console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+
+      // 1. Delete all companies
+      const { error: companiesError } = await supabase
+        .from("isgkatip_companies")
+        .delete()
+        .eq("org_id", orgId);
+
+      if (companiesError) throw companiesError;
+      console.log("✅ Firmalar silindi");
+
+      // 2. Delete all flags
+      const { error: flagsError } = await supabase
+        .from("isgkatip_compliance_flags")
+        .delete()
+        .eq("org_id", orgId);
+
+      if (flagsError) throw flagsError;
+      console.log("✅ Bayraklar silindi");
+
+      // 3. Delete all sync logs
+      const { error: logsError } = await supabase
+        .from("isgkatip_sync_logs")
+        .delete()
+        .eq("org_id", orgId);
+
+      if (logsError) throw logsError;
+      console.log("✅ Sync logları silindi");
+
+      // 4. Delete deleted companies history
+      const { error: deletedError } = await supabase
+        .from("isgkatip_deleted_companies")
+        .delete()
+        .eq("org_id", orgId);
+
+      if (deletedError) throw deletedError;
+      console.log("✅ Silme geçmişi temizlendi");
+
+      console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      console.log("✅ SENKRON SONLANDIRILDI");
+      console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+
+      toast.success("İSG-KATİP senkronizasyonu sonlandırıldı", {
+        description: "Tüm veriler temizlendi",
+      });
+
+      await loadDashboard();
+    } catch (error: any) {
+      console.error("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      console.error("❌ SENKRON SONLANDIRMA HATASI");
+      console.error("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
+      console.error("Hata:", error);
+
+      toast.error("Senkronizasyon sonlandırılamadı", {
+        description: error.message,
+      });
+    } finally {
+      setTerminatingSync(false);
+    }
+  };
+
+  // ====================================================
+  // GENERATE REPORT
+  // ====================================================
+
+  const handleGenerateReport = async (company: Company) => {
+    toast.info("Rapor oluşturuluyor...", {
+      description: `${company.company_name} için rapor hazırlanıyor`,
+    });
+
+    try {
+      // Rapor verilerini hazırla
+      const reportData = {
+        company_name: company.company_name,
+        sgk_no: company.sgk_no,
+        employee_count: company.employee_count,
+        hazard_class: company.hazard_class,
+        compliance_status: company.compliance_status,
+        risk_score: company.risk_score,
+        assigned_minutes: company.assigned_minutes,
+        required_minutes: company.required_minutes,
+        contract_start: company.contract_start,
+        contract_end: company.contract_end,
+        generated_at: new Date().toISOString(),
+      };
+
+      // PDF oluşturma servisi çağrılabilir (Supabase Edge Function vb.)
+      // Şimdilik JSON olarak indir
+      const blob = new Blob([JSON.stringify(reportData, null, 2)], {
+        type: "application/json",
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${company.company_name.replace(/\s+/g, "_")}_rapor_${
+        new Date().toISOString().split("T")[0]
+      }.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+
+      toast.success("Rapor oluşturuldu", {
+        description: "Rapor indirildi",
+      });
+    } catch (error: any) {
+      toast.error("Rapor oluşturulamadı", {
+        description: error.message,
+      });
+    }
+  };
 
   // ====================================================
   // LOAD DASHBOARD
@@ -606,6 +794,59 @@ export default function ISGBotDashboard() {
               </>
             )}
           </Button>
+
+          {/* Senkron Bitirme Butonu */}
+          {companies.length > 0 && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button
+                  variant="destructive"
+                  disabled={terminatingSync}
+                >
+                  {terminatingSync ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Trash2 className="h-4 w-4 mr-2" />
+                  )}
+                  Senkronu Bitir
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle className="flex items-center gap-2 text-destructive">
+                    <AlertTriangle className="h-5 w-5" />
+                    İSG-KATİP Senkronizasyonunu Sonlandır?
+                  </AlertDialogTitle>
+                  <AlertDialogDescription className="space-y-2">
+                    <p className="font-semibold text-destructive">
+                      ⚠️ UYARI: Bu işlem GERİ ALINAMAZ!
+                    </p>
+                    <div className="space-y-1 text-sm">
+                      <p>• Tüm firma verileri silinecek ({companies.length} firma)</p>
+                      <p>• Compliance bayrakları temizlenecek</p>
+                      <p>• Senkronizasyon logları silinecek</p>
+                      <p>• Silme geçmişi temizlenecek</p>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-4">
+                      İSG-KATİP verilerini tamamen kaldırmak ve temiz başlamak
+                      için bu işlemi kullanın. Yeniden senkronize etmek
+                      isterseniz Chrome Extension'dan tekrar veri çekebilirsiniz.
+                    </p>
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>İptal</AlertDialogCancel>
+                  <AlertDialogAction
+                    onClick={handleTerminateSync}
+                    className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Evet, Tüm Verileri Sil
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
         </div>
       </div>
 
@@ -984,7 +1225,7 @@ export default function ISGBotDashboard() {
         </Card>
       )}
 
-      {/* Companies Table */}
+      {/* Companies Table - Dropdown Actions Güncelle */}
       {companies.length > 0 && (
         <Card>
           <CardHeader>
@@ -1008,21 +1249,7 @@ export default function ISGBotDashboard() {
             ) : (
               <div className="border rounded-lg overflow-hidden">
                 <Table>
-                  <TableHeader>
-                    <TableRow className="bg-muted/50">
-                      <TableHead className="font-semibold">Firma</TableHead>
-                      <TableHead className="font-semibold">SGK No</TableHead>
-                      <TableHead className="font-semibold">Çalışan</TableHead>
-                      <TableHead className="font-semibold">Tehlike</TableHead>
-                      <TableHead className="font-semibold">Süre</TableHead>
-                      <TableHead className="font-semibold">Uyum</TableHead>
-                      <TableHead className="font-semibold">Risk</TableHead>
-                      <TableHead className="font-semibold">Sözleşme</TableHead>
-                      <TableHead className="text-right font-semibold">
-                        İşlem
-                      </TableHead>
-                    </TableRow>
-                  </TableHeader>
+                  {/* ... (TableHeader aynı) */}
                   <TableBody>
                     {filteredCompanies.map((company) => {
                       const daysUntilExpiry = calculateDaysUntilExpiry(
@@ -1042,114 +1269,8 @@ export default function ISGBotDashboard() {
                           key={company.id}
                           className="hover:bg-muted/30 transition-colors"
                         >
-                          <TableCell>
-                            <div>
-                              <div className="font-medium">
-                                {company.company_name}
-                              </div>
-                              {company.service_provider_name && (
-                                <div className="text-xs text-muted-foreground">
-                                  {company.service_provider_name}
-                                </div>
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell className="font-mono text-xs">
-                            {company.sgk_no}
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              <Users className="h-4 w-4 text-muted-foreground" />
-                              <span className="font-medium">
-                                {company.employee_count}
-                              </span>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <Badge
-                              variant={
-                                company.hazard_class === "Çok Tehlikeli"
-                                  ? "destructive"
-                                  : company.hazard_class === "Tehlikeli"
-                                  ? "secondary"
-                                  : "outline"
-                              }
-                            >
-                              {company.hazard_class}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <div className="space-y-1">
-                              <div className="text-sm font-medium">
-                                {company.assigned_minutes} /{" "}
-                                {company.required_minutes} dk
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <Progress
-                                  value={compliancePercentage}
-                                  className="h-1.5 flex-1"
-                                />
-                                <span className="text-xs text-muted-foreground">
-                                  %{compliancePercentage}
-                                </span>
-                              </div>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              {getComplianceIcon(company.compliance_status)}
-                              <Badge
-                                variant={getComplianceBadgeVariant(
-                                  company.compliance_status
-                                )}
-                              >
-                                {getComplianceLabel(company.compliance_status)}
-                              </Badge>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              <span
-                                className={`text-lg font-bold ${getRiskColor(
-                                  company.risk_score
-                                )}`}
-                              >
-                                {company.risk_score}
-                              </span>
-                              {getRiskBadge(company.risk_score)}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            {company.contract_end ? (
-                              <div>
-                                <div className="text-sm font-medium">
-                                  {new Date(
-                                    company.contract_end
-                                  ).toLocaleDateString("tr-TR")}
-                                </div>
-                                {daysUntilExpiry !== null && (
-                                  <Badge
-                                    variant={
-                                      daysUntilExpiry < 0
-                                        ? "destructive"
-                                        : daysUntilExpiry <= 30
-                                        ? "secondary"
-                                        : "outline"
-                                    }
-                                    className="text-xs mt-1"
-                                  >
-                                    {daysUntilExpiry < 0
-                                      ? `${Math.abs(
-                                          daysUntilExpiry
-                                        )} gün geçti`
-                                      : `${daysUntilExpiry} gün kaldı`}
-                                  </Badge>
-                                )}
-                              </div>
-                            ) : (
-                              <span className="text-muted-foreground">-</span>
-                            )}
-                          </TableCell>
+                          {/* ... (TableCell'ler aynı) */}
+
                           <TableCell className="text-right">
                             <DropdownMenu>
                               <DropdownMenuTrigger asChild>
@@ -1160,16 +1281,30 @@ export default function ISGBotDashboard() {
                               <DropdownMenuContent align="end">
                                 <DropdownMenuLabel>İşlemler</DropdownMenuLabel>
                                 <DropdownMenuSeparator />
-                                <DropdownMenuItem>
+                                
+                                {/* Detayları Gör */}
+                                <DropdownMenuItem
+                                  onClick={() => setSelectedCompany(company)}
+                                >
                                   <Eye className="h-4 w-4 mr-2" />
                                   Detayları Gör
                                 </DropdownMenuItem>
-                                <DropdownMenuItem>
+
+                                {/* Rapor Oluştur */}
+                                <DropdownMenuItem
+                                  onClick={() => handleGenerateReport(company)}
+                                >
                                   <FileBarChart className="h-4 w-4 mr-2" />
                                   Rapor Oluştur
                                 </DropdownMenuItem>
+
                                 <DropdownMenuSeparator />
-                                <DropdownMenuItem className="text-red-600">
+
+                                {/* Sil */}
+                                <DropdownMenuItem
+                                  className="text-red-600"
+                                  onClick={() => setCompanyToDelete(company)}
+                                >
                                   <Trash2 className="h-4 w-4 mr-2" />
                                   Sil
                                 </DropdownMenuItem>
@@ -1185,6 +1320,200 @@ export default function ISGBotDashboard() {
             )}
           </CardContent>
         </Card>
+      )}
+
+      {/* Company Details Dialog */}
+      {selectedCompany && (
+        <Dialog
+          open={!!selectedCompany}
+          onOpenChange={() => setSelectedCompany(null)}
+        >
+          <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="text-2xl">
+                {selectedCompany.company_name}
+              </DialogTitle>
+              <DialogDescription>
+                Firma detayları ve compliance bilgileri
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-6 py-4">
+              {/* Status Badges */}
+              <div className="flex flex-wrap gap-2">
+                <Badge
+                  variant={getComplianceBadgeVariant(
+                    selectedCompany.compliance_status
+                  )}
+                >
+                  {getComplianceLabel(selectedCompany.compliance_status)}
+                </Badge>
+                {getRiskBadge(selectedCompany.risk_score)}
+                <Badge variant="outline">
+                  {selectedCompany.employee_count} Çalışan
+                </Badge>
+                <Badge variant="outline">
+                  {selectedCompany.hazard_class}
+                </Badge>
+              </div>
+
+              <Separator />
+
+              {/* Details Grid */}
+              <div className="grid grid-cols-2 gap-6">
+                <div>
+                  <h3 className="font-semibold mb-3 flex items-center gap-2">
+                    <Building2 className="h-4 w-4" />
+                    Firma Bilgileri
+                  </h3>
+                  <dl className="space-y-2 text-sm">
+                    <div>
+                      <dt className="text-muted-foreground">SGK Sicil No</dt>
+                      <dd className="font-mono">{selectedCompany.sgk_no}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted-foreground">NACE Kodu</dt>
+                      <dd>{selectedCompany.nace_code || "-"}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted-foreground">Çalışan Sayısı</dt>
+                      <dd>{selectedCompany.employee_count}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted-foreground">Tehlike Sınıfı</dt>
+                      <dd>{selectedCompany.hazard_class}</dd>
+                    </div>
+                  </dl>
+                </div>
+
+                <div>
+                  <h3 className="font-semibold mb-3 flex items-center gap-2">
+                    <Clock className="h-4 w-4" />
+                    Süre Bilgileri
+                  </h3>
+                  <dl className="space-y-2 text-sm">
+                    <div>
+                      <dt className="text-muted-foreground">Atanan Süre</dt>
+                      <dd className="font-semibold">
+                        {selectedCompany.assigned_minutes} dk/ay
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted-foreground">Gerekli Süre</dt>
+                      <dd className="font-semibold">
+                        {selectedCompany.required_minutes} dk/ay
+                      </dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted-foreground">Uyum Oranı</dt>
+                      <dd>
+                        <div className="flex items-center gap-2">
+                          <Progress
+                            value={
+                              selectedCompany.required_minutes > 0
+                                ? (selectedCompany.assigned_minutes /
+                                    selectedCompany.required_minutes) *
+                                  100
+                                : 0
+                            }
+                            className="flex-1"
+                          />
+                          <span className="font-semibold">
+                            %
+                            {selectedCompany.required_minutes > 0
+                              ? Math.round(
+                                  (selectedCompany.assigned_minutes /
+                                    selectedCompany.required_minutes) *
+                                    100
+                                )
+                              : 0}
+                          </span>
+                        </div>
+                      </dd>
+                    </div>
+                  </dl>
+                </div>
+              </div>
+
+              {selectedCompany.contract_end && (
+                <>
+                  <Separator />
+                  <div>
+                    <h3 className="font-semibold mb-3 flex items-center gap-2">
+                      <Calendar className="h-4 w-4" />
+                      Sözleşme Bilgileri
+                    </h3>
+                    <dl className="space-y-2 text-sm">
+                      {selectedCompany.contract_start && (
+                        <div>
+                          <dt className="text-muted-foreground">
+                            Başlangıç Tarihi
+                          </dt>
+                          <dd>
+                            {new Date(
+                              selectedCompany.contract_start
+                            ).toLocaleDateString("tr-TR")}
+                          </dd>
+                        </div>
+                      )}
+                      <div>
+                        <dt className="text-muted-foreground">Bitiş Tarihi</dt>
+                        <dd>
+                          {new Date(
+                            selectedCompany.contract_end
+                          ).toLocaleDateString("tr-TR")}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className="text-muted-foreground">Kalan Süre</dt>
+                        <dd>
+                          {(() => {
+                            const days = calculateDaysUntilExpiry(
+                              selectedCompany.contract_end
+                            );
+                            return days !== null
+                              ? days < 0
+                                ? `${Math.abs(days)} gün önce doldu`
+                                : `${days} gün kaldı`
+                              : "-";
+                          })()}
+                        </dd>
+                      </div>
+                    </dl>
+                  </div>
+                </>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Delete Confirmation Dialog */}
+      {companyToDelete && (
+        <AlertDialog
+          open={!!companyToDelete}
+          onOpenChange={() => setCompanyToDelete(null)}
+        >
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Firmayı Sil?</AlertDialogTitle>
+              <AlertDialogDescription>
+                <strong>{companyToDelete.company_name}</strong> firması
+                silinecek. Firma "Silme Geçmişi" bölümünden geri
+                getirilebilir.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>İptal</AlertDialogCancel>
+              <AlertDialogAction
+                onClick={() => handleDeleteCompany(companyToDelete)}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                Sil
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       )}
     </div>
   );

@@ -414,7 +414,6 @@ async handleISGKatipSync(companies, metadata) {
     chrome.notifications.create({
         type: "basic",
         iconUrl: "/icons/icon128.png",
-        iconUrl: "assets/icon-128.png",
         title: "İSG-KATİP Senkronizasyonu",
         message: `${successCount} işyeri başarıyla senkronize edildi!`,
         priority: 2,
@@ -436,15 +435,15 @@ async handleISGKatipSync(companies, metadata) {
     console.error("Hata:", error);
     console.error("Stack:", error.stack);
 
-    chrome.notifications.create({
-      type: "basic",
-      iconUrl: "/icons/icon128.png",
-      title: "❌ Senkronizasyon Hatası",
-      message: error.message || "Bilinmeyen hata oluştu",
-      priority: 2,
-    });
+      chrome.notifications.create({
+        type: "basic",
+        iconUrl: "/icons/icon128.png",
+        title: "Senkronizasyon Hatası",
+        message: error.message || "Veriler kaydedilemedi",
+        priority: 2,
+      });
+    }
   }
-}
 
 // ====================================================
 // HELPER FUNCTIONS

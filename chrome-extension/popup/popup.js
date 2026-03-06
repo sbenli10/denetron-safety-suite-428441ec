@@ -304,103 +304,112 @@ class PopupController {
 
 // handleISGKatipSync fonksiyonunu güncelle:
 
-async handleISGKatipSync() {
-  console.log("🔗 İSG-KATİP senkronizasyonu başlatılıyor...");
+  async handleISGKatipSync() {
+    console.log("🔗 Checking İSG-KATİP session...");
 
-  const targetUrl =
-    "https://isgkatip.csgb.gov.tr/kisi-kurum/kisi-karti/kisi-kartim";
-
-  try {
-    const tabs = await chrome.tabs.query({
-      url: "https://isgkatip.csgb.gov.tr/*",
-    });
-
-    if (tabs.length > 0) {
-      const tab = tabs[0];
-      const currentUrl = tab.url || "";
-
-      console.log("✅ İSG-KATİP tab bulundu:", tab.id);
-
-      // O tab'e geç
-      await chrome.tabs.update(tab.id, { active: true });
-      await chrome.windows.update(tab.windowId, { focused: true });
-
-      // ✅ FLAG AYARLA (Extension'dan açıldı)
-      await chrome.storage.session.set({
-        [`isgkatip_show_button_${tab.id}`]: true,
+    try {
+      // Mevcut İSG-KATİP tab'ini bul
+      const tabs = await chrome.tabs.query({
+        url: "https://isgkatip.csgb.gov.tr/*",
       });
 
-      // Doğru sayfada değilse yönlendir
-      if (!currentUrl.includes("/kisi-kurum/kisi-karti/kisi-kartim")) {
-        console.log("🔄 Kişi Kartı sayfasına yönlendiriliyor...");
+      if (tabs.length > 0) {
+        // Zaten açık bir İSG-KATİP tab'i var
+        const tab = tabs[0];
 
-        await chrome.tabs.update(tab.id, { url: targetUrl });
+        console.log("✅ İSG-KATİP tab bulundu:", tab.id);
+
+        // O tab'e geç
+        await chrome.tabs.update(tab.id, { active: true });
+        await chrome.windows.update(tab.windowId, { focused: true });
+
+        // Content script'e mesaj gönder (manuel scrape tetikle)
+        try {
+          await chrome.tabs.sendMessage(tab.id, {
+            type: "TRIGGER_MANUAL_SCRAPE",
+          });
+
+          chrome.notifications.create({
+            type: "basic",
+            iconUrl: "/icons/icon128.png",
+            title: "İSG-KATİP Senkronizasyonu",
+            message:
+              "Veriler toplanıyor... İşyeri listesi sayfasındaysanız otomatik çekilecek.",
+            priority: 1,
+          });
+        } catch (error) {
+          console.warn("⚠️ Content script mesajı gönderilemedi:", error);
+
+          // Content script yüklü değil, işyeri listesine yönlendir
+          const currentUrl = tab.url;
+          if (!currentUrl.includes("/Isyeri/IsyeriListesi")) {
+            await chrome.tabs.update(tab.id, {
+              url: "https://isgkatip.csgb.gov.tr/Isyeri/IsyeriListesi",
+            });
+
+            chrome.notifications.create({
+              type: "basic",
+              iconUrl: "/icons/icon128.png",
+              title: "İSG-KATİP'e Yönlendiriliyorsunuz",
+              message: "İşyeri listesi yükleniyor... Extension otomatik veri çekecek.",
+              priority: 1,
+            });
+          } else {
+            // Zaten işyeri listesinde, sayfayı yenile
+            await chrome.tabs.reload(tab.id);
+
+            chrome.notifications.create({
+              type: "basic",
+              iconUrl: "/icons/icon128.png",
+              title: "Sayfa Yenileniyor",
+              message: "Extension otomatik olarak verileri çekecek...",
+              priority: 1,
+            });
+          }
+        }
+      } else {
+        // İSG-KATİP açık değil, yeni tab aç
+        console.log("ℹ️ İSG-KATİP tab yok, yeni açılıyor...");
+
+        await chrome.tabs.create({
+          url: "https://isgkatip.csgb.gov.tr",
+        });
 
         chrome.notifications.create({
           type: "basic",
           iconUrl: "/icons/icon128.png",
-          title: "İSG-KATİP",
-          message: "Kişi Kartı sayfası yükleniyor...",
-          priority: 1,
+          title: "İSG-KATİP'e Hoş Geldiniz",
+          message:
+            "1️⃣ Giriş yapın\n2️⃣ İşyeri Listesi sayfasına gidin\n3️⃣ Extension otomatik verileri çekecek ✅",
+          priority: 2,
         });
-      } else {
-        // Zaten doğru sayfada, butonu göstermesi için mesaj gönder
-        console.log("✅ Zaten doğru sayfada, buton gösteriliyor...");
 
-        try {
-          await chrome.tabs.sendMessage(tab.id, {
-            type: "SHOW_TRANSFER_BUTTON",
-          });
-        } catch (error) {
-          console.warn("⚠️ Sayfa yenileniyor...");
-          await chrome.tabs.reload(tab.id);
-        }
+        // Badge göster
+        chrome.action.setBadgeText({ text: "📋" });
+        chrome.action.setBadgeBackgroundColor({ color: "#10b981" });
       }
-    } else {
-      // Yeni tab aç
-      console.log("ℹ️ Yeni İSG-KATİP tab açılıyor...");
 
-      const newTab = await chrome.tabs.create({ url: targetUrl });
+      // Popup'ı kapat
+      window.close();
+    } catch (error) {
+      console.error("❌ İSG-KATİP sync hatası:", error);
 
-      // ✅ FLAG AYARLA
-      await chrome.storage.session.set({
-        [`isgkatip_show_button_${newTab.id}`]: true,
+      // Fallback: Direkt aç
+      chrome.tabs.create({
+        url: "https://isgkatip.csgb.gov.tr",
       });
 
       chrome.notifications.create({
         type: "basic",
         iconUrl: "/icons/icon128.png",
         title: "İSG-KATİP",
-        message:
-          "Giriş yapın, buton otomatik görünecek.",
-        priority: 2,
+        message: "Giriş yapın ve İşyeri Listesi sayfasına gidin.",
+        priority: 1,
       });
 
-      chrome.action.setBadgeText({ text: "📋" });
-      chrome.action.setBadgeBackgroundColor({ color: "#10b981" });
+      window.close();
     }
-
-    window.close();
-  } catch (error) {
-    console.error("❌ İSG-KATİP sync hatası:", error);
-
-    const newTab = await chrome.tabs.create({ url: targetUrl });
-
-    await chrome.storage.session.set({
-      [`isgkatip_show_button_${newTab.id}`]: true,
-    });
-
-    chrome.notifications.create({
-      type: "basic",
-      iconUrl: "/icons/icon128.png",
-      title: "İSG-KATİP",
-      message: "Giriş yapın ve Kişi Kartı sayfasına gidin.",
-      priority: 1,
-    });
-
-    window.close();
   }
-}
 
   // ====================================================
   // LOAD STATS

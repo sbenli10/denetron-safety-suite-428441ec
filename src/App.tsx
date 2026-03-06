@@ -17,6 +17,7 @@ import BoardMeetingsGuide from "@/pages/BoardMeetingsGuide";
 import NotificationCenter from "@/pages/NotificationCenter";
 import AuthCallback from '@/pages/AuthCallback';
 import Index from '@/pages/Index';
+import ISGBotDeleted from "./pages/ISGBotDeleted";
 
 // ============================================
 // CORE PAGES
@@ -183,6 +184,7 @@ const App = () => (
                           {/* ============================================ */}
                           <Route path="/" element={<Index />} />
                           <Route path="/isg-bot" element={<ISGBot />} />
+                          <Route path="/isg-bot-deleted" element={<ISGBotDeleted />} />
                           <Route path="/isg-bot/:tab" element={<ISGBot />} />
                           <Route path="/docs/isg-bot-setup" element={<ISGBotSetup />} />
 

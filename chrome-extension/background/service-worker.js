@@ -115,6 +115,14 @@ class BackgroundService {
           });
           break;
 
+        case "WEB_AUTH_UPDATED":
+          if (message.data) {
+            await this.authHandler.saveAuth(message.data);
+            await this.loadConfig();
+          }
+          sendResponse({ success: true });
+          break;
+
         default:
           console.warn("⚠️ Unknown message type:", message.type);
           sendResponse({ success: false, error: "Unknown message type" });
@@ -221,7 +229,7 @@ class BackgroundService {
       // Notification göster
       chrome.notifications.create({
         type: "basic",
-        iconUrl: "/icons/icon128.png",
+        iconUrl: "assets/icon-128.png",
         title: "İSG-KATİP Senkronizasyonu",
         message: `${successCount} işyeri başarıyla senkronize edildi!`,
         priority: 2,
@@ -234,7 +242,7 @@ class BackgroundService {
 
       chrome.notifications.create({
         type: "basic",
-        iconUrl: "/icons/icon128.png",
+        iconUrl: "assets/icon-128.png",
         title: "Senkronizasyon Hatası",
         message: error.message || "Veriler kaydedilemedi",
         priority: 2,

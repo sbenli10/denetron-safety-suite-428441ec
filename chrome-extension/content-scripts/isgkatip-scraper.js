@@ -4,212 +4,244 @@
 // İSG-KATİP SCRAPER
 // ====================================================
 
-console.log('🔍 İSG-KATİP Scraper başlatıldı');
+console.log("🔍 İSG-KATİP Scraper başlatıldı");
 
-// Config
 const CONFIG = {
-  minDelay: 1000, // Sayfa yüklenmesi için bekleme
-  autoSync: true, // Otomatik senkronizasyon
+  minDelay: 1200,
+  autoSync: false,
   debug: true,
+  pendingSyncKey: "pendingIsgkatipManualSync",
 };
 
-// İşyeri listesi için selector'lar (site yapısına göre güncellenecek)
 const SELECTORS = {
-  // Tablo
-  table: 'table',
-  rows: 'table tbody tr',
-  
-  // Kolonlar (index veya class'a göre)
-  companyName: 'td:nth-child(1)', // Örnek: 1. kolon
-  sgkNo: 'td:nth-child(2)',
-  employees: 'td:nth-child(3)',
-  hazardClass: 'td:nth-child(4)',
-  naceCode: 'td:nth-child(5)',
-  contractStart: 'td:nth-child(6)',
-  contractEnd: 'td:nth-child(7)',
-  assignedMinutes: 'td:nth-child(8)',
-  requiredMinutes: 'td:nth-child(9)',
+  table: "table",
+  rows: "table tbody tr",
 };
 
-// ====================================================
-// SCRAPE COMPANIES
-// ====================================================
+let isScraping = false;
 
-async function scrapeCompanies() {
-  console.log('📊 İşyeri verilerini topluyorum...');
-  
-  // Sayfa yüklenmesini bekle
-  await waitForElement(SELECTORS.table);
-  
-  const companies = [];
-  const rows = document.querySelectorAll(SELECTORS.rows);
-  
-  console.log(`📋 ${rows.length} işyeri satırı bulundu`);
-  
-  rows.forEach((row, index) => {
-    try {
-      const company = extractCompanyData(row);
-      
-      if (company.company_name && company.sgk_no) {
-        companies.push(company);
-        
-        if (CONFIG.debug) {
-          console.log(`✅ ${index + 1}. ${company.company_name} - ${company.sgk_no}`);
-        }
-      }
-    } catch (error) {
-      console.error(`❌ Satır ${index + 1} parse hatası:`, error);
-    }
-  });
-  
-  console.log(`📦 Toplam ${companies.length} işyeri başarıyla işlendi`);
-  
-  // Service worker'a gönder
-  if (companies.length > 0) {
-    chrome.runtime.sendMessage({
-      type: 'ISGKATIP_COMPANIES_SCRAPED',
-      data: companies,
-      metadata: {
-        scrapedAt: new Date().toISOString(),
-        sourceUrl: window.location.href,
-        totalFound: companies.length,
-      },
-    });
-  }
-  
-  return companies;
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-// ====================================================
-// EXTRACT COMPANY DATA
-// ====================================================
+function normalizeText(value = "") {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function normalizeDate(raw = "") {
+  const text = normalizeText(raw);
+  const ddmmyyyy = text.match(/(\d{2})\.(\d{2})\.(\d{4})/);
+  if (ddmmyyyy) return `${ddmmyyyy[3]}-${ddmmyyyy[2]}-${ddmmyyyy[1]}`;
+
+  const yyyymmdd = text.match(/(\d{4})-(\d{2})-(\d{2})/);
+  if (yyyymmdd) return yyyymmdd[0];
+
+  return null;
+}
+
+function parseNumber(raw = "") {
+  const digits = raw.replace(/\D/g, "");
+  if (!digits) return 0;
+  const value = parseInt(digits, 10);
+  return Number.isNaN(value) ? 0 : value;
+}
+
+function parseHazardClass(rowText, fallback = "Az Tehlikeli") {
+  const lower = rowText.toLowerCase();
+  if (lower.includes("çok tehlikeli") || lower.includes("cok tehlikeli")) return "Çok Tehlikeli";
+  if (lower.includes("tehlikeli")) return "Tehlikeli";
+  if (lower.includes("az tehlikeli")) return "Az Tehlikeli";
+  return fallback;
+}
 
 function extractCompanyData(row) {
-  const getText = (selector) => {
-    const el = row.querySelector(selector);
-    return el ? el.textContent.trim() : '';
-  };
-  
-  const getNumber = (selector) => {
-    const text = getText(selector);
-    const num = parseInt(text.replace(/\D/g, ''));
-    return isNaN(num) ? 0 : num;
-  };
-  
+  const cells = Array.from(row.querySelectorAll("td"));
+  if (cells.length < 2) {
+    return null;
+  }
+
+  const values = cells.map((cell) => normalizeText(cell.textContent || ""));
+  const fullText = values.join(" ");
+
+  const companyName = values[0] || "";
+  const sgkCandidate = values.find((v) => /\d{8,}/.test(v)) || values[1] || "";
+  const sgkNo = (sgkCandidate.match(/\d{8,}/)?.[0] || "").replace(/\D/g, "");
+
+  if (!companyName || !sgkNo) {
+    return null;
+  }
+
+  const employeeCount = parseNumber(values[2] || "");
+  const hazardClass = parseHazardClass(fullText);
+
+  const dateValues = values.map((v) => normalizeDate(v)).filter(Boolean);
+  const contractStart = dateValues[0] || null;
+  const contractEnd = dateValues[1] || null;
+
+  const minuteCandidates = values.map(parseNumber).filter((n) => n > 0);
+  const assignedMinutes = minuteCandidates[minuteCandidates.length - 2] || 0;
+  const requiredMinutes = minuteCandidates[minuteCandidates.length - 1] || 0;
+
   return {
-    company_name: getText(SELECTORS.companyName),
-    sgk_no: getText(SELECTORS.sgkNo),
-    employee_count: getNumber(SELECTORS.employees),
-    hazard_class: getText(SELECTORS.hazardClass) || 'Az Tehlikeli',
-    nace_code: getText(SELECTORS.naceCode),
-    contract_start: getText(SELECTORS.contractStart),
-    contract_end: getText(SELECTORS.contractEnd),
-    assigned_minutes: getNumber(SELECTORS.assignedMinutes),
-    required_minutes: getNumber(SELECTORS.requiredMinutes),
+    company_name: companyName,
+    sgk_no: sgkNo,
+    employee_count: employeeCount,
+    hazard_class: hazardClass,
+    nace_code: "",
+    contract_start: contractStart,
+    contract_end: contractEnd,
+    assigned_minutes: assignedMinutes,
+    required_minutes: requiredMinutes,
   };
 }
 
-// ====================================================
-// UTILS
-// ====================================================
-
-function waitForElement(selector, timeout = 5000) {
+async function waitForElement(selector, timeout = 15000) {
   return new Promise((resolve, reject) => {
-    if (document.querySelector(selector)) {
-      return resolve(document.querySelector(selector));
-    }
-    
+    const found = document.querySelector(selector);
+    if (found) return resolve(found);
+
     const observer = new MutationObserver(() => {
-      if (document.querySelector(selector)) {
+      const element = document.querySelector(selector);
+      if (element) {
         observer.disconnect();
-        resolve(document.querySelector(selector));
+        resolve(element);
       }
     });
-    
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true,
-    });
-    
+
+    observer.observe(document.body, { childList: true, subtree: true });
+
     setTimeout(() => {
       observer.disconnect();
-      reject(new Error(`Element "${selector}" bulunamadı (timeout: ${timeout}ms)`));
+      reject(new Error(`Element bulunamadı: ${selector}`));
     }, timeout);
   });
 }
 
-// ====================================================
-// VISUAL FEEDBACK
-// ====================================================
+function showNotification(message, type = "success") {
+  const colors = {
+    success: "#4CAF50",
+    error: "#F44336",
+    info: "#2563eb",
+  };
 
-function showNotification(message, type = 'success') {
-  const notification = document.createElement('div');
+  const notification = document.createElement("div");
   notification.style.cssText = `
     position: fixed;
     top: 20px;
     right: 20px;
-    padding: 15px 20px;
-    background: ${type === 'success' ? '#4CAF50' : '#F44336'};
+    padding: 12px 16px;
+    background: ${colors[type] || colors.success};
     color: white;
     border-radius: 8px;
     box-shadow: 0 4px 12px rgba(0,0,0,0.2);
     z-index: 10000;
     font-family: system-ui;
-    font-size: 14px;
-    animation: slideIn 0.3s ease-out;
+    font-size: 13px;
   `;
   notification.textContent = `Denetron İSG Bot: ${message}`;
-  
   document.body.appendChild(notification);
-  
-  setTimeout(() => {
-    notification.style.animation = 'slideOut 0.3s ease-out';
-    setTimeout(() => notification.remove(), 300);
-  }, 3000);
+
+  setTimeout(() => notification.remove(), 3500);
 }
 
-// ====================================================
-// AUTO RUN
-// ====================================================
+async function scrapeCompanies() {
+  if (isScraping) {
+    console.log("ℹ️ Scrape zaten devam ediyor");
+    return [];
+  }
+
+  isScraping = true;
+
+  try {
+    if (!window.location.href.includes("/Isyeri/IsyeriListesi")) {
+      throw new Error("Lütfen İşyeri Listesi sayfasını açın");
+    }
+
+    await waitForElement(SELECTORS.table);
+    await sleep(CONFIG.minDelay);
+
+    const rows = Array.from(document.querySelectorAll(SELECTORS.rows));
+    if (rows.length === 0) {
+      throw new Error("Tabloda işyeri satırı bulunamadı");
+    }
+
+    const companies = [];
+    let skipped = 0;
+
+    for (const [index, row] of rows.entries()) {
+      const company = extractCompanyData(row);
+      if (!company) {
+        skipped += 1;
+        continue;
+      }
+
+      companies.push(company);
+      if (CONFIG.debug) {
+        console.log(`✅ ${index + 1}. ${company.company_name} - ${company.sgk_no}`);
+      }
+    }
+
+    if (companies.length === 0) {
+      throw new Error("Hiç işyeri verisi parse edilemedi");
+    }
+
+    await chrome.runtime.sendMessage({
+      type: "ISGKATIP_COMPANIES_SCRAPED",
+      data: companies,
+      metadata: {
+        scrapedAt: new Date().toISOString(),
+        sourceUrl: window.location.href,
+        totalFound: companies.length,
+        skippedRows: skipped,
+      },
+    });
+
+    showNotification(`${companies.length} işyeri Denetron'a gönderildi`, "success");
+    return companies;
+  } catch (error) {
+    console.error("❌ Scraping hatası:", error);
+    showNotification(error.message || "Veriler alınamadı", "error");
+    throw error;
+  } finally {
+    isScraping = false;
+    await chrome.storage.local.remove(CONFIG.pendingSyncKey);
+  }
+}
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === "TRIGGER_MANUAL_SCRAPE") {
+    scrapeCompanies()
+      .then((companies) => sendResponse({ success: true, total: companies.length }))
+      .catch((error) => sendResponse({ success: false, error: error.message }));
+    return true;
+  }
+
+  return false;
+});
 
 async function init() {
-  console.log('🚀 İSG-KATİP Scraper başlatılıyor...');
-  
-  // İşyeri listesi sayfasında mıyız?
-  if (!window.location.href.includes('/Isyeri/IsyeriListesi')) {
-    console.log('ℹ️ İşyeri listesi sayfasında değiliz');
+  console.log("🚀 İSG-KATİP Scraper hazır");
+
+  if (!window.location.href.includes("/Isyeri/IsyeriListesi")) {
     return;
   }
-  
-  console.log('✅ İşyeri listesi sayfasındasınız');
-  
-  // Otomatik senkronizasyon aktif mi?
-  if (!CONFIG.autoSync) {
-    console.log('ℹ️ Otomatik senkronizasyon kapalı. Manuel başlatmak için: window.scrapeISGKatip()');
+
+  if (CONFIG.autoSync) {
+    await scrapeCompanies();
     return;
   }
-  
-  // Sayfanın tamamen yüklenmesini bekle
-  await new Promise(resolve => setTimeout(resolve, CONFIG.minDelay));
-  
-  try {
-    showNotification('Veriler toplanıyor...', 'info');
-    const companies = await scrapeCompanies();
-    showNotification(`${companies.length} işyeri verisi Denetron'a aktarılıyor...`);
-  } catch (error) {
-    console.error('❌ Scraping hatası:', error);
-    showNotification('Veri toplama hatası!', 'error');
+
+  const syncState = await chrome.storage.local.get(CONFIG.pendingSyncKey);
+  if (syncState[CONFIG.pendingSyncKey]) {
+    console.log("📥 Bekleyen manuel senkronizasyon bulundu");
+    await scrapeCompanies();
   }
 }
 
-// Sayfa yüklendiğinde çalıştır
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', init);
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", init);
 } else {
   init();
 }
 
-// Manuel çalıştırma için global fonksiyon
 window.scrapeISGKatip = scrapeCompanies;
-
-console.log('💡 İpucu: Manuel başlatmak için console\'da "scrapeISGKatip()" yazın');

@@ -1,15 +1,18 @@
 // src/integrations/supabase/client.ts
 
-import { createClient } from '@supabase/supabase-js';
-import type { Database } from './types';
+import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 
-const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
-const SUPABASE_PUBLISHABLE_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY; // ✅ BURASI DEĞİŞTİ
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-export const supabase = createClient<Database>(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
-  auth: {
-    storage: localStorage,
-    persistSession: true,
-    autoRefreshToken: true,
-  }
-});
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error("Missing Supabase environment variables");
+}
+
+// ✅ EXPORT ekle
+export const createClient = () => {
+  return createSupabaseClient(supabaseUrl, supabaseAnonKey);
+};
+
+// Alternatif: Direkt instance export
+export const supabase = createSupabaseClient(supabaseUrl, supabaseAnonKey);

@@ -1,7 +1,7 @@
 // chrome-extension/popup/popup.js
 
 // ====================================================
-// POPUP CONTROLLER - TAM DÜZELTİLMİŞ (İSG-KATİP Gelişmiş)
+// POPUP CONTROLLER - TAM DÜZELTİLMİŞ
 // ====================================================
 
 import { AuthHandler } from "../auth/auth-handler.js";
@@ -28,7 +28,10 @@ class PopupController {
 
     this.showLoading();
 
-    // ✅ First: Load config
+    // ✅ Auto-configure if needed
+    await this.autoConfigureIfNeeded();
+
+    // ✅ Load config
     const configLoaded = await this.loadConfig();
 
     if (!configLoaded) {
@@ -39,7 +42,7 @@ class PopupController {
 
     console.log("✅ Configuration loaded");
 
-    // ✅ Second: Check auth
+    // ✅ Check auth
     await this.checkLocalStorageAuth();
 
     const isAuth = await this.authHandler.isAuthenticated();
@@ -52,11 +55,44 @@ class PopupController {
 
     console.log("✅ Authenticated");
 
-    // ✅ Third: Sync org_id with user_id
+    // ✅ Sync org_id with user_id
     await this.syncOrgIdWithUser();
 
-    // ✅ Fourth: Show app
+    // ✅ Show app
     await this.showMainApp();
+  }
+
+  // ====================================================
+  // AUTO CONFIGURE
+  // ====================================================
+
+  async autoConfigureIfNeeded() {
+    try {
+      const config = await chrome.storage.local.get([
+        "supabaseUrl",
+        "supabaseKey",
+        "autoConfigured",
+      ]);
+
+      // Eğer config yoksa, otomatik ayarla
+      if (!config.supabaseUrl || !config.supabaseKey) {
+        console.log("🔧 Auto-configuring extension...");
+
+        const supabaseUrl = "https://elmdzekyyoepdrpnfppn.supabase.co";
+        const supabaseKey =
+          "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVsbWR6ZWt5eW9lcGRycG5mcHBuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MzY3MDI0NzcsImV4cCI6MjA1MjI3ODQ3N30.0u3dGmwXE1lHZIYNBIWWWX8d8UGCZxL0kWN2P-YBMPI";
+
+        await chrome.storage.local.set({
+          supabaseUrl,
+          supabaseKey,
+          autoConfigured: true,
+        });
+
+        console.log("✅ Auto-configuration complete");
+      }
+    } catch (error) {
+      console.error("❌ Auto-configure error:", error);
+    }
   }
 
   // ====================================================
@@ -92,7 +128,7 @@ class PopupController {
       // Save to instance
       this.supabaseUrl = config.supabaseUrl;
       this.supabaseKey = config.supabaseKey;
-      this.orgId = config.orgId; // Can be null initially
+      this.orgId = config.orgId;
 
       return true;
     } catch (error) {
@@ -109,11 +145,10 @@ class PopupController {
     try {
       const auth = await chrome.storage.local.get("denetron_auth");
 
-      if (auth.denetron_auth && auth.denetron_auth.user) {
+      if (auth.denetron_auth?.user?.id) {
         const userId = auth.denetron_auth.user.id;
         console.log("📍 Authenticated user ID:", userId);
 
-        // Update orgId if different or missing
         if (this.orgId !== userId) {
           console.log("🔄 Updating orgId to match user ID");
           this.orgId = userId;
@@ -172,15 +207,23 @@ class PopupController {
   // ====================================================
 
   showLoading() {
-    document.getElementById("loadingScreen").style.display = "flex";
-    document.getElementById("authScreen").style.display = "none";
-    document.getElementById("mainApp").style.display = "none";
+    const loadingScreen = document.getElementById("loadingScreen");
+    const authScreen = document.getElementById("authScreen");
+    const mainApp = document.getElementById("mainApp");
+
+    if (loadingScreen) loadingScreen.style.display = "flex";
+    if (authScreen) authScreen.style.display = "none";
+    if (mainApp) mainApp.style.display = "none";
   }
 
   showAuthScreen() {
-    document.getElementById("loadingScreen").style.display = "none";
-    document.getElementById("authScreen").style.display = "flex";
-    document.getElementById("mainApp").style.display = "none";
+    const loadingScreen = document.getElementById("loadingScreen");
+    const authScreen = document.getElementById("authScreen");
+    const mainApp = document.getElementById("mainApp");
+
+    if (loadingScreen) loadingScreen.style.display = "none";
+    if (authScreen) authScreen.style.display = "flex";
+    if (mainApp) mainApp.style.display = "none";
 
     document
       .getElementById("btnLogin")
@@ -188,9 +231,13 @@ class PopupController {
   }
 
   async showMainApp() {
-    document.getElementById("loadingScreen").style.display = "none";
-    document.getElementById("authScreen").style.display = "none";
-    document.getElementById("mainApp").style.display = "block";
+    const loadingScreen = document.getElementById("loadingScreen");
+    const authScreen = document.getElementById("authScreen");
+    const mainApp = document.getElementById("mainApp");
+
+    if (loadingScreen) loadingScreen.style.display = "none";
+    if (authScreen) authScreen.style.display = "none";
+    if (mainApp) mainApp.style.display = "block";
 
     this.setupEventListeners();
 
@@ -241,9 +288,7 @@ class PopupController {
         });
       });
 
-    // ====================================================
-    // İSG-KATİP SYNC BUTTON (GELİŞMİŞ)
-    // ====================================================
+    // İSG-KATİP sync button
     document
       .getElementById("btnSyncISGKatip")
       ?.addEventListener("click", async () => {
@@ -251,20 +296,28 @@ class PopupController {
       });
   }
 
-// chrome-extension/popup/popup.js
+  // ====================================================
+  // İSG-KATİP SYNC HANDLER
+  // ====================================================
+
+  // chrome-extension/popup/popup.js
+
+// handleISGKatipSync fonksiyonunu güncelle:
 
 async handleISGKatipSync() {
-  console.log('🔗 Checking İSG-KATİP session...');
+  console.log("🔗 İSG-KATİP senkronizasyonu başlatılıyor...");
+
+  const targetUrl =
+    "https://isgkatip.csgb.gov.tr/kisi-kurum/kisi-karti/kisi-kartim";
 
   try {
-    // Mevcut İSG-KATİP tab'ini bul
     const tabs = await chrome.tabs.query({
       url: "https://isgkatip.csgb.gov.tr/*",
     });
 
     if (tabs.length > 0) {
-      // Zaten açık bir İSG-KATİP tab'i var
       const tab = tabs[0];
+      const currentUrl = tab.url || "";
 
       console.log("✅ İSG-KATİP tab bulundu:", tab.id);
 
@@ -272,73 +325,69 @@ async handleISGKatipSync() {
       await chrome.tabs.update(tab.id, { active: true });
       await chrome.windows.update(tab.windowId, { focused: true });
 
-      // ✅ DOĞRU URL'E YÖNLENDİR
-      const currentUrl = tab.url || '';
-      if (!currentUrl.includes('/kisi-kurum/kisi-karti/kisi-kartim')) {
-        console.log('🔄 Kişi Kartı sayfasına yönlendiriliyor...');
-        
-        await chrome.tabs.update(tab.id, {
-          url: "https://isgkatip.csgb.gov.tr/kisi-kurum/kisi-karti/kisi-kartim",
-        });
+      // ✅ FLAG AYARLA (Extension'dan açıldı)
+      await chrome.storage.session.set({
+        [`isgkatip_show_button_${tab.id}`]: true,
+      });
+
+      // Doğru sayfada değilse yönlendir
+      if (!currentUrl.includes("/kisi-kurum/kisi-karti/kisi-kartim")) {
+        console.log("🔄 Kişi Kartı sayfasına yönlendiriliyor...");
+
+        await chrome.tabs.update(tab.id, { url: targetUrl });
 
         chrome.notifications.create({
           type: "basic",
           iconUrl: "/icons/icon128.png",
-          title: "İSG-KATİP'e Yönlendiriliyorsunuz",
-          message: "Kişi Kartı sayfası yükleniyor... Extension otomatik veri çekecek.",
+          title: "İSG-KATİP",
+          message: "Kişi Kartı sayfası yükleniyor...",
           priority: 1,
         });
       } else {
-        // Zaten doğru sayfada, manuel trigger gönder
-        console.log('✅ Zaten doğru sayfada, manuel scrape tetikleniyor...');
-        
+        // Zaten doğru sayfada, butonu göstermesi için mesaj gönder
+        console.log("✅ Zaten doğru sayfada, buton gösteriliyor...");
+
         try {
           await chrome.tabs.sendMessage(tab.id, {
-            type: "TRIGGER_MANUAL_SCRAPE",
-          });
-
-          chrome.notifications.create({
-            type: "basic",
-            iconUrl: "/icons/icon128.png",
-            title: "İSG-KATİP Senkronizasyonu",
-            message: "Veriler toplanıyor...",
-            priority: 1,
+            type: "SHOW_TRANSFER_BUTTON",
           });
         } catch (error) {
-          console.warn("⚠️ Content script mesajı gönderilemedi, sayfa yenileniyor...");
+          console.warn("⚠️ Sayfa yenileniyor...");
           await chrome.tabs.reload(tab.id);
         }
       }
     } else {
-      // İSG-KATİP açık değil, yeni tab aç
-      console.log("ℹ️ İSG-KATİP tab yok, yeni açılıyor...");
+      // Yeni tab aç
+      console.log("ℹ️ Yeni İSG-KATİP tab açılıyor...");
 
-      // ✅ DOĞRU URL'İ AÇ
-      await chrome.tabs.create({
-        url: "https://isgkatip.csgb.gov.tr/kisi-kurum/kisi-karti/kisi-kartim",
+      const newTab = await chrome.tabs.create({ url: targetUrl });
+
+      // ✅ FLAG AYARLA
+      await chrome.storage.session.set({
+        [`isgkatip_show_button_${newTab.id}`]: true,
       });
 
       chrome.notifications.create({
         type: "basic",
         iconUrl: "/icons/icon128.png",
-        title: "İSG-KATİP'e Hoş Geldiniz",
-        message: "Giriş yapın, Kişi Kartı sayfasında extension otomatik çalışacak.",
+        title: "İSG-KATİP",
+        message:
+          "Giriş yapın, buton otomatik görünecek.",
         priority: 2,
       });
 
-      // Badge göster
       chrome.action.setBadgeText({ text: "📋" });
       chrome.action.setBadgeBackgroundColor({ color: "#10b981" });
     }
 
-    // Popup'ı kapat
     window.close();
   } catch (error) {
     console.error("❌ İSG-KATİP sync hatası:", error);
 
-    // Fallback: Direkt doğru URL'i aç
-    chrome.tabs.create({
-      url: "https://isgkatip.csgb.gov.tr/kisi-kurum/kisi-karti/kisi-kartim",
+    const newTab = await chrome.tabs.create({ url: targetUrl });
+
+    await chrome.storage.session.set({
+      [`isgkatip_show_button_${newTab.id}`]: true,
     });
 
     chrome.notifications.create({
@@ -426,14 +475,13 @@ async handleISGKatipSync() {
   // ====================================================
 
   updateStatsUI() {
-    document.getElementById("totalCompanies").textContent =
-      this.stats.totalCompanies ?? 0;
+    const totalEl = document.getElementById("totalCompanies");
+    const warningEl = document.getElementById("warningCount");
+    const criticalEl = document.getElementById("criticalCount");
 
-    document.getElementById("warningCount").textContent =
-      this.stats.warningCount ?? 0;
-
-    document.getElementById("criticalCount").textContent =
-      this.stats.criticalCount ?? 0;
+    if (totalEl) totalEl.textContent = this.stats.totalCompanies ?? 0;
+    if (warningEl) warningEl.textContent = this.stats.warningCount ?? 0;
+    if (criticalEl) criticalEl.textContent = this.stats.criticalCount ?? 0;
 
     console.log("✅ Stats UI updated");
   }
@@ -451,6 +499,8 @@ async handleISGKatipSync() {
 
   async handleSync() {
     const btn = document.getElementById("btnSync");
+    if (!btn) return;
+
     const original = btn.innerHTML;
 
     try {

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+﻿import { useState, useEffect, useMemo } from "react";
 import { 
   Building2, Users, FileSpreadsheet, Plus, Save, 
   ChevronRight, ChevronLeft, CheckCircle2, Upload,
@@ -76,15 +76,13 @@ const SECTOR_TEMPLATES = [
   }
 ];
 
-
-
 export default function CompanyManager() {
   const { user } = useAuth();
   const [viewingCompany, setViewingCompany] = useState<Company | null>(null);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
-  const [hazardFilter, setHazardFilter] = useState<string | null>(null); // ✅ Yeni
+  const [hazardFilter, setHazardFilter] = useState<string | null>(null);
   
   // Wizard State
   const [wizardOpen, setWizardOpen] = useState(false);
@@ -105,9 +103,7 @@ export default function CompanyManager() {
     employee_count: 0
   });
 
-  
-
-  // ✅ NACE Combobox State
+  // NACE Combobox State
   const [naceOpen, setNaceOpen] = useState(false);
   const [naceSearchQuery, setNaceSearchQuery] = useState("");
   const [selectedNACE, setSelectedNACE] = useState<NACECode | null>(null);
@@ -119,10 +115,12 @@ export default function CompanyManager() {
   // Step 3: Çalışan Yükleme
   const [employeeFile, setEmployeeFile] = useState<File | null>(null);
   const [parsedEmployees, setParsedEmployees] = useState<ParsedEmployee[]>([]);
-  const [editingCompanyId, setEditingCompanyId] = useState<string | null>(null); // ✅ BU SATIRI EKLE
-  
+  const [editingCompanyId, setEditingCompanyId] = useState<string | null>(null);
 
-  // ✅ Load Companies
+  // ============================================
+  // LOAD DATA
+  // ============================================
+
   useEffect(() => {
     if (user) {
       loadCompanies();
@@ -130,77 +128,9 @@ export default function CompanyManager() {
     }
   }, [user]);
 
-
-  // ============================================
-// HANDLER FONKSİYONLARI (loadCompanies'den ÖNCE)
-// ============================================
-
-const handleViewCompany = (companyId: string) => {
-  const company = companies.find(c => c.id === companyId);
-  if (company) {
-    setViewingCompany(company);
-  }
-};
-  const handleEditCompany = (company: Company) => {
-    // Form'u doldur
-    setFormData({
-      company_name: company.company_name,
-      tax_number: company.tax_number,
-      nace_code: company.nace_code,
-      hazard_class: company.hazard_class,
-      industry_sector: company.industry_sector || "",
-      address: company.address || "",
-      city: company.city || "",
-      phone: company.phone || "",
-      email: company.email || "",
-      employee_count: company.employee_count || 0,
-    });
-
-    // NACE seçiliyse göster
-    const nace = NACE_DATABASE.find(n => n.code === company.nace_code);
-    if (nace) {
-      setSelectedNACE(nace);
-    }
-
-    // Template'i ayarla
-    if (company.industry_sector) {
-      setSelectedTemplate(company.industry_sector);
-    }
-
-    // Edit mode için company ID'yi sakla
-    setEditingCompanyId(company.id);
-
-    // Wizard'ı aç
-    setWizardOpen(true);
-    setCurrentStep(1);
-  };
-
-  const handleDeleteCompany = async (companyId: string, companyName: string) => {
-    if (!confirm(`"${companyName}" firmasını silmek istediğinize emin misiniz?\n\n⚠️ Bu işlem geri alınamaz ve tüm ilişkili veriler (çalışanlar, risk değerlendirmeleri) silinecektir!`)) {
-      return;
-    }
-
-    try {
-      const { error } = await supabase
-        .from("companies")
-        .delete()
-        .eq("id", companyId);
-
-      if (error) throw error;
-
-      toast.success(`✅ "${companyName}" firması silindi`);
-      loadCompanies(); // Listeyi yenile
-    } catch (error: any) {
-      console.error("Delete company error:", error);
-      toast.error(`❌ Firma silinemedi: ${error.message}`);
-    }
-  };
-
-  
-
   const loadCompanies = async () => {
     try {
-      setLoading(true); // Yükleme durumunu başlat
+      setLoading(true);
       
       const { data, error } = await supabase
         .from("companies")
@@ -211,17 +141,15 @@ const handleViewCompany = (companyId: string) => {
 
       if (error) throw error;
 
-      // Hata Veren Satırın Çözümü: 
-      // Veritabanı sütunlarını kodundaki 'Company' tipine haritalıyoruz (mapping)
       const mappedData = (data || []).map((item: any) => ({
         ...item,
-        owner_id: item.user_id,        // user_id -> owner_id
-        company_name: item.name,      // name -> company_name
-        nace_code: item.industry || "", // industry -> nace_code (varsayılan değerle)
-        hazard_class: "Az Tehlikeli"   // Eksik olan hazard_class için varsayılan değer
+        owner_id: item.user_id,
+        company_name: item.name,
+        nace_code: item.industry || "",
+        hazard_class: item.hazard_class || "Az Tehlikeli"
       }));
 
-      setCompanies(mappedData as Company[]); // Artık güvenle cast edebilirsin
+      setCompanies(mappedData as Company[]);
       
     } catch (e: any) {
       console.error("❌ Veri çekme hatası:", e.message);
@@ -250,7 +178,66 @@ const handleViewCompany = (companyId: string) => {
     }
   };
 
-  // ✅ NACE Seçimi
+  // ============================================
+  // HANDLERS
+  // ============================================
+
+  const handleViewCompany = (companyId: string) => {
+    const company = companies.find(c => c.id === companyId);
+    if (company) {
+      setViewingCompany(company);
+    }
+  };
+
+  const handleEditCompany = (company: Company) => {
+    setFormData({
+      company_name: company.company_name,
+      tax_number: company.tax_number,
+      nace_code: company.nace_code,
+      hazard_class: company.hazard_class,
+      industry_sector: company.industry_sector || "",
+      address: company.address || "",
+      city: company.city || "",
+      phone: company.phone || "",
+      email: company.email || "",
+      employee_count: company.employee_count || 0,
+    });
+
+    const nace = NACE_DATABASE.find(n => n.code === company.nace_code);
+    if (nace) {
+      setSelectedNACE(nace);
+    }
+
+    if (company.industry_sector) {
+      setSelectedTemplate(company.industry_sector);
+    }
+
+    setEditingCompanyId(company.id);
+    setWizardOpen(true);
+    setCurrentStep(1);
+  };
+
+  const handleDeleteCompany = async (companyId: string, companyName: string) => {
+    if (!confirm(`"${companyName}" firmasını silmek istediğinize emin misiniz?\n\n⚠️ Bu işlem geri alınamaz ve tüm ilişkili veriler (çalışanlar, risk değerlendirmeleri) silinecektir!`)) {
+      return;
+    }
+
+    try {
+      const { error } = await supabase
+        .from("companies")
+        .delete()
+        .eq("id", companyId);
+
+      if (error) throw error;
+
+      toast.success(`✅ "${companyName}" firması silindi`);
+      loadCompanies();
+    } catch (error: any) {
+      console.error("Delete company error:", error);
+      toast.error(`❌ Firma silinemedi: ${error.message}`);
+    }
+  };
+
   const handleNACESelect = (nace: NACECode) => {
     setSelectedNACE(nace);
     setFormData(prev => ({
@@ -261,10 +248,10 @@ const handleViewCompany = (companyId: string) => {
     }));
     setSelectedTemplate(nace.industry_sector);
     setNaceOpen(false);
+    setNaceSearchQuery(""); // Reset search
     toast.success(`${nace.name} seçildi`);
   };
 
-  // ✅ Excel Yükleme
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -283,172 +270,125 @@ const handleViewCompany = (companyId: string) => {
   };
 
   const handleSaveCompany = async () => {
-  // Validasyon
-  if (!formData.company_name || !formData.tax_number || !formData.nace_code) {
-    toast.error("Lütfen zorunlu alanları doldurun");
-    return;
-  }
+    if (!formData.company_name || !formData.tax_number || !formData.nace_code) {
+      toast.error("Lütfen zorunlu alanları doldurun");
+      return;
+    }
 
-  if (formData.tax_number.length !== 10 && formData.tax_number.length !== 11) {
-    toast.error("Vergi numarası 10 veya 11 haneli olmalıdır");
-    return;
-  }
+    if (formData.tax_number.length !== 10 && formData.tax_number.length !== 11) {
+      toast.error("Vergi numarası 10 veya 11 haneli olmalıdır");
+      return;
+    }
 
-  setSaving(true);
+    setSaving(true);
 
+    try {
+      const template = riskTemplates.find((t) => t.industry_sector === selectedTemplate);
 
-  try {
-    const template = riskTemplates.find((t) => t.industry_sector === selectedTemplate);
+      const employeesJson = parsedEmployees.map((emp) => ({
+        first_name: emp.first_name || "",
+        last_name: emp.last_name || "",
+        tc_number: emp.tc_number || null,
+        job_title: emp.job_title || "Belirtilmemiş",
+        department: emp.department || null,
+        start_date: emp.start_date || new Date().toISOString().split("T")[0],
+        employment_type: emp.employment_type || "Süresiz",
+        birth_date: emp.birth_date || null,
+        gender: emp.gender || null,
+        email: emp.email || null,
+        phone: emp.phone || null,
+      }));
 
-    // ✅ Çalışan verilerini hazırla
-    const employeesJson = parsedEmployees.map((emp) => ({
-      first_name: emp.first_name || "",
-      last_name: emp.last_name || "",
-      tc_number: emp.tc_number || null,
-      job_title: emp.job_title || "Belirtilmemiş",
-      department: emp.department || null,
-      start_date: emp.start_date || new Date().toISOString().split("T")[0],
-      employment_type: emp.employment_type || "Süresiz",
-      birth_date: emp.birth_date || null,
-      gender: emp.gender || null,
-      email: emp.email || null,
-      phone: emp.phone || null,
-    }));
+      if (editingCompanyId) {
+        const { error: companyError } = await supabase
+          .from("companies")
+          .update({
+            name: formData.company_name,
+            tax_number: formData.tax_number,
+            industry: formData.nace_code,
+            address: formData.address,
+            phone: formData.phone,
+            email: formData.email,
+            employee_count: employeesJson.length || formData.employee_count,
+          })
+          .eq("id", editingCompanyId);
 
-    // ✅ BU LOG'U EKLE (employeesJson tanımlandıktan sonra)
-    console.log("📋 TC Numbers:", employeesJson.map(e => ({
-      name: `${e.first_name} ${e.last_name}`,
-      tc: e.tc_number,
-      type: typeof e.tc_number,
-      length: e.tc_number?.length
-    })));
+        if (companyError) throw companyError;
 
-    console.log("📋 Employees to save:", employeesJson);
+        if (employeesJson.length > 0) {
+          const employeesToInsert = employeesJson.map(emp => ({
+            ...emp,
+            company_id: editingCompanyId,
+            is_active: true,
+          }));
 
-    // ============================================
-    // EDIT MODE KONTROLÜ
-    // ============================================
-    if (editingCompanyId) {
-      // 1. Firma bilgilerini güncelle
-      const { error: companyError } = await supabase
-        .from("companies")
-        .update({
-          name: formData.company_name,
+          const { error: employeesError } = await supabase
+            .from("employees")
+            .insert(employeesToInsert);
+
+          if (employeesError) throw employeesError;
+        }
+
+        toast.success("✅ Firma güncellendi!", {
+          description: employeesJson.length > 0 
+            ? `${employeesJson.length} çalışan eklendi`
+            : "Firma bilgileri güncellendi"
+        });
+
+        setWizardOpen(false);
+        setEditingCompanyId(null);
+        resetWizard();
+        loadCompanies();
+        return;
+      }
+
+      const { data, error } = await supabase.rpc("create_company_with_data", {
+        p_owner_id: user?.id,
+        p_company_data: {
+          company_name: formData.company_name,
           tax_number: formData.tax_number,
-          industry: formData.nace_code,
+          nace_code: formData.nace_code,
+          hazard_class: formData.hazard_class,
+          industry_sector: formData.industry_sector,
           address: formData.address,
           phone: formData.phone,
           email: formData.email,
           employee_count: employeesJson.length || formData.employee_count,
-        })
-        .eq("id", editingCompanyId);
+        },
+        p_risk_template_id: template?.id || null,
+        p_employees: employeesJson,
+      });
 
-      if (companyError) throw companyError;
+      if (error) throw error;
 
-      // ✅ 2. Çalışanları ekle (varsa)
-      if (employeesJson.length > 0) {
-        const employeesToInsert = employeesJson.map(emp => ({
-          ...emp,
-          company_id: editingCompanyId,
-          is_active: true,
-        }));
+      const result = data as {
+        success: boolean;
+        error?: string;
+        company_id?: string;
+        inserted_risks?: number;
+        inserted_employees?: number;
+      };
 
-        const { error: employeesError } = await supabase
-          .from("employees")
-          .insert(employeesToInsert);
-
-        if (employeesError) {
-          console.error("❌ Employees insert error:", employeesError);
-          throw employeesError;
-        }
-
-        console.log(`✅ ${employeesJson.length} çalışan eklendi`);
+      if (!result.success) {
+        throw new Error(result.error || "Bilinmeyen hata");
       }
 
-      toast.success("✅ Firma güncellendi!", {
-        description: employeesJson.length > 0 
-          ? `${employeesJson.length} çalışan eklendi`
-          : "Firma bilgileri güncellendi"
+      toast.success("🎉 Firma başarıyla kaydedildi!", {
+        description: `${result.inserted_risks || 0} risk, ${result.inserted_employees || 0} çalışan eklendi`,
       });
 
       setWizardOpen(false);
-      setEditingCompanyId(null);
       resetWizard();
       loadCompanies();
-      return;
+    } catch (e: unknown) {
+      const error = e as Error;
+      console.error("❌ Kaydetme Hatası:", error);
+      toast.error(`❌ Kaydetme hatası: ${error.message}`);
+    } finally {
+      setSaving(false);
     }
+  };
 
-    // ============================================
-    // YENİ FİRMA EKLEME
-    // ============================================
-    console.log("📤 Sending to RPC:", {
-      p_owner_id: user?.id,
-      p_company_data: {
-        company_name: formData.company_name,
-        tax_number: formData.tax_number,
-        nace_code: formData.nace_code,
-        hazard_class: formData.hazard_class,
-        industry_sector: formData.industry_sector,
-        address: formData.address,
-        phone: formData.phone,
-        email: formData.email,
-        employee_count: employeesJson.length || formData.employee_count,
-      },
-      p_risk_template_id: template?.id || null,
-      p_employees: employeesJson,
-    });
-
-    const { data, error } = await supabase.rpc("create_company_with_data", {
-      p_owner_id: user?.id,
-      p_company_data: {
-        company_name: formData.company_name,
-        tax_number: formData.tax_number,
-        nace_code: formData.nace_code,
-        hazard_class: formData.hazard_class,
-        industry_sector: formData.industry_sector,
-        address: formData.address,
-        phone: formData.phone,
-        email: formData.email,
-        employee_count: employeesJson.length || formData.employee_count,
-      },
-      p_risk_template_id: template?.id || null,
-      p_employees: employeesJson,
-    });
-
-    if (error) {
-      console.error("❌ RPC Error:", error);
-      throw error;
-    }
-
-    console.log("✅ RPC Response:", data);
-
-    const result = data as {
-      success: boolean;
-      error?: string;
-      company_id?: string;
-      inserted_risks?: number;
-      inserted_employees?: number;
-    };
-
-    if (!result.success) {
-      throw new Error(result.error || "Bilinmeyen hata");
-    }
-
-    toast.success("🎉 Firma başarıyla kaydedildi!", {
-      description: `${result.inserted_risks || 0} risk, ${result.inserted_employees || 0} çalışan eklendi`,
-    });
-
-    setWizardOpen(false);
-    resetWizard();
-    loadCompanies();
-  } catch (e: unknown) {
-    const error = e as Error;
-    console.error("❌ Kaydetme Hatası:", error);
-    toast.error(`❌ Kaydetme hatası: ${error.message}`);
-  } finally {
-    setSaving(false);
-  }
-};
   const resetWizard = () => {
     setCurrentStep(1);
     setFormData({
@@ -468,10 +408,9 @@ const handleViewCompany = (companyId: string) => {
     setSelectedTemplate("");
     setEmployeeFile(null);
     setParsedEmployees([]);
-    setEditingCompanyId(null); // ✅ BU SATIRI EKLE
+    setEditingCompanyId(null);
   };
 
-  // ✅ Wizard Navigation
   const goToStep = (step: number) => {
     if (step === 2 && currentStep === 1) {
       if (!formData.company_name || !formData.tax_number || !formData.nace_code) {
@@ -482,16 +421,17 @@ const handleViewCompany = (companyId: string) => {
     setCurrentStep(step);
   };
 
-  // ✅ Filtered & Memoized Companies
+  // ============================================
+  // FILTERED COMPANIES
+  // ============================================
+
   const filteredCompanies = useMemo(() => {
     let result = companies;
 
-    // Hazard filter
     if (hazardFilter) {
       result = result.filter(c => c.hazard_class === hazardFilter);
     }
 
-    // Search filter
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       result = result.filter(
@@ -505,7 +445,6 @@ const handleViewCompany = (companyId: string) => {
     return result;
   }, [companies, hazardFilter, searchQuery]);
 
-  // ✅ Stats with Filter
   const stats = useMemo(() => {
     return {
       total: companies.length,
@@ -515,9 +454,10 @@ const handleViewCompany = (companyId: string) => {
     };
   }, [companies]);
 
-  // ========================
+  // ============================================
   // WIZARD STEPS
-  // ========================
+  // ============================================
+
   const renderWizardStep = () => {
     switch (currentStep) {
       case 1:
@@ -548,7 +488,7 @@ const handleViewCompany = (companyId: string) => {
                 />
               </div>
 
-              {/* ✅ NACE Combobox */}
+              {/* ✅ NACE Combobox - DÜZELTİLMİŞ */}
               <div className="md:col-span-2">
                 <Label>NACE Kodu * (Yazarak Arayın)</Label>
                 <Popover open={naceOpen} onOpenChange={setNaceOpen}>
@@ -562,50 +502,73 @@ const handleViewCompany = (companyId: string) => {
                       {selectedNACE ? (
                         <span className="flex items-center gap-2">
                           <Badge variant="outline">{selectedNACE.code}</Badge>
-                          {selectedNACE.name}
+                          <span className="truncate">{selectedNACE.name}</span>
                         </span>
                       ) : (
-                        <span className="text-muted-foreground">NACE kodu veya sektör adı ile arayın...</span>
+                        <span className="text-muted-foreground">
+                          NACE kodu veya sektör adı ile arayın...
+                        </span>
                       )}
                       <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                     </Button>
                   </PopoverTrigger>
-                  <PopoverContent className="w-full p-0" align="start">
-                    <Command>
+                  <PopoverContent className="w-[650px] p-0" align="start">
+                    <Command shouldFilter={false}>
                       <CommandInput 
-                        placeholder="NACE kodu veya sektör adı..." 
+                        placeholder="Örn: 41.20 veya inşaat yazın..." 
                         value={naceSearchQuery}
                         onValueChange={setNaceSearchQuery}
                       />
-                      <CommandEmpty>Sonuç bulunamadı.</CommandEmpty>
-                      <CommandList>
+                      <CommandEmpty>
+                        <div className="text-center py-6">
+                          <AlertTriangle className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
+                          <p className="text-sm text-muted-foreground">
+                            "{naceSearchQuery}" için sonuç bulunamadı
+                          </p>
+                        </div>
+                      </CommandEmpty>
+                      <CommandList className="max-h-[300px]">
                         <CommandGroup>
-                          {searchNACE(naceSearchQuery).map((nace) => (
+                          {searchNACE(naceSearchQuery).slice(0, 100).map((nace) => (
                             <CommandItem
                               key={nace.code}
                               value={nace.code}
                               onSelect={() => handleNACESelect(nace)}
-                              className="flex items-center gap-2"
+                              className="flex items-start gap-3 py-3"
                             >
                               <Check
                                 className={cn(
-                                  "h-4 w-4",
-                                  selectedNACE?.code === nace.code ? "opacity-100" : "opacity-0"
+                                  "h-5 w-5 mt-0.5",
+                                  selectedNACE?.code === nace.code
+                                    ? "opacity-100 text-primary"
+                                    : "opacity-0"
                                 )}
                               />
-                              <div className="flex items-center gap-2 flex-1">
-                                <Badge variant="outline" className="font-mono text-xs">
-                                  {nace.code}
-                                </Badge>
-                                <span className="text-sm">{nace.name}</span>
-                                <Badge className={cn(
-                                  "ml-auto text-xs",
-                                  nace.hazard_class === "Çok Tehlikeli" && "bg-red-100 text-red-700",
-                                  nace.hazard_class === "Tehlikeli" && "bg-orange-100 text-orange-700",
-                                  nace.hazard_class === "Az Tehlikeli" && "bg-green-100 text-green-700"
-                                )}>
-                                  {nace.hazard_class}
-                                </Badge>
+                              <div className="flex-1 space-y-1">
+                                <div className="flex items-center gap-2">
+                                  <Badge variant="secondary" className="font-mono">
+                                    {nace.code}
+                                  </Badge>
+                                  <Badge
+                                    className={cn(
+                                      "text-xs",
+                                      nace.hazard_class === "Çok Tehlikeli" &&
+                                        "bg-red-100 text-red-700 border-red-300",
+                                      nace.hazard_class === "Tehlikeli" &&
+                                        "bg-orange-100 text-orange-700 border-orange-300",
+                                      nace.hazard_class === "Az Tehlikeli" &&
+                                        "bg-green-100 text-green-700 border-green-300"
+                                    )}
+                                  >
+                                    {nace.hazard_class}
+                                  </Badge>
+                                </div>
+                                <p className="text-sm font-medium leading-tight">
+                                  {nace.name}
+                                </p>
+                                <p className="text-xs text-muted-foreground">
+                                  {nace.industry_sector}
+                                </p>
                               </div>
                             </CommandItem>
                           ))}
@@ -614,6 +577,36 @@ const handleViewCompany = (companyId: string) => {
                     </Command>
                   </PopoverContent>
                 </Popover>
+
+                {/* ✅ Seçili NACE Önizleme */}
+                {selectedNACE && (
+                  <div className="mt-2 p-3 bg-primary/5 border border-primary/20 rounded-lg">
+                    <p className="text-xs text-muted-foreground mb-1">Seçili NACE:</p>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className="font-mono">
+                        {selectedNACE.code}
+                      </Badge>
+                      <span className="text-sm font-medium">{selectedNACE.name}</span>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          setSelectedNACE(null);
+                          setFormData(prev => ({
+                            ...prev,
+                            nace_code: "",
+                            hazard_class: "",
+                            industry_sector: ""
+                          }));
+                          setSelectedTemplate("");
+                        }}
+                        className="ml-auto h-6 w-6 p-0"
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div>
@@ -836,9 +829,10 @@ const handleViewCompany = (companyId: string) => {
     }
   };
 
-  // ========================
+  // ============================================
   // MAIN RENDER
-  // ========================
+  // ============================================
+
   return (
     <div className="space-y-8">
       {/* Header */}
@@ -863,7 +857,7 @@ const handleViewCompany = (companyId: string) => {
           <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>
-                {editingCompanyId ? "Firma Düzenle" : "Yeni Firma Kayıt Sihirbazı"} {/* ✅ DEĞİŞTİR */}
+                {editingCompanyId ? "Firma Düzenle" : "Yeni Firma Kayıt Sihirbazı"}
               </DialogTitle>
               <DialogDescription>
                 3 adımda firma kaydı oluşturun
@@ -957,7 +951,7 @@ const handleViewCompany = (companyId: string) => {
         </Dialog>
       </div>
 
-      {/* ✅ Stats (Tıklanabilir) */}
+      {/* Stats */}
       <div className="grid grid-cols-4 gap-4">
         <Card 
           className={cn(
@@ -1032,7 +1026,7 @@ const handleViewCompany = (companyId: string) => {
         </Card>
       </div>
 
-      {/* ✅ Search & Filter Clear */}
+      {/* Search & Filter */}
       <div className="flex gap-4">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -1126,33 +1120,30 @@ const handleViewCompany = (companyId: string) => {
                     <TableCell>{company.city || "-"}</TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
-                        {/* Görüntüle */}
                         <Button 
                           size="icon" 
                           variant="ghost"
-                          onClick={() => handleViewCompany(company.id)} // ✅ EKLE
+                          onClick={() => handleViewCompany(company.id)}
                           className="hover:bg-blue-500/10 hover:text-blue-500"
                           title="Görüntüle"
                         >
                           <Eye className="h-4 w-4" />
                         </Button>
 
-                        {/* Düzenle */}
                         <Button 
                           size="icon" 
                           variant="ghost"
-                          onClick={() => handleEditCompany(company)} // ✅ EKLE
+                          onClick={() => handleEditCompany(company)}
                           className="hover:bg-yellow-500/10 hover:text-yellow-500"
                           title="Düzenle"
                         >
                           <Edit className="h-4 w-4" />
                         </Button>
 
-                        {/* Sil */}
                         <Button 
                           size="icon" 
                           variant="ghost"
-                          onClick={() => handleDeleteCompany(company.id, company.company_name)} // ✅ EKLE
+                          onClick={() => handleDeleteCompany(company.id, company.company_name)}
                           className="text-destructive hover:bg-red-500/10"
                           title="Sil"
                         >
@@ -1169,51 +1160,49 @@ const handleViewCompany = (companyId: string) => {
       </Card>
 
       {/* View Modal */}
-{viewingCompany && (
-  <Dialog open={!!viewingCompany} onOpenChange={() => setViewingCompany(null)}>
-    <DialogContent className="max-w-2xl">
-      <DialogHeader>
-        <DialogTitle className="flex items-center gap-2">
-          <Building2 className="h-5 w-5 text-primary" />
-          {viewingCompany.company_name}
-        </DialogTitle>
-      </DialogHeader>
+      {viewingCompany && (
+        <Dialog open={!!viewingCompany} onOpenChange={() => setViewingCompany(null)}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Building2 className="h-5 w-5 text-primary" />
+                {viewingCompany.company_name}
+              </DialogTitle>
+            </DialogHeader>
 
-      <div className="space-y-4">
-        {/* Temel Bilgiler */}
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <Label className="text-muted-foreground">Vergi No</Label>
-            <p className="font-mono font-semibold mt-1">{viewingCompany.tax_number}</p>
-          </div>
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-muted-foreground">Vergi No</Label>
+                  <p className="font-mono font-semibold mt-1">{viewingCompany.tax_number}</p>
+                </div>
 
-          <div>
-            <Label className="text-muted-foreground">NACE</Label>
-            <Badge variant="outline" className="mt-1">{viewingCompany.nace_code}</Badge>
-          </div>
+                <div>
+                  <Label className="text-muted-foreground">NACE</Label>
+                  <Badge variant="outline" className="mt-1">{viewingCompany.nace_code}</Badge>
+                </div>
 
-          <div>
-            <Label className="text-muted-foreground">Tehlike Sınıfı</Label>
-            <Badge className={cn(
-              "mt-1",
-              viewingCompany.hazard_class === "Çok Tehlikeli" && "bg-red-100 text-red-700",
-              viewingCompany.hazard_class === "Tehlikeli" && "bg-orange-100 text-orange-700",
-              viewingCompany.hazard_class === "Az Tehlikeli" && "bg-green-100 text-green-700"
-            )}>
-              {viewingCompany.hazard_class}
-            </Badge>
-          </div>
+                <div>
+                  <Label className="text-muted-foreground">Tehlike Sınıfı</Label>
+                  <Badge className={cn(
+                    "mt-1",
+                    viewingCompany.hazard_class === "Çok Tehlikeli" && "bg-red-100 text-red-700",
+                    viewingCompany.hazard_class === "Tehlikeli" && "bg-orange-100 text-orange-700",
+                    viewingCompany.hazard_class === "Az Tehlikeli" && "bg-green-100 text-green-700"
+                  )}>
+                    {viewingCompany.hazard_class}
+                  </Badge>
+                </div>
 
-          <div>
-              <Label className="text-muted-foreground">Çalışan Sayısı</Label>
-              <p className="flex items-center gap-2 mt-1">
-                <Users className="h-4 w-4 text-primary" />
-                <span className="font-semibold">{viewingCompany.employee_count}</span>
-              </p>
-            </div>
-          </div>
+                <div>
+                  <Label className="text-muted-foreground">Çalışan Sayısı</Label>
+                  <p className="flex items-center gap-2 mt-1">
+                    <Users className="h-4 w-4 text-primary" />
+                    <span className="font-semibold">{viewingCompany.employee_count}</span>
+                  </p>
+                </div>
+              </div>
 
-              {/* İletişim */}
               {(viewingCompany.address || viewingCompany.phone || viewingCompany.email) && (
                 <div className="pt-4 border-t space-y-3">
                   <Label className="text-muted-foreground">İletişim Bilgileri</Label>
@@ -1241,7 +1230,6 @@ const handleViewCompany = (companyId: string) => {
                 </div>
               )}
 
-              {/* Aksiyonlar */}
               <div className="flex gap-2 pt-4 border-t">
                 <Button onClick={() => {
                   setViewingCompany(null);

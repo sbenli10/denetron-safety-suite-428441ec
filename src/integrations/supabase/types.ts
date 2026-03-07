@@ -1792,43 +1792,7 @@ export type Database = {
           restored_at?: string | null
           restored_by?: string | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "isgkatip_deleted_companies_org_id_fkey"
-            columns: ["org_id"]
-            isOneToOne: false
-            referencedRelation: "organizations"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "isgkatip_deleted_companies_org_id_fkey"
-            columns: ["org_id"]
-            isOneToOne: false
-            referencedRelation: "v_dashboard_stats"
-            referencedColumns: ["org_id"]
-          },
-          {
-            foreignKeyName: "isgkatip_deleted_companies_original_company_id_fkey"
-            columns: ["original_company_id"]
-            isOneToOne: false
-            referencedRelation: "isgkatip_active_companies"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "isgkatip_deleted_companies_original_company_id_fkey"
-            columns: ["original_company_id"]
-            isOneToOne: false
-            referencedRelation: "isgkatip_companies"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "isgkatip_deleted_companies_original_company_id_fkey"
-            columns: ["original_company_id"]
-            isOneToOne: false
-            referencedRelation: "vw_compliance_dashboard"
-            referencedColumns: ["company_id"]
-          },
-        ]
+        Relationships: []
       }
       isgkatip_expert_capacity: {
         Row: {
@@ -2146,6 +2110,7 @@ export type Database = {
           nace_title: string
           risk_examples: string[] | null
           sector: string | null
+          updated_at: string | null
         }
         Insert: {
           ai_risk_score?: number | null
@@ -2156,6 +2121,7 @@ export type Database = {
           nace_title: string
           risk_examples?: string[] | null
           sector?: string | null
+          updated_at?: string | null
         }
         Update: {
           ai_risk_score?: number | null
@@ -2166,6 +2132,7 @@ export type Database = {
           nace_title?: string
           risk_examples?: string[] | null
           sector?: string | null
+          updated_at?: string | null
         }
         Relationships: []
       }
@@ -3096,43 +3063,7 @@ export type Database = {
           restored_by_name: string | null
           sgk_no: string | null
         }
-        Relationships: [
-          {
-            foreignKeyName: "isgkatip_deleted_companies_org_id_fkey"
-            columns: ["org_id"]
-            isOneToOne: false
-            referencedRelation: "organizations"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "isgkatip_deleted_companies_org_id_fkey"
-            columns: ["org_id"]
-            isOneToOne: false
-            referencedRelation: "v_dashboard_stats"
-            referencedColumns: ["org_id"]
-          },
-          {
-            foreignKeyName: "isgkatip_deleted_companies_original_company_id_fkey"
-            columns: ["original_company_id"]
-            isOneToOne: false
-            referencedRelation: "isgkatip_active_companies"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "isgkatip_deleted_companies_original_company_id_fkey"
-            columns: ["original_company_id"]
-            isOneToOne: false
-            referencedRelation: "isgkatip_companies"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "isgkatip_deleted_companies_original_company_id_fkey"
-            columns: ["original_company_id"]
-            isOneToOne: false
-            referencedRelation: "vw_compliance_dashboard"
-            referencedColumns: ["company_id"]
-          },
-        ]
+        Relationships: []
       }
       user_current_year_plans: {
         Row: {

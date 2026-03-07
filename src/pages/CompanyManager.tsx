@@ -1,4 +1,5 @@
 ﻿import { useState, useEffect, useMemo } from "react";
+import { FixedSizeList as List } from "react-window";
 import { 
   Building2, Users, FileSpreadsheet, Plus, Save, 
   ChevronRight, ChevronLeft, CheckCircle2, Upload,
@@ -51,6 +52,86 @@ import { parseEmployeeExcel, downloadEmployeeTemplate, type ParsedEmployee } fro
 import { NACE_DATABASE, searchNACE, type NACECode } from "@/utils/naceDatabase";
 import type { Company, RiskTemplate } from "@/types/companies";
 import { cn } from "@/lib/utils";
+
+interface NACEVirtualListProps {
+  items: NACECode[];
+  selectedCode: string | undefined;
+  onSelect: (nace: NACECode) => void;
+}
+
+const NACEVirtualList: React.FC<NACEVirtualListProps> = ({ 
+  items, 
+  selectedCode, 
+  onSelect 
+}) => {
+  const Row = ({ index, style, data }: any) => {
+    const nace = data.items[index];
+    const isSelected = data.selectedCode === nace.code;
+
+    return (
+      <div
+        style={style}
+        onClick={() => onSelect(nace)}
+        className={cn(
+          "flex items-start gap-3 px-4 py-3 cursor-pointer hover:bg-accent transition-colors border-b",
+          isSelected && "bg-primary/10"
+        )}
+      >
+        <Check
+          className={cn(
+            "h-5 w-5 mt-0.5 shrink-0",
+            isSelected ? "opacity-100 text-primary" : "opacity-0"
+          )}
+        />
+        <div className="flex-1 min-w-0 space-y-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Badge variant="secondary" className="font-mono text-xs">
+              {nace.code}
+            </Badge>
+            <Badge
+              className={cn(
+                "text-xs",
+                nace.hazard_class === "Çok Tehlikeli" &&
+                  "bg-red-100 text-red-700 border-red-300",
+                nace.hazard_class === "Tehlikeli" &&
+                  "bg-orange-100 text-orange-700 border-orange-300",
+                nace.hazard_class === "Az Tehlikeli" &&
+                  "bg-green-100 text-green-700 border-green-300"
+              )}
+            >
+              {nace.hazard_class}
+            </Badge>
+          </div>
+          <p className="text-sm font-medium leading-tight">{nace.name}</p>
+          <p className="text-xs text-muted-foreground truncate">
+            {nace.industry_sector}
+          </p>
+        </div>
+      </div>
+    );
+  };
+
+  if (items.length === 0) {
+    return (
+      <div className="text-center py-8">
+        <AlertTriangle className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
+        <p className="text-sm text-muted-foreground">Sonuç bulunamadı</p>
+      </div>
+    );
+  }
+
+  return (
+    <List
+      height={450}
+      itemCount={items.length}
+      itemSize={100}
+      width="100%"
+      overscanCount={5}
+    >
+      {Row}
+    </List>
+  );
+};
 
 const SECTOR_TEMPLATES = [
   {
@@ -488,126 +569,133 @@ export default function CompanyManager() {
                 />
               </div>
 
-              {/* ✅ NACE Combobox - DÜZELTİLMİŞ */}
-              <div className="md:col-span-2">
-                <Label>NACE Kodu * (Yazarak Arayın)</Label>
-                <Popover open={naceOpen} onOpenChange={setNaceOpen}>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant="outline"
-                      role="combobox"
-                      aria-expanded={naceOpen}
-                      className="w-full justify-between mt-2"
-                    >
-                      {selectedNACE ? (
-                        <span className="flex items-center gap-2">
-                          <Badge variant="outline">{selectedNACE.code}</Badge>
-                          <span className="truncate">{selectedNACE.name}</span>
-                        </span>
-                      ) : (
-                        <span className="text-muted-foreground">
-                          NACE kodu veya sektör adı ile arayın...
-                        </span>
-                      )}
-                      <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-[650px] p-0" align="start">
-                    <Command shouldFilter={false}>
-                      <CommandInput 
-                        placeholder="Örn: 41.20 veya inşaat yazın..." 
-                        value={naceSearchQuery}
-                        onValueChange={setNaceSearchQuery}
-                      />
-                      <CommandEmpty>
-                        <div className="text-center py-6">
-                          <AlertTriangle className="h-8 w-8 mx-auto mb-2 text-muted-foreground" />
-                          <p className="text-sm text-muted-foreground">
-                            "{naceSearchQuery}" için sonuç bulunamadı
-                          </p>
-                        </div>
-                      </CommandEmpty>
-                      <CommandList className="max-h-[300px]">
-                        <CommandGroup>
-                          {searchNACE(naceSearchQuery).slice(0, 100).map((nace) => (
-                            <CommandItem
-                              key={nace.code}
-                              value={nace.code}
-                              onSelect={() => handleNACESelect(nace)}
-                              className="flex items-start gap-3 py-3"
-                            >
-                              <Check
-                                className={cn(
-                                  "h-5 w-5 mt-0.5",
-                                  selectedNACE?.code === nace.code
-                                    ? "opacity-100 text-primary"
-                                    : "opacity-0"
-                                )}
-                              />
-                              <div className="flex-1 space-y-1">
-                                <div className="flex items-center gap-2">
-                                  <Badge variant="secondary" className="font-mono">
-                                    {nace.code}
-                                  </Badge>
-                                  <Badge
-                                    className={cn(
-                                      "text-xs",
-                                      nace.hazard_class === "Çok Tehlikeli" &&
-                                        "bg-red-100 text-red-700 border-red-300",
-                                      nace.hazard_class === "Tehlikeli" &&
-                                        "bg-orange-100 text-orange-700 border-orange-300",
-                                      nace.hazard_class === "Az Tehlikeli" &&
-                                        "bg-green-100 text-green-700 border-green-300"
-                                    )}
-                                  >
-                                    {nace.hazard_class}
-                                  </Badge>
-                                </div>
-                                <p className="text-sm font-medium leading-tight">
-                                  {nace.name}
-                                </p>
-                                <p className="text-xs text-muted-foreground">
-                                  {nace.industry_sector}
-                                </p>
-                              </div>
-                            </CommandItem>
-                          ))}
-                        </CommandGroup>
-                      </CommandList>
-                    </Command>
-                  </PopoverContent>
-                </Popover>
-
-                {/* ✅ Seçili NACE Önizleme */}
-                {selectedNACE && (
-                  <div className="mt-2 p-3 bg-primary/5 border border-primary/20 rounded-lg">
-                    <p className="text-xs text-muted-foreground mb-1">Seçili NACE:</p>
-                    <div className="flex items-center gap-2">
-                      <Badge variant="outline" className="font-mono">
-                        {selectedNACE.code}
-                      </Badge>
-                      <span className="text-sm font-medium">{selectedNACE.name}</span>
+              {/* ✅ NACE Combobox - 3178 KOD İÇİN OPTİMİZE EDİLMİŞ */}
+                <div className="md:col-span-2">
+                  <Label>NACE Kodu * (Yazarak Arayın)</Label>
+                  <Popover open={naceOpen} onOpenChange={setNaceOpen}>
+                    <PopoverTrigger asChild>
                       <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => {
-                          setSelectedNACE(null);
-                          setFormData(prev => ({
-                            ...prev,
-                            nace_code: "",
-                            hazard_class: "",
-                            industry_sector: ""
-                          }));
-                          setSelectedTemplate("");
-                        }}
-                        className="ml-auto h-6 w-6 p-0"
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={naceOpen}
+                        className="w-full justify-between mt-2"
                       >
-                        <X className="h-3 w-3" />
+                        {selectedNACE ? (
+                          <span className="flex items-center gap-2">
+                            <Badge variant="outline">{selectedNACE.code}</Badge>
+                            <span className="truncate max-w-[400px]">{selectedNACE.name}</span>
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">
+                            NACE kodu veya sektör adı ile arayın...
+                          </span>
+                        )}
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                       </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[750px] p-0" align="start">
+                      <Command shouldFilter={false}>
+                        <div className="border-b p-2">
+                          <div className="relative">
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                            <Input
+                              placeholder="NACE kodu veya sektör adı yazın (en az 2 karakter)..."
+                              value={naceSearchQuery}
+                              onChange={(e) => setNaceSearchQuery(e.target.value)}
+                              className="pl-10"
+                            />
+                          </div>
+                          <div className="flex items-center justify-between mt-2 text-xs text-muted-foreground">
+                            <span>
+                              {naceSearchQuery.length >= 2
+                                ? `${searchNACE(naceSearchQuery).length} sonuç`
+                                : `${NACE_DATABASE.length} toplam kod`}
+                            </span>
+                            {naceSearchQuery && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => setNaceSearchQuery("")}
+                                className="h-6 text-xs"
+                              >
+                                <X className="h-3 w-3 mr-1" />
+                                Temizle
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+
+                        {naceSearchQuery.length > 0 && naceSearchQuery.length < 2 ? (
+                          <div className="text-center py-8 text-muted-foreground text-sm">
+                            En az 2 karakter girin
+                          </div>
+                        ) : (
+                          <NACEVirtualList
+                            items={naceSearchQuery.length >= 2 ? searchNACE(naceSearchQuery) : NACE_DATABASE}
+                            selectedCode={selectedNACE?.code}
+                            onSelect={handleNACESelect}
+                          />
+                        )}
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+
+                  {/* ✅ Seçili NACE Önizleme */}
+                  {selectedNACE && (
+                    <div className="mt-2 p-3 bg-primary/5 border border-primary/20 rounded-lg">
+                      <div className="flex items-start gap-2">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs text-muted-foreground mb-1">Seçili NACE:</p>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <Badge variant="outline" className="font-mono">
+                              {selectedNACE.code}
+                            </Badge>
+                            <Badge
+                              className={cn(
+                                "text-xs",
+                                selectedNACE.hazard_class === "Çok Tehlikeli" &&
+                                  "bg-red-100 text-red-700",
+                                selectedNACE.hazard_class === "Tehlikeli" &&
+                                  "bg-orange-100 text-orange-700",
+                                selectedNACE.hazard_class === "Az Tehlikeli" &&
+                                  "bg-green-100 text-green-700"
+                              )}
+                            >
+                              {selectedNACE.hazard_class}
+                            </Badge>
+                          </div>
+                          <p className="text-sm font-medium mt-1">{selectedNACE.name}</p>
+                          <p className="text-xs text-muted-foreground">{selectedNACE.industry_sector}</p>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedNACE(null);
+                            setFormData(prev => ({
+                              ...prev,
+                              nace_code: "",
+                              hazard_class: "",
+                              industry_sector: ""
+                            }));
+                            setSelectedTemplate("");
+                            setNaceSearchQuery("");
+                          }}
+                          className="h-8 w-8 p-0 shrink-0"
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </div>
-                  </div>
-                )}
-              </div>
+                  )}
+
+                  {/* ✅ Bilgi Notu */}
+                  <p className="text-xs text-muted-foreground mt-2">
+                    💡 İpucu: En az 2 karakter girerek arama yapabilirsiniz. 
+                    Boş bırakırsanız tüm {NACE_DATABASE.length.toLocaleString()} kod gösterilir.
+                  </p>
+                </div>
 
               <div>
                 <Label>Tehlike Sınıfı</Label>

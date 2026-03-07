@@ -64,53 +64,6 @@ const NACEVirtualList: React.FC<NACEVirtualListProps> = ({
   selectedCode, 
   onSelect 
 }) => {
-  const Row = ({ index, style }: { index: number; style: React.CSSProperties }) => {
-    const nace = items[index];
-    const isSelected = selectedCode === nace.code;
-
-    return (
-      <div
-        style={style}
-        onClick={() => onSelect(nace)}
-        className={cn(
-          "flex items-start gap-3 px-4 py-3 cursor-pointer hover:bg-accent transition-colors border-b",
-          isSelected && "bg-primary/10"
-        )}
-      >
-        <Check
-          className={cn(
-            "h-5 w-5 mt-0.5 shrink-0",
-            isSelected ? "opacity-100 text-primary" : "opacity-0"
-          )}
-        />
-        <div className="flex-1 min-w-0 space-y-1">
-          <div className="flex items-center gap-2 flex-wrap">
-            <Badge variant="secondary" className="font-mono text-xs">
-              {nace.code}
-            </Badge>
-            <Badge
-              className={cn(
-                "text-xs",
-                nace.hazard_class === "Çok Tehlikeli" &&
-                  "bg-red-100 text-red-700 border-red-300",
-                nace.hazard_class === "Tehlikeli" &&
-                  "bg-orange-100 text-orange-700 border-orange-300",
-                nace.hazard_class === "Az Tehlikeli" &&
-                  "bg-green-100 text-green-700 border-green-300"
-              )}
-            >
-              {nace.hazard_class}
-            </Badge>
-          </div>
-          <p className="text-sm font-medium leading-tight">{nace.name}</p>
-          <p className="text-xs text-muted-foreground truncate">
-            {nace.industry_sector}
-          </p>
-        </div>
-      </div>
-    );
-  };
-
   if (items.length === 0) {
     return (
       <div className="text-center py-8">
@@ -122,13 +75,62 @@ const NACEVirtualList: React.FC<NACEVirtualListProps> = ({
 
   return (
     <List
-      height={typeof window !== "undefined" && window.innerWidth < 768 ? 320 : 450}
+      height={450}
       itemCount={items.length}
       itemSize={100}
       width="100%"
       overscanCount={5}
+      style={{
+        overflowX: "hidden",
+        WebkitOverflowScrolling: "touch"
+      }}
     >
-      {Row}
+      {({ index, style }) => {
+        const nace = items[index];
+        const isSelected = selectedCode === nace.code;
+
+        return (
+          <div
+            style={style}
+            onClick={() => onSelect(nace)}
+            className={cn(
+              "flex items-start gap-3 px-4 py-3 cursor-pointer hover:bg-accent transition-colors border-b",
+              isSelected && "bg-primary/10"
+            )}
+          >
+            <Check
+              className={cn(
+                "h-5 w-5 mt-0.5 shrink-0",
+                isSelected ? "opacity-100 text-primary" : "opacity-0"
+              )}
+            />
+            <div className="flex-1 min-w-0 space-y-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <Badge variant="secondary" className="font-mono text-xs">
+                  {nace.code}
+                </Badge>
+                <Badge
+                  className={cn(
+                    "text-xs",
+                    nace.hazard_class === "Çok Tehlikeli" &&
+                      "bg-red-100 text-red-700 border-red-300",
+                    nace.hazard_class === "Tehlikeli" &&
+                      "bg-orange-100 text-orange-700 border-orange-300",
+                    nace.hazard_class === "Az Tehlikeli" &&
+                      "bg-green-100 text-green-700 border-green-300"
+                  )}
+                >
+                  {nace.hazard_class}
+                </Badge>
+              </div>
+              <p className="text-sm font-medium leading-tight">{nace.name}</p>
+              <p className="text-xs text-muted-foreground truncate">
+                {nace.industry_sector}
+              </p>
+            </div>
+          </div>
+        );
+      }}
     </List>
   );
 };

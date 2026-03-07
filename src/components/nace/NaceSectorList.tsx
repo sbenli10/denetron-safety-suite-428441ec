@@ -1,4 +1,4 @@
-// ====================================================
+﻿// ====================================================
 // NACE SECTOR LIST COMPONENT
 // ====================================================
 
@@ -69,31 +69,45 @@ export default function NaceSectorList() {
   }, [searchTerm, sectorFilter, hazardFilter, naceCodes]);
 
   const loadNaceCodes = async () => {
-    setLoading(true);
-    try {
+  setLoading(true);
+  try {
+    const pageSize = 1000;
+    let from = 0;
+    let allRows: NaceCode[] = [];
+
+    while (true) {
       const { data, error } = await supabase
         .from("nace_codes")
         .select("*")
-        .order("nace_code", { ascending: true });
+        .order("nace_code", { ascending: true })
+        .range(from, from + pageSize - 1);
 
       if (error) throw error;
 
-      setNaceCodes(data || []);
+      const rows = (data || []) as NaceCode[];
+      allRows = allRows.concat(rows);
 
-      // Extract unique sectors
-      const uniqueSectors = Array.from(
-        new Set((data || []).map((item) => item.sector))
-      ).sort();
-      setSectors(uniqueSectors);
-
-      toast.success(`${data?.length || 0} NACE kodu yüklendi`);
-    } catch (error) {
-      console.error("Error loading NACE codes:", error);
-      toast.error("NACE kodları yüklenemedi");
-    } finally {
-      setLoading(false);
+      if (rows.length < pageSize) break;
+      from += pageSize;
     }
-  };
+
+    setNaceCodes(allRows);
+
+    // Extract unique sectors
+    const uniqueSectors = Array.from(
+      new Set(allRows.map((item) => item.sector))
+    ).sort();
+    setSectors(uniqueSectors);
+
+    toast.success(`${allRows.length || 0} NACE kodu yüklendi`);
+  } catch (error) {
+    console.error("Error loading NACE codes:", error);
+    toast.error("NACE kodları yüklenemedi");
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   const filterCodes = () => {
     let filtered = naceCodes;

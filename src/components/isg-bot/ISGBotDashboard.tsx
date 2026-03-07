@@ -1,4 +1,4 @@
-// src/components/isg-bot/ISGBotDashboard.tsx
+﻿// src/components/isg-bot/ISGBotDashboard.tsx
 
 "use client";
 
@@ -422,6 +422,52 @@ export default function ISGBotDashboard() {
       });
     } catch (error: any) {
       toast.error("Rapor oluşturulamadı", {
+        description: error.message,
+      });
+    }
+  };
+
+
+   const handleAddToDenetronCompanies = async (company: Company) => {
+    if (!user) {
+      toast.error("Kullanıcı oturumu bulunamadı");
+      return;
+    }
+
+    try {
+      const { data: existing, error: existingError } = await supabase
+        .from("companies")
+        .select("id")
+        .eq("user_id", user.id)
+        .eq("name", company.company_name)
+        .limit(1);
+
+      if (existingError) throw existingError;
+
+      if (existing && existing.length > 0) {
+        toast.info("Firma zaten Denetron firmalarında mevcut", {
+          description: company.company_name,
+        });
+        return;
+      }
+
+      const { error: insertError } = await supabase.from("companies").insert({
+        user_id: user.id,
+        name: company.company_name,
+        industry: company.nace_code || null,
+        employee_count: company.employee_count || 0,
+        is_active: true,
+        notes: `ISG-Bot'tan eklendi (SGK: ${company.sgk_no})`,
+      });
+
+      if (insertError) throw insertError;
+
+      toast.success("Firma Denetron firmalarına eklendi", {
+        description: company.company_name,
+      });
+    } catch (error: any) {
+      console.error("Denetron company add error:", error);
+      toast.error("Firma eklenemedi", {
         description: error.message,
       });
     }
@@ -1424,6 +1470,12 @@ return (
                               >
                                 <FileBarChart className="h-4 w-4 mr-2" />
                                 Rapor Oluştur
+                              </DropdownMenuItem>
+                              <DropdownMenuItem
+                                onClick={() => handleAddToDenetronCompanies(company)}
+                              >
+                                <Building2 className="h-4 w-4 mr-2" />
+                                Denetron Firmalarına Ekle
                               </DropdownMenuItem>
                               <DropdownMenuSeparator />
                               <DropdownMenuItem

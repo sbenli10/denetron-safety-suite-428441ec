@@ -64,9 +64,9 @@ const NACEVirtualList: React.FC<NACEVirtualListProps> = ({
   selectedCode, 
   onSelect 
 }) => {
-  const Row = ({ index, style, data }: any) => {
-    const nace = data.items[index];
-    const isSelected = data.selectedCode === nace.code;
+  const Row = ({ index, style }: { index: number; style: React.CSSProperties }) => {
+    const nace = items[index];
+    const isSelected = selectedCode === nace.code;
 
     return (
       <div

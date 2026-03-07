@@ -122,7 +122,7 @@ const NACEVirtualList: React.FC<NACEVirtualListProps> = ({
 
   return (
     <List
-      height={450}
+      height={typeof window !== "undefined" && window.innerWidth < 768 ? 320 : 450}
       itemCount={items.length}
       itemSize={100}
       width="100%"
@@ -583,7 +583,9 @@ export default function CompanyManager() {
                         {selectedNACE ? (
                           <span className="flex items-center gap-2">
                             <Badge variant="outline">{selectedNACE.code}</Badge>
-                            <span className="truncate max-w-[400px]">{selectedNACE.name}</span>
+                            <span className="truncate max-w-[140px] md:max-w-[400px]">
+                              {selectedNACE.name}
+                            </span>
                           </span>
                         ) : (
                           <span className="text-muted-foreground">
@@ -593,9 +595,12 @@ export default function CompanyManager() {
                         <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                       </Button>
                     </PopoverTrigger>
-                    <PopoverContent className="w-[750px] p-0" align="start">
+                    <PopoverContent 
+                        className="w-[95vw] md:w-[750px] max-w-[750px] p-0"
+                        align="center"
+                      >
                       <Command shouldFilter={false}>
-                        <div className="border-b p-2">
+                        <div className="border-b p-3 md:p-2">
                           <div className="relative">
                             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                             <Input
@@ -646,7 +651,7 @@ export default function CompanyManager() {
                       <div className="flex items-start gap-2">
                         <div className="flex-1 min-w-0">
                           <p className="text-xs text-muted-foreground mb-1">Seçili NACE:</p>
-                          <div className="flex items-center gap-2 flex-wrap">
+                          <div className="flex items-center gap-2 flex-wrap md:flex-nowrap">
                             <Badge variant="outline" className="font-mono">
                               {selectedNACE.code}
                             </Badge>

@@ -1461,6 +1461,9 @@ const handleSaveAndExport = async () => {
         setCurrentReportUrl(savedReportUrl);
         setCurrentReportFilename(reportFileName);
         setSendModalOpen(true);
+        toast.info("E-posta gönderim penceresi açıldı");
+      } else {
+        toast.warning("E-posta gönderimi için rapor bağlantısı oluşturulamadı");
       }
 
       // ✅ 9. FORMU TEMIZLE
@@ -1482,10 +1485,13 @@ const handleSaveAndExport = async () => {
 
       toast.success("✅ DÖF Raporu başarıyla oluşturuldu!");
 
-      // ✅ 10. YÖNLENDIR (3 saniye sonra)
-      setTimeout(() => {
-        navigate("/inspections");
-      }, 3000);
+      // ✅ 10. YÖNLENDIR
+      // E-posta modalı açıldıysa kullanıcı işlemi bitirene kadar sayfada kal.
+      if (!savedReportUrl) {
+        setTimeout(() => {
+          navigate("/inspections");
+        }, 3000);
+      }
     } else {
       toast.error("❌ Organization data not available");
     }

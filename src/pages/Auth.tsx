@@ -1,4 +1,4 @@
-//src\pages\Auth.tsx
+﻿//src\pages\Auth.tsx
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -38,6 +38,7 @@ export default function Auth() {
   const navigate = useNavigate();
   const [mode, setMode] = useState<AuthMode>("login");
   const [showPassword, setShowPassword] = useState(false);
+  const [showRegisterPassword, setShowRegisterPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [resendCountdown, setResendCountdown] = useState(0);
 
@@ -528,7 +529,7 @@ const handleVerify2FA = async (e: React.FormEvent) => {
             </>
           )}
 
-          {/* REGISTER */}
+                    {/* REGISTER */}
           {mode === "register" && (
             <>
               <div className="flex gap-2 bg-slate-800/50 p-1 rounded-lg mb-6">
@@ -546,7 +547,14 @@ const handleVerify2FA = async (e: React.FormEvent) => {
                 </button>
               </div>
 
-              <form onSubmit={handleRegister} className="space-y-3">
+              <div className="mb-4 rounded-xl border border-blue-500/30 bg-gradient-to-r from-blue-500/10 to-purple-500/10 p-4">
+                <h3 className="text-white font-semibold text-base">Yeni Hesap Oluştur</h3>
+                <p className="text-slate-300 text-sm mt-1">
+                  Kurumsal hesabını oluştur, ekip üyelerini ekle ve tüm İSG süreçlerini tek panelden yönet.
+                </p>
+              </div>
+
+              <form onSubmit={handleRegister} className="space-y-4">
                 <div className="space-y-2">
                   <Label className="text-white flex items-center gap-2">
                     <User className="h-4 w-4 text-blue-400" />
@@ -557,7 +565,25 @@ const handleVerify2FA = async (e: React.FormEvent) => {
                     name="fullName"
                     value={formData.fullName}
                     onChange={handleInputChange}
-                    className="bg-slate-800 border-slate-700 text-white"
+                    placeholder="Örn: Ahmet Yılmaz"
+                    className="bg-slate-800/70 border-slate-700 text-white"
+                    disabled={loading}
+                    required
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-white flex items-center gap-2">
+                    <Building2 className="h-4 w-4 text-blue-400" />
+                    Şirket / Organizasyon
+                  </Label>
+                  <Input
+                    type="text"
+                    name="orgName"
+                    value={formData.orgName}
+                    onChange={handleInputChange}
+                    placeholder="Örn: Denetron OSGB"
+                    className="bg-slate-800/70 border-slate-700 text-white"
                     disabled={loading}
                     required
                   />
@@ -573,64 +599,62 @@ const handleVerify2FA = async (e: React.FormEvent) => {
                     name="email"
                     value={formData.email}
                     onChange={handleInputChange}
-                    className="bg-slate-800 border-slate-700 text-white"
+                    placeholder="ornek@firma.com"
+                    className="bg-slate-800/70 border-slate-700 text-white"
                     disabled={loading}
                     required
                   />
                 </div>
 
-                <div className="space-y-2">
-                  <Label className="text-white flex items-center gap-2">
-                    <Building2 className="h-4 w-4 text-blue-400" />
-                    Şirket/Organizasyon
-                  </Label>
-                  <Input
-                    type="text"
-                    name="orgName"
-                    value={formData.orgName}
-                    onChange={handleInputChange}
-                    className="bg-slate-800 border-slate-700 text-white"
-                    disabled={loading}
-                    required
-                  />
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label className="text-white flex items-center gap-2">
+                      <Lock className="h-4 w-4 text-blue-400" />
+                      Şifre (min. 8 karakter)
+                    </Label>
+                    <Input
+                      type={showRegisterPassword ? "text" : "password"}
+                      name="password"
+                      value={formData.password}
+                      onChange={handleInputChange}
+                      className="bg-slate-800/70 border-slate-700 text-white"
+                      disabled={loading}
+                      required
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-white flex items-center gap-2">
+                      <Lock className="h-4 w-4 text-blue-400" />
+                      Şifre Tekrar
+                    </Label>
+                    <Input
+                      type={showRegisterPassword ? "text" : "password"}
+                      name="passwordConfirm"
+                      value={formData.passwordConfirm}
+                      onChange={handleInputChange}
+                      className="bg-slate-800/70 border-slate-700 text-white"
+                      disabled={loading}
+                      required
+                    />
+                  </div>
                 </div>
 
-                <div className="space-y-2">
-                  <Label className="text-white flex items-center gap-2">
-                    <Lock className="h-4 w-4 text-blue-400" />
-                    Şifre (min. 8 karakter)
-                  </Label>
-                  <Input
-                    type={showPassword ? "text" : "password"}
-                    name="password"
-                    value={formData.password}
-                    onChange={handleInputChange}
-                    className="bg-slate-800 border-slate-700 text-white"
-                    disabled={loading}
-                    required
+                <div className="flex items-center space-x-2 rounded-lg border border-slate-700 bg-slate-800/40 p-3">
+                  <Checkbox
+                    id="show-register-password"
+                    checked={showRegisterPassword}
+                    onCheckedChange={(checked) => setShowRegisterPassword(Boolean(checked))}
                   />
-                </div>
-
-                <div className="space-y-2">
-                  <Label className="text-white flex items-center gap-2">
-                    <Lock className="h-4 w-4 text-blue-400" />
-                    Şifre Tekrar
+                  <Label htmlFor="show-register-password" className="text-sm text-slate-200 cursor-pointer">
+                    Şifreyi göster
                   </Label>
-                  <Input
-                    type={showPassword ? "text" : "password"}
-                    name="passwordConfirm"
-                    value={formData.passwordConfirm}
-                    onChange={handleInputChange}
-                    className="bg-slate-800 border-slate-700 text-white"
-                    disabled={loading}
-                    required
-                  />
                 </div>
 
                 <Button
                   type="submit"
                   disabled={loading}
-                  className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
+                  className="w-full h-11 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
                 >
                   {loading ? (
                     <>
@@ -638,7 +662,7 @@ const handleVerify2FA = async (e: React.FormEvent) => {
                       Kayıt ediliyor...
                     </>
                   ) : (
-                    "Hesap Oluştur"
+                    "Hesabı Oluştur"
                   )}
                 </Button>
               </form>
@@ -767,7 +791,7 @@ const handleVerify2FA = async (e: React.FormEvent) => {
 
         {/* Footer */}
         <p className="text-center text-xs text-slate-500">
-          © 2026 Denetron. Tüm hakları saklıdır.
+          Â© 2026 Denetron. Tüm hakları saklıdır.
         </p>
       </div>
     </div>

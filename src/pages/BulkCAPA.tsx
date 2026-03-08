@@ -1420,7 +1420,7 @@ const handleSaveAndExport = async () => {
 
       if (uploadError) {
         console.error("❌ Storage upload error:", uploadError);
-        toast.warning("⚠️ Dosya arşivlenemedi, ancak indirilecek");
+        toast.error(`Storage upload hatasi: ${uploadError.message}`);
       } else {
         // ✅ 5. PUBLIC URL AL
         const { data: publicUrlData } = supabase.storage
@@ -1428,31 +1428,37 @@ const handleSaveAndExport = async () => {
           .getPublicUrl(uploadData.path);
 
         savedReportUrl = publicUrlData.publicUrl;
+      }
 
-        // ✅ 6. REPORTS TABLOSUNA KAYDET
-        const { error: dbError } = await supabase.from("reports").insert({
-          org_id: orgData.id,
-          user_id: user?.id,
-          title: `DÖF Raporu - ${siteName}`,
-          report_type: "inspection",
-          generated_at: today.toISOString(),
-          export_format: "docx",
-          file_url: savedReportUrl,
-          content: {
-            inspection_id: createdInspectionId,
-            report_kind: "dof",
-            entries_count: entries.length,
-            ai_analyzed_count: entries.filter((e) => e.ai_analyzed).length,
-            location: siteName,
-          },
-        });
+      // ✅ 6. REPORTS TABLOSUNA KAYDET (upload basariliysa file_url dolu gelir)
+      const { error: dbError } = await supabase.from("reports").insert({
+        org_id: orgData.id,
+        user_id: user?.id,
+        title: `DÖF Raporu - ${siteName}`,
+        report_type: "inspection",
+        generated_at: today.toISOString(),
+        export_format: "docx",
+        file_url: savedReportUrl,
+        content: {
+          inspection_id: createdInspectionId,
+          report_kind: "dof",
+          entries_count: entries.length,
+          ai_analyzed_count: entries.filter((e) => e.ai_analyzed).length,
+          location: siteName,
+          storage_upload_ok: !uploadError,
+          storage_error: uploadError?.message ?? null,
+        },
+      });
 
-        if (!dbError) {
-          toast.success("✅ Rapor arşivlendi");
-        }
+      if (dbError) {
+        console.error("❌ Reports insert error:", dbError);
+        toast.error(`Reports kaydi basarisiz: ${dbError.message}`);
+      } else {
+        toast.success("✅ Rapor arsivlendi");
       }
 
       // ✅ 7. DOSYAYI İNDİR
+      
       saveAs(wordBlob, reportFileName);
       
       // ✅ 8. E-POSTA GÖNDERİM SEÇENEĞİ

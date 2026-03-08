@@ -22,6 +22,7 @@ import {
   Calendar,
   Users,
   Target,
+  Mail,
   Bot,
   ChevronDown,
 } from "lucide-react";
@@ -107,6 +108,12 @@ export function AppSidebar() {
       items: [
         { title: "Panel", url: "/", icon: LayoutDashboard, badge: null },
         { title: "Profilim", url: "/profile", icon: User, badge: null },
+        {
+          title: "E-posta Geçmişi",
+          url: "/email-history",
+          icon: Mail,
+          badge: null,
+        }
       ],
     },
     {

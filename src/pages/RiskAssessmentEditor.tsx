@@ -1681,7 +1681,7 @@ useLayoutEffect(() => {
               {aiGenerating ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  Gemini Analiz Ediyor...
+                  Yapay Zeka Analiz Ediyor...
                 </>
               ) : (
                 <>
@@ -1692,7 +1692,7 @@ useLayoutEffect(() => {
             </Button>
 
             <div className="text-xs text-slate-400 space-y-1 pt-2 border-t border-purple-700/30">
-              <p>• Google Gemini 2.5 Flash</p>
+              <p>• Google Gemini</p>
               <p>• Türkiye İSG mevzuatına uygun</p>
               <p>• Fine-Kinney skoru otomatik</p>
             </div>
@@ -2666,24 +2666,7 @@ const exportToPDFAndShare = async () => {
     setSaving(false);
   }
 };
-// Buton ekle:
-<Button onClick={exportToPDFAndShare} className="gap-2">
-  <Share2 className="h-4 w-4" />
-  PDF Oluştur ve Gönder
-</Button>
-
-{/* Modal ekle */}
-  <SendReportModal
-    open={sendModalOpen}
-    onOpenChange={setSendModalOpen}
-    reportType="risk_assessment"
-    reportUrl={currentReportUrl}
-    reportFilename={`Risk_Raporu_${companies.find((c) => c.id === assessment?.company_id)?.name || "Firma"}.pdf`}
-    companyName={companies.find((c) => c.id === assessment?.company_id)?.name || "Firma"}
-  />
-
-
-  // ========================
+// ========================
   // EXCEL EXPORT
   // ========================
 
@@ -2826,11 +2809,11 @@ const exportToPDFAndShare = async () => {
     <Button
       size="sm"
       className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white"
-      onClick={exportToPDF}
+      onClick={exportToPDFAndShare}
       disabled={!assessment || riskItems.length === 0}
     >
-      <Download className="h-4 w-4" />
-      PDF İndir
+      <Share2 className="h-4 w-4" />
+      PDF Oluştur ve Gönder
     </Button>
   </div>
 </div>
@@ -2961,6 +2944,19 @@ const exportToPDFAndShare = async () => {
         {/* ✅ YENİ: AI Results Dialog */}
         <AIResultsDialog />
 
+
+        <SendReportModal
+          open={sendModalOpen}
+          onOpenChange={setSendModalOpen}
+          reportType="risk_assessment"
+          reportUrl={currentReportUrl}
+          reportFilename={
+            `Risk_Raporu_${companies.find((c) => c.id === assessment?.company_id)?.name || "Firma"}.pdf`
+          }
+          companyName={
+            companies.find((c) => c.id === assessment?.company_id)?.name || "Firma"
+          }
+        />
          <HelpDialog />
     </div>
   );

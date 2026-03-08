@@ -2513,7 +2513,7 @@ const exportToPDFAndShare = async () => {
     doc.setFontSize(9);
     doc.setFont("Inter", "normal");
     doc.text(
-      `Firma: ${companies.find((c) => c.id === assessment.company_id)?.name || "—"}`,
+      `Firma: ${companies.find((c) => c.id === assessment?.company_id)?.name || "—"}`,
       14,
       20
     );
@@ -2671,14 +2671,15 @@ const exportToPDFAndShare = async () => {
   <Share2 className="h-4 w-4" />
   PDF Oluştur ve Gönder
 </Button>
+
 {/* Modal ekle */}
   <SendReportModal
     open={sendModalOpen}
     onOpenChange={setSendModalOpen}
     reportType="risk_assessment"
     reportUrl={currentReportUrl}
-    reportFilename={`Risk_Raporu_${companies.find((c) => c.id === assessment.company_id)?.name || "Firma"}.pdf`}
-    companyName={companies.find((c) => c.id === assessment.company_id)?.name || "Firma"}
+    reportFilename={`Risk_Raporu_${companies.find((c) => c.id === assessment?.company_id)?.name || "Firma"}.pdf`}
+    companyName={companies.find((c) => c.id === assessment?.company_id)?.name || "Firma"}
   />
 
 

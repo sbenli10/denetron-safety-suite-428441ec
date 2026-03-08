@@ -2464,7 +2464,7 @@ useLayoutEffect(() => {
     // FOOTER
     doc.setPage(doc.internal.pages.length - 1);
     doc.setFontSize(7);
-    doc.setFont("Inter", "italic"); 
+    doc.setFont("Inter", "normal"); 
     doc.text(`Bu rapor Denetron İSG Yazılımı ile oluşturulmuştur.`, pageWidth / 2, pageHeight - 8, { align: 'center' });
 
     doc.save(`Risk-Analiz-${assessment.id.substring(0, 8)}.pdf`);
@@ -2617,7 +2617,7 @@ const exportToPDFAndShare = async () => {
     // Footer
     doc.setPage(doc.internal.pages.length - 1);
     doc.setFontSize(7);
-    doc.setFont("Inter", "italic");
+    doc.setFont("Inter", "normal");
     doc.text(
       `Bu rapor Denetron İSG Yazılımı ile oluşturulmuştur.`,
       pageWidth / 2,
@@ -2627,8 +2627,13 @@ const exportToPDFAndShare = async () => {
 
     const pdfBlob = doc.output("blob");
 
+    if (!user?.id) {
+      toast.error("Oturum bilgisi eksik. Lütfen tekrar giriş yapın.");
+      return;
+    }
+
     // ✅ 2. SUPABASE STORAGE'A YÜKLE
-    const fileName = `risk-assessment-${assessment.id}.pdf`;
+    const fileName = `risk-assessment-${assessment.id}-${Date.now()}.pdf`;
     const storagePath = `risk-reports/${user?.id}/${fileName}`;
 
     const { data: uploadData, error: uploadError } = await supabase.storage
@@ -2640,7 +2645,7 @@ const exportToPDFAndShare = async () => {
 
     if (uploadError) {
       console.error("❌ Storage upload error:", uploadError);
-      toast.error("Dosya yüklenemedi");
+      toast.error("Dosya yüklenemedi", { description: uploadError.message });
       return;
     }
 

@@ -17,6 +17,7 @@ import {
   Sparkles,
   AlertCircle,
   AlertTriangle,
+  Share2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -46,6 +47,7 @@ import {
   ImageRun,
 } from "docx";
 import { saveAs } from "file-saver";
+import { SendReportModal } from "@/components/SendReportModal";
 
 // ✅ INTERFACE DEFINITIONS
 // HazardEntry interface'ine ekle:
@@ -89,6 +91,8 @@ const DEPARTMENTS = [
   "Muhasebe",
   "Diğer",
 ];
+
+
 
 const IMPORTANCE_LEVELS = [
   { value: "Normal", label: "🟢 Normal", color: "bg-success/10 text-success" },
@@ -135,6 +139,8 @@ const safeJsonParse = (jsonText: string): AIAnalysisResult | null => {
     if (openBraces > closeBraces) {
       cleaned += "}".repeat(openBraces - closeBraces);
     }
+
+    
 
     // Trailing comma
     cleaned = cleaned.replace(/,(\s*[}\]])/g, "$1");
@@ -195,10 +201,10 @@ const dataUrlToBuffer = (dataUrl: string): Uint8Array => {
 const generateWordDocument = async (
   entries: HazardEntry[],
   siteName: string,
-  orgData: OrganizationData | null,
+  orgData: OrganizationData,
   user: any,
   orgId: string
-) => {
+): Promise<Blob> => {
   try {
     const today = new Date();
     const dateStr = today.toLocaleDateString("tr-TR", {
@@ -363,7 +369,7 @@ const generateWordDocument = async (
                   new Paragraph({
                     children: [
                       new TextRun({
-                        text: "İSG UYZMANI",
+                        text: "İSG UZMANI",
                         bold: true,
                         size: 20,
                       }),
@@ -443,7 +449,7 @@ const generateWordDocument = async (
                   new Paragraph({
                     children: [
                       new TextRun({
-                        text: entries[0]?.notification_method || "E-mail", // ✅ İLK ENTRY'DEN AL
+                        text: entries[0]?.notification_method || "E-mail",
                         size: 20,
                       }),
                     ],
@@ -772,7 +778,7 @@ const generateWordDocument = async (
       );
 
       // ✅ FOTOĞRAFLAR
-      if (entry.media_urls.length > 0) {
+      if (entry.media_urls && entry.media_urls.length > 0) {
         findingTableRows.push(
           new TableRow({
             children: [
@@ -886,59 +892,13 @@ const generateWordDocument = async (
       ],
     });
 
-    // ✅ Generate blob
+    // ✅ Generate blob and return
     const blob = await Packer.toBlob(doc);
+    return blob;
 
-    // ✅ LOCAL İNDİR
-    saveAs(blob, `DÖF_Raporu_${siteName}_${today.getTime()}.docx`);
-
-    // ✅ SUPABASE STORAGE'A YÜKLE
-    const fileName = `dof-reports/${orgId}/${siteName}_${today.toISOString()}.docx`;
-
-    const { error: uploadError } = await supabase.storage
-      .from("dof-reports")
-      .upload(fileName, blob, {
-        contentType:
-          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        upsert: false,
-      });
-
-    if (uploadError) {
-      console.warn("⚠️ Upload warning:", uploadError);
-      toast.warning("⚠️ Dosya indirildi ama arşivlenemiyor");
-    } else {
-      // ✅ PUBLIC URL AL
-      const { data } = supabase.storage
-        .from("dof-reports")
-        .getPublicUrl(fileName);
-
-      // ✅ DATABASE'E KAYDET
-      const { error: dbError } = await supabase.from("reports").insert({
-        org_id: orgId,
-        user_id: user?.id,
-        title: `DÖF Raporu - ${siteName}`,
-        report_type: "inspection",
-        generated_at: today.toISOString(),
-        export_format: "docx",
-        file_url: data.publicUrl,
-        content: {
-          entries_count: entries.length,
-          ai_analyzed_count: entries.filter((e) => e.ai_analyzed).length,
-          location: siteName,
-        },
-      });
-
-      if (dbError) {
-        console.warn("⚠️ Database save warning:", dbError);
-      } else {
-        toast.success("✅ Rapor kaydedildi ve arşivlendi!");
-      }
-    }
-
-    toast.success("✅ Profesyonel DÖF Raporu başarıyla indirildi!");
   } catch (error: any) {
     console.error("❌ Word generation error:", error);
-    toast.error(`❌ Hata: ${error.message}`);
+    throw error; // ✅ Hata fırlat, handleSaveAndExport yakalayacak
   }
 };
 
@@ -956,6 +916,9 @@ export default function BulkCAPA() {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
+  const [sendModalOpen, setSendModalOpen] = useState(false);
+  const [currentReportUrl, setCurrentReportUrl] = useState("");
+  const [currentReportFilename, setCurrentReportFilename] = useState("");
 
   const [newEntry, setNewEntry] = useState<HazardEntry>({
     id: "",
@@ -1234,6 +1197,8 @@ Eğer görüntüde İSG riski yoksa:
     }
   };
 
+  
+
   // ✅ PROCESS FILES
   const processFiles = (files: FileList) => {
     Array.from(files).forEach((file) => {
@@ -1295,6 +1260,8 @@ Eğer görüntüde İSG riski yoksa:
       ],
     });
   };
+
+  
 
   // ✅ ADD ENTRY
   const handleAddEntry = () => {
@@ -1358,7 +1325,6 @@ const handleSaveAndExport = async () => {
     toast.error("Lütfen saha adını girin");
     return;
   }
-
   if (entries.length === 0) {
     toast.error("Lütfen en az bir bulgu ekleyin");
     return;
@@ -1367,6 +1333,10 @@ const handleSaveAndExport = async () => {
   setSaving(true);
 
   try {
+    let savedReportUrl: string | null = null;
+    let reportFileName: string = "";
+
+    // ✅ 1. DATABASE KAYITLARI
     if (user) {
       try {
         const { data: profile } = await supabase
@@ -1376,7 +1346,6 @@ const handleSaveAndExport = async () => {
           .single();
 
         if (profile?.organization_id) {
-          // BulkCAPA.tsx içinde handleSaveAndExport fonksiyonu
           const { data: inspection, error: inspectionError } = await supabase
             .from("inspections")
             .insert({
@@ -1386,7 +1355,6 @@ const handleSaveAndExport = async () => {
               status: "completed",
               risk_level: "high",
               media_urls: entries.flatMap(e => e.media_urls),
-              // ✅ YENİ ALANLAR
               notes: `Bulk CAPA Formu - ${entries.length} bulgu (AI Analiz)`,
               risk_definition: entries.map((e, i) => `${i + 1}. ${e.riskDefinition}`).join('\n\n'),
               corrective_action: entries.map((e, i) => `${i + 1}. ${e.correctiveAction}`).join('\n\n'),
@@ -1395,15 +1363,18 @@ const handleSaveAndExport = async () => {
             })
             .select()
             .single();
-          if (!inspectionError && inspection) {
+
+          if (inspectionError) throw inspectionError;
+
+          if (inspection) {
             for (const entry of entries) {
               await supabase.from("findings").insert({
                 inspection_id: inspection.id,
                 user_id: user.id,
                 description: entry.description,
                 action_required: entry.correctiveAction,
-                risk_definition: entry.riskDefinition, // ✅ YENİ
-                preventive_action: entry.preventiveAction, // ✅ YENİ
+                risk_definition: entry.riskDefinition,
+                preventive_action: entry.preventiveAction,
                 due_date: entry.termin_date,
                 priority:
                   entry.importance_level === "Kritik"
@@ -1414,24 +1385,85 @@ const handleSaveAndExport = async () => {
                 notification_method: entry.notification_method,
               });
             }
-            toast.success("✅ Veriler kaydedildi");
+            toast.success("✅ Veriler veritabanına kaydedildi");
           }
         }
       } catch (dbError) {
-        console.warn("Database save failed, continuing with Word export:", dbError);
+        console.warn("⚠️ Database save failed:", dbError);
+        toast.warning("⚠️ Veritabanı kaydı başarısız, Word rapor oluşturuluyor...");
       }
     }
 
+    // ✅ 2. WORD DOKÜMANI OLUŞTUR
     if (orgData && orgData.id) {
-      await generateWordDocument(
+      toast.info("📄 Word raporu oluşturuluyor...");
+      
+      // ✅ await ile blob al
+      const wordBlob = await generateWordDocument(
         entries,
         siteName,
         orgData,
         user,
         orgData.id
       );
+
+      // ✅ 3. DOSYA ADI
+      const today = new Date();
+      reportFileName = `DÖF_Raporu_${siteName}_${today.toISOString().split('T')[0]}.docx`;
+
+      // ✅ 4. SUPABASE STORAGE'A YÜKLE
+      const storagePath = `dof-reports/${orgData.id}/${reportFileName}`;
+
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from("dof-reports")
+        .upload(storagePath, wordBlob, {
+          contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          upsert: true,
+        });
+
+      if (uploadError) {
+        console.error("❌ Storage upload error:", uploadError);
+        toast.warning("⚠️ Dosya arşivlenemedi, ancak indirilecek");
+      } else {
+        // ✅ 5. PUBLIC URL AL
+        const { data: publicUrlData } = supabase.storage
+          .from("dof-reports")
+          .getPublicUrl(uploadData.path);
+
+        savedReportUrl = publicUrlData.publicUrl;
+
+        // ✅ 6. REPORTS TABLOSUNA KAYDET
+        const { error: dbError } = await supabase.from("reports").insert({
+          org_id: orgData.id,
+          user_id: user?.id,
+          title: `DÖF Raporu - ${siteName}`,
+          report_type: "inspection",
+          generated_at: today.toISOString(),
+          export_format: "docx",
+          file_url: savedReportUrl,
+          content: {
+            entries_count: entries.length,
+            ai_analyzed_count: entries.filter((e) => e.ai_analyzed).length,
+            location: siteName,
+          },
+        });
+
+        if (!dbError) {
+          toast.success("✅ Rapor arşivlendi");
+        }
+      }
+
+      // ✅ 7. DOSYAYI İNDİR
+      saveAs(wordBlob, reportFileName);
       
-      // ✅ FORMU TEMIZLE
+      // ✅ 8. E-POSTA GÖNDERİM SEÇENEĞİ
+      if (savedReportUrl) {
+        setCurrentReportUrl(savedReportUrl);
+        setCurrentReportFilename(reportFileName);
+        setSendModalOpen(true);
+      }
+
+      // ✅ 9. FORMU TEMIZLE
       setEntries([]);
       setSiteName("");
       setNewEntry({
@@ -1447,14 +1479,13 @@ const handleSaveAndExport = async () => {
         media_urls: [],
         ai_analyzed: false,
       });
-      
-      // ✅ TOAST VE YÖNLENDIR
+
       toast.success("✅ DÖF Raporu başarıyla oluşturuldu!");
-      
-      // 2 saniye sonra Reports sayfasına git
+
+      // ✅ 10. YÖNLENDIR (3 saniye sonra)
       setTimeout(() => {
         navigate("/inspections");
-      }, 2000);
+      }, 3000);
     } else {
       toast.error("❌ Organization data not available");
     }
@@ -2061,6 +2092,14 @@ const handleSaveAndExport = async () => {
           </div>
         </div>
       )}
+      <SendReportModal
+        open={sendModalOpen}
+        onOpenChange={setSendModalOpen}
+        reportType="dof"
+        reportUrl={currentReportUrl}
+        reportFilename={currentReportFilename}
+        companyName={siteName}
+      />
     </div>
   );
 }

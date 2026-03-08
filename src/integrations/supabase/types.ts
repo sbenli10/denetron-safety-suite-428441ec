@@ -1081,6 +1081,60 @@ export type Database = {
         }
         Relationships: []
       }
+      email_logs: {
+        Row: {
+          created_at: string | null
+          email_id: string | null
+          id: string
+          org_id: string
+          recipient_email: string
+          report_type: string
+          report_url: string
+          status: string
+          subject: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          email_id?: string | null
+          id?: string
+          org_id: string
+          recipient_email: string
+          report_type: string
+          report_url: string
+          status?: string
+          subject: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          email_id?: string | null
+          id?: string
+          org_id?: string
+          recipient_email?: string
+          report_type?: string
+          report_url?: string
+          status?: string
+          subject?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "email_logs_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "email_logs_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "v_dashboard_stats"
+            referencedColumns: ["org_id"]
+          },
+        ]
+      }
       emergency_plans: {
         Row: {
           company_name: string

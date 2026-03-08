@@ -17,6 +17,7 @@ import {
   ChevronRight,
   Save,
   Download,
+  Share2,
   Loader2,
   CheckCircle2,
   Shield,
@@ -55,6 +56,7 @@ import ADEPChecklistsTab from "@/components/adep/ADEPChecklistsTab";
 import ADEPRACITab from "@/components/adep/ADEPRACITab";
 import ADEPLegalReferencesTab from "@/components/adep/ADEPLegalReferencesTab";
 import ADEPRiskSourcesTab from "@/components/adep/ADEPRiskSourcesTab";
+import { SendReportModal } from "@/components/SendReportModal";
 
 
 // ✅ PDF Generator
@@ -168,6 +170,9 @@ export default function ADEPWizard() {
   const [loading, setLoading] = useState<boolean>(true);
   const [saving, setSaving] = useState<boolean>(false);
   const [progressLoading, setProgressLoading] = useState<boolean>(false);
+  const [sendModalOpen, setSendModalOpen] = useState(false);
+  const [currentReportUrl, setCurrentReportUrl] = useState("");
+  const [currentReportFilename, setCurrentReportFilename] = useState("");
 
   const [planId, setPlanId] = useState<string | null>(null);
   const [planRow, setPlanRow] = useState<ADEPPlanRow | null>(null);
@@ -515,6 +520,62 @@ export default function ADEPWizard() {
     const item = STEPS.find((s) => s.id === currentStep);
     return item ?? STEPS[0];
   }, [currentStep]);
+  const generateADEPReportAndOpenEmail = async () => {
+    if (!planId || !planRow || !user?.id) {
+      toast.error("Rapor oluşturmak için plan kaydedilmiş olmalı.");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await savePlan({
+        silent: true,
+        markCompleted: progress >= 100,
+      });
+
+      toast.info("PDF hazırlanıyor...");
+      const pdfDoc = await generateADEPPDF(planId);
+      const pdfBlob = pdfDoc.output("blob");
+
+      const safeCompanyName = (planRow.company_name || "Firma").replace(
+        /[^a-z0-9]/gi,
+        "_"
+      );
+      const fileName = `ADEP_${safeCompanyName}_${new Date()
+        .toISOString()
+        .split("T")[0]}.pdf`;
+      const storagePath = `adep-reports/${user.id}/${fileName}`;
+
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from("reports")
+        .upload(storagePath, pdfBlob, {
+          contentType: "application/pdf",
+          upsert: true,
+        });
+
+      if (uploadError) throw uploadError;
+
+      const { data: publicUrlData } = supabase.storage
+        .from("reports")
+        .getPublicUrl(uploadData.path);
+
+      if (!publicUrlData?.publicUrl) {
+        throw new Error("Rapor bağlantısı oluşturulamadı.");
+      }
+
+      setCurrentReportUrl(publicUrlData.publicUrl);
+      setCurrentReportFilename(fileName);
+      setSendModalOpen(true);
+      toast.success("Rapor e-posta gönderimi için hazır.");
+    } catch (e: any) {
+      console.error("ADEP report prepare error:", e);
+      toast.error("Rapor e-posta için hazırlanamadı", {
+        description: e.message || "Bilinmeyen hata",
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
 
   // ------------------------------------
   // Render step content
@@ -767,6 +828,16 @@ export default function ADEPWizard() {
                   >
                     <Download className="h-4 w-4" />
                     PDF İndir
+                  </Button>
+                  <Button
+                    size="lg"
+                    variant="secondary"
+                    className="gap-2"
+                    disabled={saving || !planId}
+                    onClick={generateADEPReportAndOpenEmail}
+                  >
+                    <Share2 className="h-4 w-4" />
+                    PDF Oluştur ve Gönder
                   </Button>
                 </div>
 
@@ -1129,6 +1200,15 @@ export default function ADEPWizard() {
           </Button>
         )}
       </div>
+
+      <SendReportModal
+        open={sendModalOpen}
+        onOpenChange={setSendModalOpen}
+        reportType="adep"
+        reportUrl={currentReportUrl}
+        reportFilename={currentReportFilename}
+        companyName={planRow.company_name || "Firma"}
+      />
     </div>
   );
 }

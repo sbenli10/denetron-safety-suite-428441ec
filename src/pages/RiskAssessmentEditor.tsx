@@ -27,6 +27,7 @@ import {
   HelpCircle,
   Sparkles,
   Check,
+  Share2,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -69,6 +70,7 @@ import { format } from "date-fns";
 import { tr } from "date-fns/locale";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
+import { SendReportModal } from "@/components/SendReportModal";
 import * as XLSX from "xlsx";
 import {
   Dialog,
@@ -85,7 +87,10 @@ let scrollLock = 0;
 
 export default function RiskAssessmentEditor() {
   const { user } = useAuth();
-  
+  // E-posta modal için state'ler
+  const [sendModalOpen, setSendModalOpen] = useState(false);
+  const [currentReportUrl, setCurrentReportUrl] = useState("");
+  const [currentReportFilename, setCurrentReportFilename] = useState("");
   // State Management
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -2470,6 +2475,212 @@ useLayoutEffect(() => {
     toast.error("PDF oluşturma hatası");
   }
 };
+
+// PDF export fonksiyonundan sonra:
+// ✅ PDF Export ve Share Fonksiyonu
+const exportToPDFAndShare = async () => {
+  if (riskItems.length === 0) {
+    toast.error("Rapor oluşturmak için en az bir risk kaydı gerekli");
+    return;
+  }
+
+  try {
+    setSaving(true);
+    toast.info("📄 PDF raporu oluşturuluyor...");
+
+    // ✅ 1. PDF BLOB OLUŞTUR (Mevcut exportToPDF fonksiyonundan al)
+    const doc = new jsPDF({
+      orientation: "landscape",
+      unit: "mm",
+      format: "a4",
+    });
+
+    addInterFontsToJsPDF(doc);
+    doc.setFont("Inter", "normal");
+
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+
+    // Header
+    doc.setFillColor(29, 78, 216);
+    doc.rect(0, 0, pageWidth, 25, "F");
+
+    doc.setFont("Inter", "bold");
+    doc.setFontSize(16);
+    doc.setTextColor(255, 255, 255);
+    doc.text("RİSK ANALİZ TABLOSU", pageWidth / 2, 12, { align: "center" });
+
+    doc.setFontSize(9);
+    doc.setFont("Inter", "normal");
+    doc.text(
+      `Firma: ${companies.find((c) => c.id === assessment.company_id)?.name || "—"}`,
+      14,
+      20
+    );
+    doc.text(
+      `Tarih: ${format(new Date(), "dd MMMM yyyy", { locale: tr })}`,
+      pageWidth - 14,
+      20,
+      { align: "right" }
+    );
+
+    // Stats
+    const stats = {
+      total: riskItems.length,
+      critical: riskItems.filter(
+        (i) => i.risk_class_1 === "Yüksek" || i.risk_class_1 === "Çok Yüksek"
+      ).length,
+      residual_safe: riskItems.filter(
+        (i) => i.risk_class_2 === "Kabul Edilebilir" || i.risk_class_2 === "Olası"
+      ).length,
+    };
+
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(8);
+    doc.text(
+      `Toplam: ${stats.total} | Kritik: ${stats.critical} | Kalıntı Risk Güvenli: ${stats.residual_safe}`,
+      50,
+      42
+    );
+
+    // Table
+    const tableData = riskItems.map((item, idx) => [
+      String(idx + 1).padStart(2, "0"),
+      item.department || "—",
+      item.hazard || "—",
+      item.risk || "—",
+      item.affected_people || "—",
+      item.probability_1.toString(),
+      item.frequency_1.toString(),
+      item.severity_1.toString(),
+      item.score_1.toString(),
+      getRiskClassLabel(item.risk_class_1),
+      item.proposed_controls || "—",
+      item.probability_2.toString(),
+      item.frequency_2.toString(),
+      item.severity_2.toString(),
+      item.score_2.toString(),
+      getRiskClassLabel(item.risk_class_2),
+    ]);
+
+    (doc as any).autoTable({
+      head: [
+        [
+          "No",
+          "Birim",
+          "Tehlike",
+          "Risk",
+          "Etkilenen",
+          "O1",
+          "F1",
+          "Ş1",
+          "Skor",
+          "Risk Sınıfı",
+          "Önlemler",
+          "O2",
+          "F2",
+          "Ş2",
+          "Skor",
+          "Kalıntı Risk",
+        ],
+      ],
+      body: tableData,
+      startY: 50,
+      styles: { fontSize: 7, cellPadding: 1.5, font: "Inter" },
+      headStyles: {
+        fillColor: [59, 130, 246],
+        textColor: [255, 255, 255],
+        fontStyle: "bold",
+      },
+      columnStyles: {
+        0: { cellWidth: 8 },
+        1: { cellWidth: 18 },
+        2: { cellWidth: 25 },
+        3: { cellWidth: 25 },
+        4: { cellWidth: 15 },
+        5: { cellWidth: 8 },
+        6: { cellWidth: 8 },
+        7: { cellWidth: 8 },
+        8: { cellWidth: 10 },
+        9: { cellWidth: 15 },
+        10: { cellWidth: 35 },
+        11: { cellWidth: 8 },
+        12: { cellWidth: 8 },
+        13: { cellWidth: 8 },
+        14: { cellWidth: 10 },
+        15: { cellWidth: 15 },
+      },
+      margin: { left: 8, right: 8 },
+      tableWidth: "auto",
+    });
+
+    // Footer
+    doc.setPage(doc.internal.pages.length - 1);
+    doc.setFontSize(7);
+    doc.setFont("Inter", "italic");
+    doc.text(
+      `Bu rapor Denetron İSG Yazılımı ile oluşturulmuştur.`,
+      pageWidth / 2,
+      pageHeight - 8,
+      { align: "center" }
+    );
+
+    const pdfBlob = doc.output("blob");
+
+    // ✅ 2. SUPABASE STORAGE'A YÜKLE
+    const fileName = `risk-assessment-${assessment.id}.pdf`;
+    const storagePath = `risk-reports/${user?.id}/${fileName}`;
+
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from("reports")
+      .upload(storagePath, pdfBlob, {
+        contentType: "application/pdf",
+        upsert: true,
+      });
+
+    if (uploadError) {
+      console.error("❌ Storage upload error:", uploadError);
+      toast.error("Dosya yüklenemedi");
+      return;
+    }
+
+    // ✅ 3. PUBLIC URL AL
+    const { data: publicUrlData } = supabase.storage
+      .from("reports")
+      .getPublicUrl(uploadData.path);
+
+    const reportUrl = publicUrlData.publicUrl;
+
+    // ✅ 4. LOCAL İNDİR
+    doc.save(fileName);
+    toast.success("✅ PDF indirildi");
+
+    // ✅ 5. E-POSTA MODAL AÇ
+    setCurrentReportUrl(reportUrl);
+    setCurrentReportFilename(fileName);
+    setSendModalOpen(true);
+  } catch (error: any) {
+    console.error("❌ PDF export error:", error);
+    toast.error(`PDF oluşturulamadı: ${error.message}`);
+  } finally {
+    setSaving(false);
+  }
+};
+// Buton ekle:
+<Button onClick={exportToPDFAndShare} className="gap-2">
+  <Share2 className="h-4 w-4" />
+  PDF Oluştur ve Gönder
+</Button>
+{/* Modal ekle */}
+  <SendReportModal
+    open={sendModalOpen}
+    onOpenChange={setSendModalOpen}
+    reportType="risk_assessment"
+    reportUrl={currentReportUrl}
+    reportFilename={`Risk_Raporu_${companies.find((c) => c.id === assessment.company_id)?.name || "Firma"}.pdf`}
+    companyName={companies.find((c) => c.id === assessment.company_id)?.name || "Firma"}
+  />
+
 
   // ========================
   // EXCEL EXPORT

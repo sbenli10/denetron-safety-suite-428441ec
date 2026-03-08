@@ -18,6 +18,7 @@ import NotificationCenter from "@/pages/NotificationCenter";
 import AuthCallback from '@/pages/AuthCallback';
 import Index from '@/pages/Index';
 import ISGBotDeleted from "./pages/ISGBotDeleted";
+import EmailHistory from "@/pages/EmailHistory";
 
 // ============================================
 // CORE PAGES
@@ -170,7 +171,7 @@ const App = () => (
                           <Route path="/profile" element={<Profile />} />
                           <Route path="/settings" element={<Settings />} />
                           <Route path="/notifications" element={<NotificationCenter />} />
-
+                          <Route path="/email-history" element={<EmailHistory />} />
                           {/* ============================================ */}
                           {/* RISK ASSESSMENTS */}
                           {/* ============================================ */}

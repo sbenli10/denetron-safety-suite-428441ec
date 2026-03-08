@@ -2563,7 +2563,7 @@ const exportToPDFAndShare = async () => {
       getRiskClassLabel(item.risk_class_2),
     ]);
 
-    (doc as any).autoTable({
+    autoTable(doc, {
       head: [
         [
           "No",

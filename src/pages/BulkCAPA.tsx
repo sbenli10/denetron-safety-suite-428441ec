@@ -1574,6 +1574,9 @@ const handleSaveAndExport = async () => {
                 Fotoğraf yükle → "AI ile Analiz Et" tıkla → Tüm alanlar
                 otomatik doldurulacak
               </p>
+               <p className="text-xs text-blue-600 leading-relaxed mt-1">
+                Yapay Zeka hata yapabilir. Önemli bilgileri kontrol edin.
+              </p>
             </div>
           </div>
 

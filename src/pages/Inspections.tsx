@@ -1,4 +1,4 @@
-//src\pages\Inspections.tsx
+﻿//src\pages\Inspections.tsx
 import { useState, useEffect } from "react";
 import {
   Search,
@@ -282,9 +282,13 @@ export default function Inspections() {
       if (error) throw error;
       if (!data?.file_url) return;
 
-      const reportKind = (data as any)?.content?.report_kind === "dof" ? "dof" : "inspection";
+      const reportKind =
+        (data as any)?.content?.report_kind === "dof" || data.export_format === "docx"
+          ? "dof"
+          : "inspection";
       const fallbackExt = data.export_format === "docx" ? "docx" : "pdf";
-      const title = data.title || `Rapor.${fallbackExt}`;
+      const baseTitle = data.title || "Rapor";
+      const title = baseTitle.includes(".") ? baseTitle : `${baseTitle}.${fallbackExt}`;
 
       setLinkedReport({
         url: data.file_url,
@@ -302,6 +306,34 @@ export default function Inspections() {
     setSelectedInspection(inspection);
     setDetailsOpen(true);
     await loadLinkedReport(inspection.id);
+  };
+
+  const openLinkedReport = () => {
+    if (!linkedReport?.url) return;
+    window.open(linkedReport.url, "_blank", "noopener,noreferrer");
+  };
+
+  const downloadLinkedReport = async () => {
+    if (!linkedReport?.url) return;
+    try {
+      const response = await fetch(linkedReport.url);
+      if (!response.ok) throw new Error("Rapor indirilemedi");
+      const blob = await response.blob();
+      const ext = linkedReport.kind === "dof" ? "docx" : "pdf";
+      const filename = linkedReport.filename.includes(".")
+        ? linkedReport.filename
+        : `${linkedReport.filename}.${ext}`;
+      const objectUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = objectUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(objectUrl);
+    } catch (error: any) {
+      toast.error(error?.message || "Rapor indirilemedi");
+    }
   };
   const handleOpenShareModal = async () => {
     if (!user || !selectedInspection) return;
@@ -779,11 +811,11 @@ export default function Inspections() {
         <div className={`fixed inset-0 z-50 flex items-center justify-center p-4 transition-all ${
           detailsOpen ? "bg-black/50 backdrop-blur-sm" : "bg-black/0 pointer-events-none"
         }`}>
-          <div className={`glass-card rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto border border-primary/20 transition-all ${
+          <div className={`glass-card rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto border border-primary/30 shadow-2xl bg-gradient-to-b from-card to-card/90 transition-all ${
             detailsOpen ? "scale-100 opacity-100" : "scale-95 opacity-0"
           }`}>
             {/* HEADER */}
-            <div className="sticky top-0 bg-gradient-to-r from-primary to-primary/80 p-6 flex items-center justify-between z-10">
+            <div className="sticky top-0 bg-gradient-to-r from-primary/90 via-primary to-primary/80 p-6 md:p-7 flex items-center justify-between z-10 border-b border-primary-foreground/10">
               <div>
                 <h2 className="text-xl font-bold text-primary-foreground flex items-center gap-2">
                   📋 Denetim Detayları
@@ -800,9 +832,9 @@ export default function Inspections() {
               </button>
             </div>
 
-            <div className="p-6 space-y-6">
+            <div className="p-6 md:p-8 space-y-6">
               {/* STATUS & RISK */}
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className={`p-4 rounded-lg border ${statusConfig[selectedInspection.status].color}`}>
                   <p className="text-xs text-muted-foreground mb-1">Durum</p>
                   <p className="font-bold">{statusConfig[selectedInspection.status].label}</p>
@@ -814,7 +846,7 @@ export default function Inspections() {
               </div>
 
               {/* INFO GRID */}
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="glass-card p-4 border border-border/50 space-y-1">
                   <p className="text-xs text-muted-foreground flex items-center gap-2">
                     <MapPin className="h-4 w-4" /> Konum
@@ -859,22 +891,23 @@ export default function Inspections() {
 
 
               {/* LINKED REPORT */}
-              <div className="glass-card p-4 border border-border/50 space-y-2">
+              <div className="glass-card p-4 border border-border/50 space-y-3 bg-card/60 rounded-xl">
                 <p className="text-sm font-semibold flex items-center gap-2">
                   <FileText className="h-4 w-4" /> Oluşturulan Rapor
                 </p>
                 {loadingLinkedReport ? (
                   <p className="text-sm text-muted-foreground">Rapor bağlantısı kontrol ediliyor...</p>
                 ) : linkedReport?.url ? (
-                  <div className="flex items-center justify-between gap-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                     <p className="text-sm text-muted-foreground truncate">{linkedReport.filename}</p>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => window.open(linkedReport.url, "_blank")}
-                    >
-                      Raporu Aç
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button size="sm" variant="outline" onClick={openLinkedReport}>
+                        Raporu Aç
+                      </Button>
+                      <Button size="sm" onClick={downloadLinkedReport}>
+                        <Download className="h-4 w-4 mr-1" /> İndir
+                      </Button>
+                    </div>
                   </div>
                 ) : (
                   <p className="text-sm text-muted-foreground">Bu denetime bağlı rapor bulunamadı.</p>
@@ -901,21 +934,30 @@ export default function Inspections() {
               )}
 
               {/* ACTIONS */}
-              <div className="flex gap-2 pt-4 border-t border-border">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-4 border-t border-border/60">
                 <Button
                   variant="outline"
-                  className="flex-1 gap-2"
-                  onClick={() => {
-                    window.open(selectedInspection.media_urls?.[0], "_blank");
-                  }}
-                  disabled={!selectedInspection.media_urls?.[0]}
+                  className="gap-2"
+                  onClick={openLinkedReport}
+                  disabled={!linkedReport?.url}
+                >
+                  <Eye className="h-4 w-4" />
+                  Raporu Aç
+                </Button>
+
+                <Button
+                  variant="outline"
+                  className="gap-2"
+                  onClick={downloadLinkedReport}
+                  disabled={!linkedReport?.url}
                 >
                   <Download className="h-4 w-4" />
-                  İndir
+                  Raporu İndir
                 </Button>
+
                 <Button
                   variant="outline"
-                  className="flex-1 gap-2"
+                  className="gap-2"
                   onClick={handleOpenShareModal}
                   disabled={sharePreparing}
                 >
@@ -925,16 +967,6 @@ export default function Inspections() {
                     <Share2 className="h-4 w-4" />
                   )}
                   E-posta Gönder
-                </Button>
-                <Button
-                  variant="ghost"
-                  className="flex-1 gap-2 text-destructive hover:text-destructive"
-                  onClick={() => {
-                    handleDeleteInspection(selectedInspection.id);
-                  }}
-                >
-                  <Trash2 className="h-4 w-4" />
-                  Sil
                 </Button>
               </div>
 

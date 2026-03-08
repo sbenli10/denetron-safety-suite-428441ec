@@ -106,7 +106,7 @@ serve(async (req: Request) => {
         Authorization: `Bearer ${RESEND_API_KEY}`,
       },
       body: JSON.stringify({
-        from: `Denetron İSG <${payload.sender_email || "noreply@denetron.app"}>`,
+        from: `Denetron İSG <${payload.sender_email || "noreply@denetron.me"}>`,
         to: [payload.recipient_email],
         subject: emailSubject,
         html: emailBody,

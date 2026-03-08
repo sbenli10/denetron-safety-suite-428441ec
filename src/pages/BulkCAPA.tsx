@@ -47,7 +47,7 @@ import {
 } from "docx";
 import { saveAs } from "file-saver";
 
-// ✅ INTERFACE DEFINITIONS
+// Ã¢Å“â€¦ INTERFACE DEFINITIONS
 // HazardEntry interface'ine ekle:
 interface HazardEntry {
   id: string;
@@ -55,16 +55,16 @@ interface HazardEntry {
   riskDefinition: string;
   correctiveAction: string;
   preventiveAction: string;
-  importance_level: "Normal" | "Yüksek" | "Kritik";
+  importance_level: "Normal" | "YÃƒÂ¼ksek" | "Kritik";
   termin_date: string;
   related_department: string;
-  notification_method: string; // ✅ YENİ ALAN
+  notification_method: string; // Ã¢Å“â€¦ YENÃ„Â° ALAN
   media_urls: string[];
   ai_analyzed: boolean;
 }
 
 interface OrganizationData {
-  id: string; // ✅ EKLE
+  id: string; // Ã¢Å“â€¦ EKLE
   name: string;
   slug: string;
 }
@@ -74,30 +74,30 @@ interface AIAnalysisResult {
   riskDefinition: string;
   correctiveAction: string;
   preventiveAction: string;
-  importance_level: "Normal" | "Yüksek" | "Kritik";
+  importance_level: "Normal" | "YÃƒÂ¼ksek" | "Kritik";
 }
 
-// ✅ CONSTANTS
+// Ã¢Å“â€¦ CONSTANTS
 const DEPARTMENTS = [
-  "İşveren",
-  "Bakım",
-  "Üretim",
-  "İnsan Kaynakları",
+  "Ã„Â°Ã…Å¸veren",
+  "BakÃ„Â±m",
+  "ÃƒÅ“retim",
+  "Ã„Â°nsan KaynaklarÃ„Â±",
   "Lojistik",
   "Kalite",
-  "Satış",
+  "SatÃ„Â±Ã…Å¸",
   "Muhasebe",
-  "Diğer",
+  "DiÃ„Å¸er",
 ];
 
 
 
 const IMPORTANCE_LEVELS = [
-  { value: "Normal", label: "🟢 Normal", color: "bg-success/10 text-success" },
-  { value: "Yüksek", label: "🟡 Yüksek", color: "bg-warning/10 text-warning" },
+  { value: "Normal", label: "Ã°Å¸Å¸Â¢ Normal", color: "bg-success/10 text-success" },
+  { value: "YÃƒÂ¼ksek", label: "Ã°Å¸Å¸Â¡ YÃƒÂ¼ksek", color: "bg-warning/10 text-warning" },
   {
     value: "Kritik",
-    label: "🔴 Kritik",
+    label: "Ã°Å¸â€Â´ Kritik",
     color: "bg-destructive/10 text-destructive",
   },
 ];
@@ -110,14 +110,14 @@ const safeJsonParse = (jsonText: string): AIAnalysisResult | null => {
 
     let cleaned = jsonText.trim();
 
-    // ✅ ```json``` markdownı kaldır
+    // Ã¢Å“â€¦ ```json``` markdownÃ„Â± kaldÃ„Â±r
     cleaned = cleaned.replace(/^```json\n?/i, "").replace(/\n?```$/i, "");
     cleaned = cleaned.replace(/^```\n?/i, "").replace(/\n?```$/i, "");
 
-    // ✅ KESIK STRING'İ KONTROL ET
-    // Eğer son karakter tırnak değilse (kesik string), tırnak ekle
+    // Ã¢Å“â€¦ KESIK STRING'Ã„Â° KONTROL ET
+    // EÃ„Å¸er son karakter tÃ„Â±rnak deÃ„Å¸ilse (kesik string), tÃ„Â±rnak ekle
     if (!cleaned.trim().endsWith("}")) {
-      // Son field kesik kalmış, kapat
+      // Son field kesik kalmÃ„Â±Ã…Å¸, kapat
       if (cleaned.includes('"') && !cleaned.trim().endsWith('"')) {
         cleaned = cleaned.trim() + '" }';
       } else {
@@ -125,7 +125,7 @@ const safeJsonParse = (jsonText: string): AIAnalysisResult | null => {
       }
     }
 
-    // Smart quotes düzelt
+    // Smart quotes dÃƒÂ¼zelt
     cleaned = cleaned
       .replace(/[\u2018\u2019]/g, "'")
       .replace(/[\u201C\u201D]/g, '"')
@@ -143,42 +143,42 @@ const safeJsonParse = (jsonText: string): AIAnalysisResult | null => {
     // Trailing comma
     cleaned = cleaned.replace(/,(\s*[}\]])/g, "$1");
 
-    console.log("🔧 Cleaned JSON:", cleaned.substring(0, 300));
+    console.log("Ã°Å¸â€Â§ Cleaned JSON:", cleaned.substring(0, 300));
 
     const parsed = JSON.parse(cleaned);
 
     return {
-      description: parsed.description || "Açıklama alınamadı",
-      riskDefinition: parsed.riskDefinition || "Risk tanımı alınamadı",
-      correctiveAction: parsed.correctiveAction || "- İşlem belirtilmedi",
-      preventiveAction: parsed.preventiveAction || "- Önlem belirtilmedi",
+      description: parsed.description || "AÃƒÂ§Ã„Â±klama alÃ„Â±namadÃ„Â±",
+      riskDefinition: parsed.riskDefinition || "Risk tanÃ„Â±mÃ„Â± alÃ„Â±namadÃ„Â±",
+      correctiveAction: parsed.correctiveAction || "- Ã„Â°Ã…Å¸lem belirtilmedi",
+      preventiveAction: parsed.preventiveAction || "- Ãƒâ€“nlem belirtilmedi",
       importance_level: parsed.importance_level || "Normal",
     } as AIAnalysisResult;
   } catch (error) {
-    console.error("❌ JSON Parse Error:", error);
+    console.error("Ã¢ÂÅ’ JSON Parse Error:", error);
     console.error("Raw text:", jsonText.substring(0, 300));
     return null;
   }
 };
 
-// ✅ DATA URL TO UINT8ARRAY (Buffer yerine)
+// Ã¢Å“â€¦ DATA URL TO UINT8ARRAY (Buffer yerine)
 const dataUrlToBuffer = (dataUrl: string): Uint8Array => {
   try {
     if (!dataUrl || !dataUrl.includes(",")) {
       throw new Error("Invalid data URL format");
     }
 
-    // Base64 kısmını al
+    // Base64 kÃ„Â±smÃ„Â±nÃ„Â± al
     const base64Data = dataUrl.split(",")[1];
     
     if (!base64Data) {
       throw new Error("No base64 data found");
     }
 
-    // ✅ atob ile decode et
+    // Ã¢Å“â€¦ atob ile decode et
     const binaryString = atob(base64Data);
     
-    // ✅ Uint8Array'e çevir
+    // Ã¢Å“â€¦ Uint8Array'e ÃƒÂ§evir
     const bytes = new Uint8Array(binaryString.length);
     for (let i = 0; i < binaryString.length; i++) {
       bytes[i] = binaryString.charCodeAt(i);
@@ -190,12 +190,12 @@ const dataUrlToBuffer = (dataUrl: string): Uint8Array => {
 
     return bytes;
   } catch (error) {
-    console.error("❌ Buffer conversion error:", error);
+    console.error("Ã¢ÂÅ’ Buffer conversion error:", error);
     throw error;
   }
 };
 
-// ✅ GENERATE WORD DOCUMENT - SUPABASE STORAGE'A YÜKLE
+// Ã¢Å“â€¦ GENERATE WORD DOCUMENT - SUPABASE STORAGE'A YÃƒÅ“KLE
 const generateWordDocument = async (
   entries: HazardEntry[],
   siteName: string,
@@ -213,7 +213,7 @@ const generateWordDocument = async (
 
     const sections: any[] = [];
 
-    // ✅ HEADER SECTION
+    // Ã¢Å“â€¦ HEADER SECTION
     sections.push(
       new Table({
         width: { size: 100, type: WidthType.PERCENTAGE },
@@ -225,7 +225,7 @@ const generateWordDocument = async (
                   new Paragraph({
                     children: [
                       new TextRun({
-                        text: "DÜZELTİCİ VE ÖNLEYİCİ FAALIYET FORMU (DÖF)",
+                        text: "DÃƒÅ“ZELTÃ„Â°CÃ„Â° VE Ãƒâ€“NLEYÃ„Â°CÃ„Â° FAALIYET FORMU (DÃƒâ€“F)",
                         bold: true,
                         size: 24,
                       }),
@@ -258,7 +258,7 @@ const generateWordDocument = async (
 
     sections.push(new Paragraph({ children: [new TextRun("")] }));
 
-    // ✅ INFO TABLE (Firma, Saha, Tarih, vb.)
+    // Ã¢Å“â€¦ INFO TABLE (Firma, Saha, Tarih, vb.)
     sections.push(
       new Table({
         width: { size: 100, type: WidthType.PERCENTAGE },
@@ -271,7 +271,7 @@ const generateWordDocument = async (
                   new Paragraph({
                     children: [
                       new TextRun({
-                        text: "FİRMA ADI",
+                        text: "FÃ„Â°RMA ADI",
                         bold: true,
                         size: 20,
                       }),
@@ -335,7 +335,7 @@ const generateWordDocument = async (
                   new Paragraph({
                     children: [
                       new TextRun({
-                        text: "TARİH",
+                        text: "TARÃ„Â°H",
                         bold: true,
                         size: 20,
                       }),
@@ -367,7 +367,7 @@ const generateWordDocument = async (
                   new Paragraph({
                     children: [
                       new TextRun({
-                        text: "İSG UZMANI",
+                        text: "Ã„Â°SG UZMANI",
                         bold: true,
                         size: 20,
                       }),
@@ -423,7 +423,7 @@ const generateWordDocument = async (
               }),
             ],
           }),
-          // ✅ BİLDİRİM ŞEKLİ ROW
+          // Ã¢Å“â€¦ BÃ„Â°LDÃ„Â°RÃ„Â°M Ã…Å¾EKLÃ„Â° ROW
           new TableRow({
             children: [
               new TableCell({
@@ -432,7 +432,7 @@ const generateWordDocument = async (
                   new Paragraph({
                     children: [
                       new TextRun({
-                        text: "BİLDİRİM ŞEKLİ",
+                        text: "BÃ„Â°LDÃ„Â°RÃ„Â°M Ã…Å¾EKLÃ„Â°",
                         bold: true,
                         size: 20,
                       }),
@@ -463,16 +463,16 @@ const generateWordDocument = async (
     sections.push(new Paragraph({ children: [new TextRun("")] }));
     sections.push(new Paragraph({ children: [new TextRun("")] }));
 
-    // ✅ FINDINGS WITH IMAGES
+    // Ã¢Å“â€¦ FINDINGS WITH IMAGES
     for (let index = 0; index < entries.length; index++) {
       const entry = entries[index];
 
-      // MADDE BAŞLIĞI
+      // MADDE BAÃ…Å¾LIÃ„Å¾I
       sections.push(
         new Paragraph({
           children: [
             new TextRun({
-              text: `MADDE ${index + 1} – UYGUNSUZLUK / RİSK`,
+              text: `MADDE ${index + 1} Ã¢â‚¬â€œ UYGUNSUZLUK / RÃ„Â°SK`,
               bold: true,
               size: 24,
               color: "FFFFFF",
@@ -486,7 +486,7 @@ const generateWordDocument = async (
 
       const findingTableRows: TableRow[] = [];
 
-      // ROW 1: BULGU AÇIKLAMASI
+      // ROW 1: BULGU AÃƒâ€¡IKLAMASI
       findingTableRows.push(
         new TableRow({
           children: [
@@ -496,7 +496,7 @@ const generateWordDocument = async (
                 new Paragraph({
                   children: [
                     new TextRun({
-                      text: "BULGU AÇIKLAMASI",
+                      text: "BULGU AÃƒâ€¡IKLAMASI",
                       bold: true,
                       size: 18,
                     }),
@@ -526,7 +526,7 @@ const generateWordDocument = async (
         })
       );
 
-      // ROW 2: RİSK TANIMI
+      // ROW 2: RÃ„Â°SK TANIMI
       findingTableRows.push(
         new TableRow({
           children: [
@@ -536,7 +536,7 @@ const generateWordDocument = async (
                 new Paragraph({
                   children: [
                     new TextRun({
-                      text: "RİSK TANIMI",
+                      text: "RÃ„Â°SK TANIMI",
                       bold: true,
                       size: 18,
                     }),
@@ -566,7 +566,7 @@ const generateWordDocument = async (
         })
       );
 
-      // ROW 3: DÜZELTICI FAALIYET
+      // ROW 3: DÃƒÅ“ZELTICI FAALIYET
       findingTableRows.push(
         new TableRow({
           children: [
@@ -576,7 +576,7 @@ const generateWordDocument = async (
                 new Paragraph({
                   children: [
                     new TextRun({
-                      text: "DÜZELTICI FAALIYET",
+                      text: "DÃƒÅ“ZELTICI FAALIYET",
                       bold: true,
                       size: 18,
                     }),
@@ -606,7 +606,7 @@ const generateWordDocument = async (
         })
       );
 
-      // ROW 4: ÖNLEYICI FAALIYET
+      // ROW 4: Ãƒâ€“NLEYICI FAALIYET
       findingTableRows.push(
         new TableRow({
           children: [
@@ -616,7 +616,7 @@ const generateWordDocument = async (
                 new Paragraph({
                   children: [
                     new TextRun({
-                      text: "ÖNLEYICI FAALIYET",
+                      text: "Ãƒâ€“NLEYICI FAALIYET",
                       bold: true,
                       size: 18,
                     }),
@@ -646,7 +646,7 @@ const generateWordDocument = async (
         })
       );
 
-      // ROW 5: BÖLÜM
+      // ROW 5: BÃƒâ€“LÃƒÅ“M
       findingTableRows.push(
         new TableRow({
           children: [
@@ -656,7 +656,7 @@ const generateWordDocument = async (
                 new Paragraph({
                   children: [
                     new TextRun({
-                      text: "BÖLÜM",
+                      text: "BÃƒâ€“LÃƒÅ“M",
                       bold: true,
                       size: 18,
                     }),
@@ -686,7 +686,7 @@ const generateWordDocument = async (
         })
       );
 
-      // ROW 6: ÖNEMLİLİK
+      // ROW 6: Ãƒâ€“NEMLÃ„Â°LÃ„Â°K
       findingTableRows.push(
         new TableRow({
           children: [
@@ -696,7 +696,7 @@ const generateWordDocument = async (
                 new Paragraph({
                   children: [
                     new TextRun({
-                      text: "ÖNEMLİLİK",
+                      text: "Ãƒâ€“NEMLÃ„Â°LÃ„Â°K",
                       bold: true,
                       size: 18,
                     }),
@@ -719,7 +719,7 @@ const generateWordDocument = async (
                       color:
                         entry.importance_level === "Kritik"
                           ? "FF0000"
-                          : entry.importance_level === "Yüksek"
+                          : entry.importance_level === "YÃƒÂ¼ksek"
                           ? "FFA500"
                           : "008000",
                     }),
@@ -733,7 +733,7 @@ const generateWordDocument = async (
         })
       );
 
-      // ROW 7: TERMİN
+      // ROW 7: TERMÃ„Â°N
       findingTableRows.push(
         new TableRow({
           children: [
@@ -743,7 +743,7 @@ const generateWordDocument = async (
                 new Paragraph({
                   children: [
                     new TextRun({
-                      text: "TERMİN",
+                      text: "TERMÃ„Â°N",
                       bold: true,
                       size: 18,
                     }),
@@ -775,7 +775,7 @@ const generateWordDocument = async (
         })
       );
 
-      // ✅ FOTOĞRAFLAR
+      // Ã¢Å“â€¦ FOTOÃ„Å¾RAFLAR
       if (entry.media_urls && entry.media_urls.length > 0) {
         findingTableRows.push(
           new TableRow({
@@ -786,7 +786,7 @@ const generateWordDocument = async (
                   new Paragraph({
                     children: [
                       new TextRun({
-                        text: `FOTOĞRAFLAR (${entry.media_urls.length})`,
+                        text: `FOTOÃ„Å¾RAFLAR (${entry.media_urls.length})`,
                         bold: true,
                         size: 20,
                         color: "FFFFFF",
@@ -844,7 +844,7 @@ const generateWordDocument = async (
                       new Paragraph({
                         children: [
                           new TextRun({
-                            text: `Fotoğraf ${imgIdx + 1}/${entry.media_urls.length}`,
+                            text: `FotoÃ„Å¸raf ${imgIdx + 1}/${entry.media_urls.length}`,
                             italics: true,
                             size: 18,
                             color: "666666",
@@ -861,7 +861,7 @@ const generateWordDocument = async (
               })
             );
           } catch (err) {
-            console.error(`❌ Image error at index ${imgIdx}:`, err);
+            console.error(`Ã¢ÂÅ’ Image error at index ${imgIdx}:`, err);
           }
         }
       }
@@ -881,7 +881,7 @@ const generateWordDocument = async (
       );
     }
 
-    // ✅ Create document
+    // Ã¢Å“â€¦ Create document
     const doc = new Document({
       sections: [
         {
@@ -890,17 +890,17 @@ const generateWordDocument = async (
       ],
     });
 
-    // ✅ Generate blob and return
+    // Ã¢Å“â€¦ Generate blob and return
     const blob = await Packer.toBlob(doc);
     return blob;
 
   } catch (error: any) {
-    console.error("❌ Word generation error:", error);
-    throw error; // ✅ Hata fırlat, handleSaveAndExport yakalayacak
+    console.error("Ã¢ÂÅ’ Word generation error:", error);
+    throw error; // Ã¢Å“â€¦ Hata fÃ„Â±rlat, handleSaveAndExport yakalayacak
   }
 };
 
-// ✅ MAIN COMPONENT
+// Ã¢Å“â€¦ MAIN COMPONENT
 export default function BulkCAPA() {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -923,13 +923,13 @@ export default function BulkCAPA() {
     preventiveAction: "",
     importance_level: "Normal",
     termin_date: "",
-    related_department: "Diğer",
-    notification_method: "E-mail", // ✅ DEFAULT DEĞER
+    related_department: "DiÃ„Å¸er",
+    notification_method: "E-mail", // Ã¢Å“â€¦ DEFAULT DEÃ„Å¾ER
     media_urls: [],
     ai_analyzed: false,
   });
 
-  // ✅ AI IMAGE ANALYSIS
+  // Ã¢Å“â€¦ AI IMAGE ANALYSIS
   const analyzeImageWithAI = async (
     imageUrl: string
   ): Promise<AIAnalysisResult | null> => {
@@ -968,38 +968,38 @@ export default function BulkCAPA() {
         imageData = btoa(binary);
       }
 
-     const enhancedPrompt = `İşyeri güvenliği ve sağlığı (İSG) uzmanı olarak, görseldeki tehlikeleri analiz edin.
+     const enhancedPrompt = `Ã„Â°Ã…Å¸yeri gÃƒÂ¼venliÃ„Å¸i ve saÃ„Å¸lÃ„Â±Ã„Å¸Ã„Â± (Ã„Â°SG) uzmanÃ„Â± olarak, gÃƒÂ¶rseldeki tehlikeleri analiz edin.
 
-⚠️ KRITIK TALIMATLAR - KESIN OLARAK UYUN:
-- Yanıt SADECE GEÇERLI bir JSON objesi olmalı
-- JSON asla yarıda kesilmemeli - her zaman TAMAMLANMALI
-- Tüm tırnak işaretleri ve parantezler KAPATILMALI
-- Markdown YOK, kod blokları YOK, ekstra metin YOK
-- Yanıt { ile başlayıp } ile BİTMELİDİR
+Ã¢Å¡Â Ã¯Â¸Â KRITIK TALIMATLAR - KESIN OLARAK UYUN:
+- YanÃ„Â±t SADECE GEÃƒâ€¡ERLI bir JSON objesi olmalÃ„Â±
+- JSON asla yarÃ„Â±da kesilmemeli - her zaman TAMAMLANMALI
+- TÃƒÂ¼m tÃ„Â±rnak iÃ…Å¸aretleri ve parantezler KAPATILMALI
+- Markdown YOK, kod bloklarÃ„Â± YOK, ekstra metin YOK
+- YanÃ„Â±t { ile baÃ…Å¸layÃ„Â±p } ile BÃ„Â°TMELÃ„Â°DÃ„Â°R
 - "undefined" YAZILMAMALI
-- Tüm alanlar MUTLAKA doldurulmalı - boş bırakmayın
-- Türkçe ve NET cevaplar verin
-- UZUN ve DETAYLı cevaplar verin (en az 2-3 cümle her alan)
+- TÃƒÂ¼m alanlar MUTLAKA doldurulmalÃ„Â± - boÃ…Å¸ bÃ„Â±rakmayÃ„Â±n
+- TÃƒÂ¼rkÃƒÂ§e ve NET cevaplar verin
+- UZUN ve DETAYLÃ„Â± cevaplar verin (en az 2-3 cÃƒÂ¼mle her alan)
 
-EXACTLY şu yapı döndürün:
+EXACTLY Ã…Å¸u yapÃ„Â± dÃƒÂ¶ndÃƒÂ¼rÃƒÂ¼n:
 
 {
-  "description": "Açık, net ve profesyonel bulgu açıklaması (2-3 tam cümle Türkçe)",
-  "riskDefinition": "Riski açıkça tanımlayan, sonuçlarını vurgulayan açıklama (2-3 tam cümle Türkçe)",
-  "correctiveAction": "Hemen yapılması gereken faaliyetler:\n- Madde 1\n- Madde 2\n- Madde 3",
-  "preventiveAction": "İleride önlemek için alınacak faaliyetler:\n- Madde 1\n- Madde 2\n- Madde 3",
+  "description": "AÃƒÂ§Ã„Â±k, net ve profesyonel bulgu aÃƒÂ§Ã„Â±klamasÃ„Â± (2-3 tam cÃƒÂ¼mle TÃƒÂ¼rkÃƒÂ§e)",
+  "riskDefinition": "Riski aÃƒÂ§Ã„Â±kÃƒÂ§a tanÃ„Â±mlayan, sonuÃƒÂ§larÃ„Â±nÃ„Â± vurgulayan aÃƒÂ§Ã„Â±klama (2-3 tam cÃƒÂ¼mle TÃƒÂ¼rkÃƒÂ§e)",
+  "correctiveAction": "Hemen yapÃ„Â±lmasÃ„Â± gereken faaliyetler:\n- Madde 1\n- Madde 2\n- Madde 3",
+  "preventiveAction": "Ã„Â°leride ÃƒÂ¶nlemek iÃƒÂ§in alÃ„Â±nacak faaliyetler:\n- Madde 1\n- Madde 2\n- Madde 3",
   "importance_level": "Normal"
 }
 
-UYARI: Her alan MUTLAKA doldurulmalı. "undefined" veya boş değer YASAK!
+UYARI: Her alan MUTLAKA doldurulmalÃ„Â±. "undefined" veya boÃ…Å¸ deÃ„Å¸er YASAK!
 
-Eğer görüntüde İSG riski yoksa:
+EÃ„Å¸er gÃƒÂ¶rÃƒÂ¼ntÃƒÂ¼de Ã„Â°SG riski yoksa:
 
 {
-  "description": "Görüntüde belirgin bir iş güvenliği riski tespit edilmemiştir. Çalışma ortamı güvenli görünmektedir.",
-  "riskDefinition": "Acil bir risk bulunmamaktadır.",
-  "correctiveAction": "Uygulanacak özel faaliyet bulunmamaktadır.",
-  "preventiveAction": "Genel iş güvenliği uygulamalarına uyulmalıdır.",
+  "description": "GÃƒÂ¶rÃƒÂ¼ntÃƒÂ¼de belirgin bir iÃ…Å¸ gÃƒÂ¼venliÃ„Å¸i riski tespit edilmemiÃ…Å¸tir. Ãƒâ€¡alÃ„Â±Ã…Å¸ma ortamÃ„Â± gÃƒÂ¼venli gÃƒÂ¶rÃƒÂ¼nmektedir.",
+  "riskDefinition": "Acil bir risk bulunmamaktadÃ„Â±r.",
+  "correctiveAction": "Uygulanacak ÃƒÂ¶zel faaliyet bulunmamaktadÃ„Â±r.",
+  "preventiveAction": "Genel iÃ…Å¸ gÃƒÂ¼venliÃ„Å¸i uygulamalarÃ„Â±na uyulmalÃ„Â±dÃ„Â±r.",
   "importance_level": "Normal"
 }`;
 
@@ -1051,7 +1051,7 @@ Eğer görüntüde İSG riski yoksa:
         throw new Error("No text response from Gemini");
       }
 
-      console.log("📝 Raw response:", textContent.substring(0, 300));
+      console.log("Ã°Å¸â€œÂ Raw response:", textContent.substring(0, 300));
 
       const analysis = safeJsonParse(textContent);
 
@@ -1059,15 +1059,15 @@ Eğer görüntüde İSG riski yoksa:
         throw new Error("Could not parse AI response as JSON");
       }
 
-      console.log("✅ Successfully parsed:", analysis);
+      console.log("Ã¢Å“â€¦ Successfully parsed:", analysis);
       return analysis;
     } catch (error) {
-      console.error("❌ AI Analysis error:", error);
+      console.error("Ã¢ÂÅ’ AI Analysis error:", error);
       return null;
     }
   };
 
-  // ✅ FETCH ORGANIZATION DATA
+  // Ã¢Å“â€¦ FETCH ORGANIZATION DATA
   useEffect(() => {
     const fetchOrgData = async () => {
       if (!user) return;
@@ -1082,12 +1082,12 @@ Eğer görüntüde İSG riski yoksa:
         if (profile?.organization_id) {
           const { data: org } = await supabase
             .from("organizations")
-            .select("id, name, slug") // ✅ id EKLE
+            .select("id, name, slug") // Ã¢Å“â€¦ id EKLE
             .eq("id", profile.organization_id)
             .single();
 
           if (org) {
-            setOrgData(org); // ✅ Artık id var
+            setOrgData(org); // Ã¢Å“â€¦ ArtÃ„Â±k id var
           }
         }
       } catch (error) {
@@ -1099,17 +1099,17 @@ Eğer görüntüde İSG riski yoksa:
 
     fetchOrgData();
   }, [user]);
-  // ✅ AI ANALYSIS HANDLER
+  // Ã¢Å“â€¦ AI ANALYSIS HANDLER
   const handleAIAnalysis = async () => {
     if (newEntry.media_urls.length === 0) {
-      toast.error("Lütfen en az bir fotoğraf yükleyin");
+      toast.error("LÃƒÂ¼tfen en az bir fotoÃ„Å¸raf yÃƒÂ¼kleyin");
       return;
     }
 
     setAnalyzing(true);
 
     try {
-      toast.info("🤖 Fotoğraflar analiz ediliyor...");
+      toast.info("Ã°Å¸Â¤â€“ FotoÃ„Å¸raflar analiz ediliyor...");
 
       const analyses: AIAnalysisResult[] = [];
 
@@ -1122,7 +1122,7 @@ Eğer görüntüde İSG riski yoksa:
       }
 
       if (analyses.length === 0) {
-        throw new Error("Fotoğraflar analiz edilemedi");
+        throw new Error("FotoÃ„Å¸raflar analiz edilemedi");
       }
 
       const mergedAnalysis = mergeAnalyses(analyses);
@@ -1137,18 +1137,18 @@ Eğer görüntüde İSG riski yoksa:
         ai_analyzed: true,
       }));
 
-      toast.success("✅ Fotoğraflar başarıyla analiz edildi!");
+      toast.success("Ã¢Å“â€¦ FotoÃ„Å¸raflar baÃ…Å¸arÃ„Â±yla analiz edildi!");
     } catch (error: any) {
-      toast.error(`❌ AI Analizi başarısız: ${error.message}`);
+      toast.error(`Ã¢ÂÅ’ AI Analizi baÃ…Å¸arÃ„Â±sÃ„Â±z: ${error.message}`);
       console.error("Analysis error:", error);
     } finally {
       setAnalyzing(false);
     }
   };
 
-  // ✅ MERGE ANALYSES
+  // Ã¢Å“â€¦ MERGE ANALYSES
   const mergeAnalyses = (analyses: AIAnalysisResult[]): AIAnalysisResult => {
-    const importancePriority = { Kritik: 3, Yüksek: 2, Normal: 1 };
+    const importancePriority = { Kritik: 3, YÃƒÂ¼ksek: 2, Normal: 1 };
     const maxImportance = analyses.reduce((max, curr) => {
       const currPriority = importancePriority[curr.importance_level] || 0;
       const maxPriority = importancePriority[max.importance_level] || 0;
@@ -1170,7 +1170,7 @@ Eğer görüntüde İSG riski yoksa:
     };
   };
 
-  // ✅ DRAG & DROP
+  // Ã¢Å“â€¦ DRAG & DROP
   const handleDrag = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
@@ -1194,16 +1194,16 @@ Eğer görüntüde İSG riski yoksa:
 
   
 
-  // ✅ PROCESS FILES
+  // Ã¢Å“â€¦ PROCESS FILES
   const processFiles = (files: FileList) => {
     Array.from(files).forEach((file) => {
       if (!file.type.startsWith("image/")) {
-        toast.error("Lütfen sadece görüntü dosyası seçin");
+        toast.error("LÃƒÂ¼tfen sadece gÃƒÂ¶rÃƒÂ¼ntÃƒÂ¼ dosyasÃ„Â± seÃƒÂ§in");
         return;
       }
 
       if (file.size > 5 * 1024 * 1024) {
-        toast.error("Dosya boyutu 5MB'ı aşamaz");
+        toast.error("Dosya boyutu 5MB'Ã„Â± aÃ…Å¸amaz");
         return;
       }
 
@@ -1214,13 +1214,13 @@ Eğer görüntüde İSG riski yoksa:
           ...prev,
           media_urls: [...prev.media_urls, dataUrl],
         }));
-        toast.success("📷 Fotoğraf eklendi");
+        toast.success("Ã°Å¸â€œÂ· FotoÃ„Å¸raf eklendi");
       };
       reader.readAsDataURL(file);
     });
   };
 
-  // ✅ HANDLE IMAGE UPLOAD
+  // Ã¢Å“â€¦ HANDLE IMAGE UPLOAD
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
@@ -1230,7 +1230,7 @@ Eğer görüntüde İSG riski yoksa:
     }
   };
 
-  // ✅ REMOVE IMAGE
+  // Ã¢Å“â€¦ REMOVE IMAGE
   const handleRemoveImage = (index: number) => {
     setNewEntry((prev) => ({
       ...prev,
@@ -1239,7 +1239,7 @@ Eğer görüntüde İSG riski yoksa:
     }));
   };
 
-  // ✅ CREATE TABLE CELL
+  // Ã¢Å“â€¦ CREATE TABLE CELL
   const createCell = (text: string, isBold = false) => {
     return new TableCell({
       children: [
@@ -1258,30 +1258,30 @@ Eğer görüntüde İSG riski yoksa:
 
   
 
-  // ✅ ADD ENTRY
+  // Ã¢Å“â€¦ ADD ENTRY
   const handleAddEntry = () => {
     if (!newEntry.description.trim()) {
-      toast.error("Lütfen bulgu açıklaması girin");
+      toast.error("LÃƒÂ¼tfen bulgu aÃƒÂ§Ã„Â±klamasÃ„Â± girin");
       return;
     }
 
     if (!newEntry.riskDefinition.trim()) {
-      toast.error("Lütfen risk tanımını girin");
+      toast.error("LÃƒÂ¼tfen risk tanÃ„Â±mÃ„Â±nÃ„Â± girin");
       return;
     }
 
     if (!newEntry.correctiveAction.trim()) {
-      toast.error("Lütfen düzeltici faaliyeti girin");
+      toast.error("LÃƒÂ¼tfen dÃƒÂ¼zeltici faaliyeti girin");
       return;
     }
 
     if (!newEntry.preventiveAction.trim()) {
-      toast.error("Lütfen önleyici faaliyeti girin");
+      toast.error("LÃƒÂ¼tfen ÃƒÂ¶nleyici faaliyeti girin");
       return;
     }
 
     if (!newEntry.termin_date) {
-      toast.error("Lütfen termin tarihini seçin");
+      toast.error("LÃƒÂ¼tfen termin tarihini seÃƒÂ§in");
       return;
     }
 
@@ -1300,15 +1300,15 @@ Eğer görüntüde İSG riski yoksa:
       preventiveAction: "",
       importance_level: "Normal",
       termin_date: "",
-      related_department: "Diğer",
+      related_department: "DiÃ„Å¸er",
       notification_method: "E-mail", 
       media_urls: [],
       ai_analyzed: false,
     });
-    toast.success("✅ Bulgu eklendi");
+    toast.success("Ã¢Å“â€¦ Bulgu eklendi");
   };
 
-  // ✅ DELETE ENTRY
+  // Ã¢Å“â€¦ DELETE ENTRY
   const handleDeleteEntry = (id: string) => {
     setEntries(entries.filter((e) => e.id !== id));
     toast.info("Bulgu silindi");
@@ -1317,11 +1317,11 @@ Eğer görüntüde İSG riski yoksa:
 
 const handleSaveAndExport = async () => {
   if (!siteName.trim()) {
-    toast.error("Lütfen saha adını girin");
+    toast.error("LÃƒÂ¼tfen saha adÃ„Â±nÃ„Â± girin");
     return;
   }
   if (entries.length === 0) {
-    toast.error("Lütfen en az bir bulgu ekleyin");
+    toast.error("LÃƒÂ¼tfen en az bir bulgu ekleyin");
     return;
   }
 
@@ -1332,7 +1332,7 @@ const handleSaveAndExport = async () => {
     let reportFileName: string = "";
     let createdInspectionId: string | null = null;
 
-    // ✅ 1. DATABASE KAYITLARI
+    // Ã¢Å“â€¦ 1. DATABASE KAYITLARI
     if (user) {
       try {
         const { data: profile } = await supabase
@@ -1376,26 +1376,26 @@ const handleSaveAndExport = async () => {
                 priority:
                   entry.importance_level === "Kritik"
                     ? "critical"
-                    : entry.importance_level === "Yüksek"
+                    : entry.importance_level === "YÃƒÂ¼ksek"
                     ? "high"
                     : "medium",
                 notification_method: entry.notification_method,
               });
             }
-            toast.success("✅ Veriler veritabanına kaydedildi");
+            toast.success("Ã¢Å“â€¦ Veriler veritabanÃ„Â±na kaydedildi");
           }
         }
       } catch (dbError) {
-        console.warn("⚠️ Database save failed:", dbError);
-        toast.warning("⚠️ Veritabanı kaydı başarısız, Word rapor oluşturuluyor...");
+        console.warn("Ã¢Å¡Â Ã¯Â¸Â Database save failed:", dbError);
+        toast.warning("Ã¢Å¡Â Ã¯Â¸Â VeritabanÃ„Â± kaydÃ„Â± baÃ…Å¸arÃ„Â±sÃ„Â±z, Word rapor oluÃ…Å¸turuluyor...");
       }
     }
 
-    // ✅ 2. WORD DOKÜMANI OLUŞTUR
+    // Ã¢Å“â€¦ 2. WORD DOKÃƒÅ“MANI OLUÃ…Å¾TUR
     if (orgData && orgData.id) {
-      toast.info("📄 Word raporu oluşturuluyor...");
+      toast.info("Ã°Å¸â€œâ€ž Word raporu oluÃ…Å¸turuluyor...");
       
-      // ✅ await ile blob al
+      // Ã¢Å“â€¦ await ile blob al
       const wordBlob = await generateWordDocument(
         entries,
         siteName,
@@ -1404,11 +1404,18 @@ const handleSaveAndExport = async () => {
         orgData.id
       );
 
-      // ✅ 3. DOSYA ADI
+      // ✅ 3. DOSYA ADI (Supabase object key için güvenli)
       const today = new Date();
-      reportFileName = `DÖF_Raporu_${siteName}_${today.toISOString().split('T')[0]}.docx`;
+      const safeSiteName = (siteName || "saha")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-zA-Z0-9 _-]/g, "")
+        .trim()
+        .replace(/\s+/g, "_")
+        .slice(0, 80) || "saha";
+      reportFileName = `DOF_Raporu_${safeSiteName}_${today.toISOString().split("T")[0]}.docx`;
 
-      // ✅ 4. SUPABASE STORAGE'A YÜKLE
+      // Ã¢Å“â€¦ 4. SUPABASE STORAGE'A YÃƒÅ“KLE
       const storagePath = `${orgData.id}/${reportFileName}`;
 
       const { data: uploadData, error: uploadError } = await supabase.storage
@@ -1419,10 +1426,10 @@ const handleSaveAndExport = async () => {
         });
 
       if (uploadError) {
-        console.error("❌ Storage upload error:", uploadError);
+        console.error("Ã¢ÂÅ’ Storage upload error:", uploadError);
         toast.error(`Storage upload hatasi: ${uploadError.message}`);
       } else {
-        // ✅ 5. PUBLIC URL AL
+        // Ã¢Å“â€¦ 5. PUBLIC URL AL
         const { data: publicUrlData } = supabase.storage
           .from("dof-reports")
           .getPublicUrl(uploadData.path);
@@ -1430,11 +1437,11 @@ const handleSaveAndExport = async () => {
         savedReportUrl = publicUrlData.publicUrl;
       }
 
-      // ✅ 6. REPORTS TABLOSUNA KAYDET (upload basariliysa file_url dolu gelir)
+      // Ã¢Å“â€¦ 6. REPORTS TABLOSUNA KAYDET (upload basariliysa file_url dolu gelir)
       const { error: dbError } = await supabase.from("reports").insert({
         org_id: orgData.id,
         user_id: user?.id,
-        title: `DÖF Raporu - ${siteName}`,
+        title: `DÃƒâ€“F Raporu - ${siteName}`,
         report_type: "inspection",
         generated_at: today.toISOString(),
         export_format: "docx",
@@ -1451,20 +1458,20 @@ const handleSaveAndExport = async () => {
       });
 
       if (dbError) {
-        console.error("❌ Reports insert error:", dbError);
+        console.error("Ã¢ÂÅ’ Reports insert error:", dbError);
         toast.error(`Reports kaydi basarisiz: ${dbError.message}`);
       } else {
-        toast.success("✅ Rapor arsivlendi");
+        toast.success("Ã¢Å“â€¦ Rapor arsivlendi");
       }
 
-      // ✅ 7. DOSYAYI İNDİR
+      // Ã¢Å“â€¦ 7. DOSYAYI Ã„Â°NDÃ„Â°R
       
       saveAs(wordBlob, reportFileName);
       
-      // ✅ 8. E-POSTA GÖNDERİM SEÇENEĞİ
-      toast.info("E-posta için: Denetimler > Detay > E-posta Gönder");
+      // Ã¢Å“â€¦ 8. E-POSTA GÃƒâ€“NDERÃ„Â°M SEÃƒâ€¡ENEÃ„Å¾Ã„Â°
+      toast.info("E-posta iÃƒÂ§in: Denetimler > Detay > E-posta GÃƒÂ¶nder");
 
-      // ✅ 9. FORMU TEMIZLE
+      // Ã¢Å“â€¦ 9. FORMU TEMIZLE
       setEntries([]);
       setSiteName("");
       setNewEntry({
@@ -1475,24 +1482,24 @@ const handleSaveAndExport = async () => {
         preventiveAction: "",
         importance_level: "Normal",
         termin_date: "",
-        related_department: "Diğer",
+        related_department: "DiÃ„Å¸er",
         notification_method: "E-mail",
         media_urls: [],
         ai_analyzed: false,
       });
 
-      toast.success("✅ DÖF Raporu başarıyla oluşturuldu!");
+      toast.success("Ã¢Å“â€¦ DÃƒâ€“F Raporu baÃ…Å¸arÃ„Â±yla oluÃ…Å¸turuldu!");
 
-      // ✅ 10. YÖNLENDIR
+      // Ã¢Å“â€¦ 10. YÃƒâ€“NLENDIR
       setTimeout(() => {
         navigate("/inspections");
       }, 3000);
     } else {
-      toast.error("❌ Organization data not available");
+      toast.error("Ã¢ÂÅ’ Organization data not available");
     }
   } catch (error: any) {
-    console.error("❌ Error:", error);
-    toast.error(`❌ Hata: ${error.message}`);
+    console.error("Ã¢ÂÅ’ Error:", error);
+    toast.error(`Ã¢ÂÅ’ Hata: ${error.message}`);
   } finally {
     setSaving(false);
   }
@@ -1511,11 +1518,11 @@ const handleSaveAndExport = async () => {
       {/* HEADER */}
       <div>
         <h1 className="text-3xl font-bold text-foreground flex items-center gap-2">
-          📋 Bulk CAPA Formu
+          Ã°Å¸â€œâ€¹ Bulk CAPA Formu
           <Sparkles className="h-8 w-8 text-yellow-500" />
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          AI Destekli Düzeltici ve Önleyici Faaliyet Planı Oluştur
+          AI Destekli DÃƒÂ¼zeltici ve Ãƒâ€“nleyici Faaliyet PlanÃ„Â± OluÃ…Å¸tur
         </p>
       </div>
 
@@ -1524,25 +1531,25 @@ const handleSaveAndExport = async () => {
         {/* SITE INFO */}
         <div className="space-y-3">
           <Label className="text-sm font-bold text-foreground">
-            🏭 Saha/Tesisis Adı
+            Ã°Å¸ÂÂ­ Saha/Tesisis AdÃ„Â±
           </Label>
           <Input
-            placeholder="Örn: Ankara Üretim Fabrikası"
+            placeholder="Ãƒâ€“rn: Ankara ÃƒÅ“retim FabrikasÃ„Â±"
             value={siteName}
             onChange={(e) => setSiteName(e.target.value)}
             className="bg-secondary/50 border-border/50 h-11"
           />
           
-          {/* ✅ UYARI MESAJI */}
+          {/* Ã¢Å“â€¦ UYARI MESAJI */}
           {entries.length > 0 && !siteName.trim() && (
             <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 flex gap-3">
               <AlertCircle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
               <div>
                 <p className="text-sm font-semibold text-amber-700">
-                  ⚠️ Saha Adı Gerekli
+                  Ã¢Å¡Â Ã¯Â¸Â Saha AdÃ„Â± Gerekli
                 </p>
                 <p className="text-xs text-amber-600 leading-relaxed mt-1">
-                  "Kaydet ve Word İndir" butonunu etkinleştirmek için saha/tesis adını girmelisiniz.
+                  "Kaydet ve Word Ã„Â°ndir" butonunu etkinleÃ…Å¸tirmek iÃƒÂ§in saha/tesis adÃ„Â±nÃ„Â± girmelisiniz.
                 </p>
               </div>
             </div>
@@ -1561,10 +1568,10 @@ const handleSaveAndExport = async () => {
             <Sparkles className="h-5 w-5 text-blue-500 shrink-0 mt-0.5" />
             <div>
               <p className="text-sm font-semibold text-blue-700">
-                🤖 AI Analizi Kullan
+                Ã°Å¸Â¤â€“ AI Analizi Kullan
               </p>
               <p className="text-xs text-blue-600 leading-relaxed mt-1">
-                Fotoğraf yükle → "AI ile Analiz Et" tıkla → Tüm alanlar
+                FotoÃ„Å¸raf yÃƒÂ¼kle Ã¢â€ â€™ "AI ile Analiz Et" tÃ„Â±kla Ã¢â€ â€™ TÃƒÂ¼m alanlar
                 otomatik doldurulacak
               </p>
             </div>
@@ -1574,7 +1581,7 @@ const handleSaveAndExport = async () => {
           <div className="space-y-3">
             <Label className="text-sm font-semibold flex items-center gap-2">
               <ImageIcon className="h-4 w-4" />
-              Fotoğraflar (Zorunlu)
+              FotoÃ„Å¸raflar (Zorunlu)
             </Label>
 
             <div
@@ -1611,13 +1618,13 @@ const handleSaveAndExport = async () => {
                 <div>
                   <p className="text-sm font-semibold text-foreground">
                     {dragActive
-                      ? "Fotoğrafları buraya bırakın"
-                      : "Fotoğraf Yükle"}
+                      ? "FotoÃ„Å¸raflarÃ„Â± buraya bÃ„Â±rakÃ„Â±n"
+                      : "FotoÃ„Å¸raf YÃƒÂ¼kle"}
                   </p>
                   <p className="text-xs text-muted-foreground mt-1">
                     {dragActive
-                      ? "Fotoğraflar yüklenecek"
-                      : "Sürükle-bırak veya dosya seç (Max 5MB)"}
+                      ? "FotoÃ„Å¸raflar yÃƒÂ¼klenecek"
+                      : "SÃƒÂ¼rÃƒÂ¼kle-bÃ„Â±rak veya dosya seÃƒÂ§ (Max 5MB)"}
                   </p>
                 </div>
 
@@ -1629,7 +1636,7 @@ const handleSaveAndExport = async () => {
                     className="mt-2"
                   >
                     <Upload className="h-3 w-3 mr-2" />
-                    Dosya Seç
+                    Dosya SeÃƒÂ§
                   </Button>
                 )}
               </div>
@@ -1640,7 +1647,7 @@ const handleSaveAndExport = async () => {
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
                   <p className="text-xs text-muted-foreground">
-                    {newEntry.media_urls.length} fotoğraf yüklendi
+                    {newEntry.media_urls.length} fotoÃ„Å¸raf yÃƒÂ¼klendi
                   </p>
                   {!newEntry.ai_analyzed && (
                     <Button
@@ -1666,7 +1673,7 @@ const handleSaveAndExport = async () => {
                   {newEntry.ai_analyzed && (
                     <div className="flex items-center gap-1 text-xs px-3 py-2 rounded bg-success/10 text-success font-semibold">
                       <CheckCircle2 className="h-4 w-4" />
-                      AI Analiz Tamamlandı
+                      AI Analiz TamamlandÃ„Â±
                     </div>
                   )}
                 </div>
@@ -1698,13 +1705,13 @@ const handleSaveAndExport = async () => {
             <div className="lg:col-span-2 space-y-2">
               <Label className="text-sm font-semibold flex items-center gap-2">
                 <AlertCircle className="h-4 w-4 text-destructive" />
-                Bulgu Açıklaması *
+                Bulgu AÃƒÂ§Ã„Â±klamasÃ„Â± *
                 {newEntry.ai_analyzed && (
                   <Sparkles className="h-3 w-3 text-yellow-500" />
                 )}
               </Label>
               <Textarea
-                placeholder="Uygunsuzluğu / Riski açıklayın... (AI analiz sonrasında otomatik doldurulur)"
+                placeholder="UygunsuzluÃ„Å¸u / Riski aÃƒÂ§Ã„Â±klayÃ„Â±n... (AI analiz sonrasÃ„Â±nda otomatik doldurulur)"
                 value={newEntry.description}
                 onChange={(e) =>
                   setNewEntry({
@@ -1720,13 +1727,13 @@ const handleSaveAndExport = async () => {
             <div className="lg:col-span-2 space-y-2">
               <Label className="text-sm font-semibold flex items-center gap-2">
                 <AlertTriangle className="h-4 w-4 text-warning" />
-                Risk Tanımı *
+                Risk TanÃ„Â±mÃ„Â± *
                 {newEntry.ai_analyzed && (
                   <Sparkles className="h-3 w-3 text-yellow-500" />
                 )}
               </Label>
               <Textarea
-                placeholder="Riskin ne olduğunu ve sonuçlarını açıklayın... (AI analiz sonrasında otomatik doldurulur)"
+                placeholder="Riskin ne olduÃ„Å¸unu ve sonuÃƒÂ§larÃ„Â±nÃ„Â± aÃƒÂ§Ã„Â±klayÃ„Â±n... (AI analiz sonrasÃ„Â±nda otomatik doldurulur)"
                 value={newEntry.riskDefinition}
                 onChange={(e) =>
                   setNewEntry({
@@ -1741,14 +1748,14 @@ const handleSaveAndExport = async () => {
             {/* Corrective Action */}
             <div className="lg:col-span-2 space-y-2">
               <Label className="text-sm font-semibold flex items-center gap-2">
-                🔧
-                Düzeltici Faaliyet *
+                Ã°Å¸â€Â§
+                DÃƒÂ¼zeltici Faaliyet *
                 {newEntry.ai_analyzed && (
                   <Sparkles className="h-3 w-3 text-yellow-500" />
                 )}
               </Label>
               <Textarea
-                placeholder="Mevcut sorunu çözmek için alınacak adımlar... (AI analiz sonrasında otomatik doldurulur)"
+                placeholder="Mevcut sorunu ÃƒÂ§ÃƒÂ¶zmek iÃƒÂ§in alÃ„Â±nacak adÃ„Â±mlar... (AI analiz sonrasÃ„Â±nda otomatik doldurulur)"
                 value={newEntry.correctiveAction}
                 onChange={(e) =>
                   setNewEntry({
@@ -1763,14 +1770,14 @@ const handleSaveAndExport = async () => {
             {/* Preventive Action */}
             <div className="lg:col-span-2 space-y-2">
               <Label className="text-sm font-semibold flex items-center gap-2">
-                ✅
-                Önleyici Faaliyet *
+                Ã¢Å“â€¦
+                Ãƒâ€“nleyici Faaliyet *
                 {newEntry.ai_analyzed && (
                   <Sparkles className="h-3 w-3 text-yellow-500" />
                 )}
               </Label>
               <Textarea
-                placeholder="Aynı sorunun tekrar olmasını önlemek için alınacak adımlar... (AI analiz sonrasında otomatik doldurulur)"
+                placeholder="AynÃ„Â± sorunun tekrar olmasÃ„Â±nÃ„Â± ÃƒÂ¶nlemek iÃƒÂ§in alÃ„Â±nacak adÃ„Â±mlar... (AI analiz sonrasÃ„Â±nda otomatik doldurulur)"
                 value={newEntry.preventiveAction}
                 onChange={(e) =>
                   setNewEntry({
@@ -1785,7 +1792,7 @@ const handleSaveAndExport = async () => {
             {/* Importance Level */}
             <div className="space-y-2">
               <Label className="text-sm font-semibold">
-                Önemlilik Seviyesi
+                Ãƒâ€“nemlilik Seviyesi
               </Label>
               <Select
                 value={newEntry.importance_level || "Normal"}
@@ -1797,7 +1804,7 @@ const handleSaveAndExport = async () => {
                 }
               >
                 <SelectTrigger className="bg-secondary/50 border-border/50 h-11">
-                  <SelectValue placeholder="Seçiniz" />
+                  <SelectValue placeholder="SeÃƒÂ§iniz" />
                 </SelectTrigger>
                 <SelectContent className="bg-card border-border">
                   {IMPORTANCE_LEVELS.map((level) => (
@@ -1813,10 +1820,10 @@ const handleSaveAndExport = async () => {
             <div className="space-y-2">
               <Label className="text-sm font-semibold flex items-center gap-2">
                 <Users className="h-4 w-4" />
-                İlgili Bölüm
+                Ã„Â°lgili BÃƒÂ¶lÃƒÂ¼m
               </Label>
               <Select
-                value={newEntry.related_department || "Diğer"}
+                value={newEntry.related_department || "DiÃ„Å¸er"}
                 onValueChange={(value) =>
                   setNewEntry({
                     ...newEntry,
@@ -1825,7 +1832,7 @@ const handleSaveAndExport = async () => {
                 }
               >
                 <SelectTrigger className="bg-secondary/50 border-border/50 h-11">
-                  <SelectValue placeholder="Seçiniz" />
+                  <SelectValue placeholder="SeÃƒÂ§iniz" />
                 </SelectTrigger>
                 <SelectContent className="bg-card border-border">
                   {DEPARTMENTS.map((dept) => (
@@ -1856,13 +1863,13 @@ const handleSaveAndExport = async () => {
               />
             </div>
 
-            {/* ✅ Notification Method - TEXT INPUT */}
+            {/* Ã¢Å“â€¦ Notification Method - TEXT INPUT */}
             <div className="space-y-2">
               <Label className="text-sm font-semibold flex items-center gap-2">
-                📢 Bildirim Şekli
+                Ã°Å¸â€œÂ¢ Bildirim Ã…Å¾ekli
               </Label>
               <Input
-                placeholder="Örn: E-mail, SMS, Telefon, Yüz Yüze, vb..."
+                placeholder="Ãƒâ€“rn: E-mail, SMS, Telefon, YÃƒÂ¼z YÃƒÂ¼ze, vb..."
                 value={newEntry.notification_method || ""}
                 onChange={(e) =>
                   setNewEntry({
@@ -1881,14 +1888,14 @@ const handleSaveAndExport = async () => {
             className="w-full gap-2 gradient-primary border-0 text-foreground font-semibold h-12"
           >
             <Plus className="h-5 w-5" />
-            Bulgayı Ekle
+            BulgayÃ„Â± Ekle
           </Button>
         </div>
         {/* ENTRIES LIST */}
         {entries.length > 0 && (
           <div className="space-y-4">
             <h3 className="text-lg font-bold text-foreground">
-              📑 Eklenen Bulgular ({entries.length})
+              Ã°Å¸â€œâ€˜ Eklenen Bulgular ({entries.length})
             </h3>
 
             <div className="space-y-3">
@@ -1920,7 +1927,7 @@ const handleSaveAndExport = async () => {
                           {entry.related_department}
                         </span>
                         <span className="text-xs px-2 py-1 rounded bg-blue-500/10 text-blue-600">
-                          📅{" "}
+                          Ã°Å¸â€œâ€¦{" "}
                           {new Date(entry.termin_date).toLocaleDateString(
                             "tr-TR"
                           )}
@@ -1928,12 +1935,12 @@ const handleSaveAndExport = async () => {
                         
                         {entry.media_urls.length > 0 && (
                           <span className="text-xs px-2 py-1 rounded bg-purple-500/10 text-purple-600">
-                            📷 {entry.media_urls.length}
+                            Ã°Å¸â€œÂ· {entry.media_urls.length}
                           </span>
                         )}
-                        {/* ✅ YENİ */}
+                        {/* Ã¢Å“â€¦ YENÃ„Â° */}
                         <span className="text-xs px-2 py-1 rounded bg-green-500/10 text-green-600">
-                          📢 {entry.notification_method || "E-mail"}
+                          Ã°Å¸â€œÂ¢ {entry.notification_method || "E-mail"}
                         </span>
                       </div>
                     </div>
@@ -1961,7 +1968,7 @@ const handleSaveAndExport = async () => {
             disabled={entries.length === 0}
           >
             <Eye className="h-4 w-4" />
-            Önizleme
+            Ãƒâ€“nizleme
           </Button>
           <Button
             onClick={handleSaveAndExport}
@@ -1975,17 +1982,17 @@ const handleSaveAndExport = async () => {
             {saving ? (
               <>
                 <Loader2 className="h-4 w-4 animate-spin" />
-                İşleniyor...
+                Ã„Â°Ã…Å¸leniyor...
               </>
             ) : (
               <>
                 <Download className="h-4 w-4" />
-                Kaydet ve Word İndir
+                Kaydet ve Word Ã„Â°ndir
               </>
             )}
           </Button>
         </div>
-        <p className="text-xs text-muted-foreground">E-posta paylaşımı bu ekranda kaldırıldı. Raporu indirdikten sonra Denetimler sayfasında ilgili denetim detayından "E-posta Gönder" ile paylaşabilirsiniz.</p>
+        <p className="text-xs text-muted-foreground">E-posta paylaÃ…Å¸Ã„Â±mÃ„Â± bu ekranda kaldÃ„Â±rÃ„Â±ldÃ„Â±. Raporu indirdikten sonra Denetimler sayfasÃ„Â±nda ilgili denetim detayÃ„Â±ndan "E-posta GÃƒÂ¶nder" ile paylaÃ…Å¸abilirsiniz.</p>
       </div>
 
       {/* PREVIEW MODAL - FIXED WITH IMAGE GALLERY */}
@@ -1994,7 +2001,7 @@ const handleSaveAndExport = async () => {
           <div className="bg-card rounded-lg max-w-4xl max-h-[90vh] overflow-y-auto w-full p-6 space-y-4">
             <div className="flex items-center justify-between sticky top-0 bg-card">
               <h2 className="text-xl font-bold text-foreground flex items-center gap-2">
-                Rapor Önizlemesi
+                Rapor Ãƒâ€“nizlemesi
                 <Sparkles className="h-5 w-5 text-yellow-500" />
               </h2>
               <button
@@ -2031,7 +2038,7 @@ const handleSaveAndExport = async () => {
                   className="border border-border/50 rounded-lg p-4 space-y-4"
                 >
                   <h4 className="font-bold text-lg flex items-center gap-2">
-                    MADDE {idx + 1} – UYGUNSUZLUK / RİSK
+                    MADDE {idx + 1} Ã¢â‚¬â€œ UYGUNSUZLUK / RÃ„Â°SK
                     {entry.ai_analyzed && (
                       <Sparkles className="h-4 w-4 text-yellow-500" />
                     )}
@@ -2042,10 +2049,10 @@ const handleSaveAndExport = async () => {
                       <strong>Bulgu:</strong> {entry.description}
                     </p>
                     <p className="text-sm">
-                      <strong>Önemlilik:</strong> {entry.importance_level}
+                      <strong>Ãƒâ€“nemlilik:</strong> {entry.importance_level}
                     </p>
                     <p className="text-sm">
-                      <strong>Bölüm:</strong> {entry.related_department}
+                      <strong>BÃƒÂ¶lÃƒÂ¼m:</strong> {entry.related_department}
                     </p>
                     <p className="text-sm">
                       <strong>Termin:</strong>{" "}
@@ -2053,11 +2060,11 @@ const handleSaveAndExport = async () => {
                     </p>
                   </div>
 
-                  {/* ✅ IMAGE GALLERY */}
+                  {/* Ã¢Å“â€¦ IMAGE GALLERY */}
                   {entry.media_urls.length > 0 && (
                     <div className="space-y-3 pt-4 border-t border-border">
                       <p className="text-sm font-semibold">
-                        📷 Fotoğraflar ({entry.media_urls.length})
+                        Ã°Å¸â€œÂ· FotoÃ„Å¸raflar ({entry.media_urls.length})
                       </p>
                       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                         {entry.media_urls.map((imageUrl, imgIdx) => (
@@ -2067,7 +2074,7 @@ const handleSaveAndExport = async () => {
                           >
                             <img
                               src={imageUrl}
-                              alt={`Fotoğraf ${imgIdx + 1}`}
+                              alt={`FotoÃ„Å¸raf ${imgIdx + 1}`}
                               className="w-full h-32 object-cover hover:scale-110 transition-transform duration-300"
                             />
                             <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">

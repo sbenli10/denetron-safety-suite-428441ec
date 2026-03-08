@@ -1460,7 +1460,7 @@ const handleSaveAndExport = async () => {
       if (savedReportUrl) {
         setCurrentReportUrl(savedReportUrl);
         setCurrentReportFilename(reportFileName);
-        setSendModalOpen(true);
+        setTimeout(() => setSendModalOpen(true), 120);
         toast.info("E-posta gönderim penceresi açıldı");
       } else {
         toast.warning("E-posta gönderimi için rapor bağlantısı oluşturulamadı");
@@ -1989,6 +1989,18 @@ const handleSaveAndExport = async () => {
               </>
             )}
           </Button>
+
+          {currentReportUrl && (
+            <Button
+              type="button"
+              variant="secondary"
+              className="gap-2 h-11"
+              onClick={() => setSendModalOpen(true)}
+            >
+              <Share2 className="h-4 w-4" />
+              E-posta Gönder
+            </Button>
+          )}
         </div>
       </div>
 

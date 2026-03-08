@@ -1409,7 +1409,7 @@ const handleSaveAndExport = async () => {
       reportFileName = `DÖF_Raporu_${siteName}_${today.toISOString().split('T')[0]}.docx`;
 
       // ✅ 4. SUPABASE STORAGE'A YÜKLE
-      const storagePath = `dof-reports/${orgData.id}/${reportFileName}`;
+      const storagePath = `${orgData.id}/${reportFileName}`;
 
       const { data: uploadData, error: uploadError } = await supabase.storage
         .from("dof-reports")

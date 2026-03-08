@@ -17,7 +17,6 @@ import {
   Sparkles,
   AlertCircle,
   AlertTriangle,
-  Share2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -47,7 +46,6 @@ import {
   ImageRun,
 } from "docx";
 import { saveAs } from "file-saver";
-import { SendReportModal } from "@/components/SendReportModal";
 
 // ✅ INTERFACE DEFINITIONS
 // HazardEntry interface'ine ekle:
@@ -916,9 +914,6 @@ export default function BulkCAPA() {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
-  const [sendModalOpen, setSendModalOpen] = useState(false);
-  const [currentReportUrl, setCurrentReportUrl] = useState("");
-  const [currentReportFilename, setCurrentReportFilename] = useState("");
 
   const [newEntry, setNewEntry] = useState<HazardEntry>({
     id: "",
@@ -1457,14 +1452,7 @@ const handleSaveAndExport = async () => {
       saveAs(wordBlob, reportFileName);
       
       // ✅ 8. E-POSTA GÖNDERİM SEÇENEĞİ
-      if (savedReportUrl) {
-        setCurrentReportUrl(savedReportUrl);
-        setCurrentReportFilename(reportFileName);
-        setTimeout(() => setSendModalOpen(true), 120);
-        toast.info("E-posta gönderim penceresi açıldı");
-      } else {
-        toast.warning("E-posta gönderimi için rapor bağlantısı oluşturulamadı");
-      }
+      toast.info("E-posta için: Denetimler > Detay > E-posta Gönder");
 
       // ✅ 9. FORMU TEMIZLE
       setEntries([]);
@@ -1486,12 +1474,9 @@ const handleSaveAndExport = async () => {
       toast.success("✅ DÖF Raporu başarıyla oluşturuldu!");
 
       // ✅ 10. YÖNLENDIR
-      // E-posta modalı açıldıysa kullanıcı işlemi bitirene kadar sayfada kal.
-      if (!savedReportUrl) {
-        setTimeout(() => {
-          navigate("/inspections");
-        }, 3000);
-      }
+      setTimeout(() => {
+        navigate("/inspections");
+      }, 3000);
     } else {
       toast.error("❌ Organization data not available");
     }
@@ -1989,19 +1974,8 @@ const handleSaveAndExport = async () => {
               </>
             )}
           </Button>
-
-          {currentReportUrl && (
-            <Button
-              type="button"
-              variant="secondary"
-              className="gap-2 h-11"
-              onClick={() => setSendModalOpen(true)}
-            >
-              <Share2 className="h-4 w-4" />
-              E-posta Gönder
-            </Button>
-          )}
         </div>
+        <p className="text-xs text-muted-foreground">E-posta paylaşımı bu ekranda kaldırıldı. Raporu indirdikten sonra Denetimler sayfasında ilgili denetim detayından "E-posta Gönder" ile paylaşabilirsiniz.</p>
       </div>
 
       {/* PREVIEW MODAL - FIXED WITH IMAGE GALLERY */}
@@ -2110,14 +2084,6 @@ const handleSaveAndExport = async () => {
           </div>
         </div>
       )}
-      <SendReportModal
-        open={sendModalOpen}
-        onOpenChange={setSendModalOpen}
-        reportType="dof"
-        reportUrl={currentReportUrl}
-        reportFilename={currentReportFilename}
-        companyName={siteName}
-      />
     </div>
   );
 }

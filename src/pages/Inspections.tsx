@@ -47,8 +47,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { uploadInspectionPhoto } from "@/lib/storage";
 import { generateInspectionsPDF } from "@/lib/inspectionPdfExport";
+import { SendReportModal } from "@/components/SendReportModal";
 import { toast } from "sonner";
 import { useLocation } from "react-router-dom";
+import jsPDF from "jspdf";
 
 type InspectionStatus = "completed" | "draft" | "in_progress" | "cancelled";
 type RiskLevel = "low" | "medium" | "high" | "critical";
@@ -102,6 +104,10 @@ export default function Inspections() {
   const [submitting, setSubmitting] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [selectedInspection, setSelectedInspection] = useState<Inspection | null>(null);
+  const [sendModalOpen, setSendModalOpen] = useState(false);
+  const [sharePreparing, setSharePreparing] = useState(false);
+  const [currentReportUrl, setCurrentReportUrl] = useState("");
+  const [currentReportFilename, setCurrentReportFilename] = useState("");
 
   const [locationName, setLocationName] = useState("");
   const [equipmentCategory, setEquipmentCategory] = useState("");
@@ -254,6 +260,72 @@ export default function Inspections() {
     }
   };
 
+
+  const handleOpenShareModal = async () => {
+    if (!user || !selectedInspection) return;
+
+    setSharePreparing(true);
+    try {
+      const doc = new jsPDF({ orientation: "p", unit: "mm", format: "a4" });
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(16);
+      doc.text("Denetim Raporu", 14, 18);
+
+      doc.setFontSize(11);
+      let y = 30;
+      const line = (label: string, value?: string) => {
+        doc.text(`${label}: ${value || "-"}`, 14, y);
+        y += 8;
+      };
+
+      line("Konum", selectedInspection.location_name);
+      line("Tarih", new Date(selectedInspection.created_at).toLocaleDateString("tr-TR"));
+      line("Durum", statusConfig[selectedInspection.status].label);
+      line("Risk Seviyesi", riskConfig[selectedInspection.risk_level].label);
+      line("Ekipman", selectedInspection.equipment_category || "-");
+      line("Fotoğraf Sayısı", String(selectedInspection.media_urls?.length || 0));
+
+      if (selectedInspection.notes) {
+        y += 2;
+        doc.setFontSize(12);
+        doc.text("Notlar", 14, y);
+        y += 7;
+        doc.setFontSize(10);
+        const notesLines = doc.splitTextToSize(selectedInspection.notes, 180);
+        doc.text(notesLines, 14, y);
+      }
+
+      const pdfBlob = doc.output("blob");
+      const fileName = `inspection-${selectedInspection.id}.pdf`;
+      const storagePath = `inspection-reports/${user.id}/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("reports")
+        .upload(storagePath, pdfBlob, {
+          contentType: "application/pdf",
+          upsert: true,
+        });
+
+      if (uploadError) throw uploadError;
+
+      const { data: publicUrlData } = supabase.storage
+        .from("reports")
+        .getPublicUrl(storagePath);
+
+      if (!publicUrlData?.publicUrl) {
+        throw new Error("Rapor bağlantısı oluşturulamadı");
+      }
+
+      setCurrentReportUrl(publicUrlData.publicUrl);
+      setCurrentReportFilename(fileName);
+      setSendModalOpen(true);
+    } catch (error: any) {
+      console.error("Inspection report share error:", error);
+      toast.error(error?.message || "E-posta gönderimi için rapor hazırlanamadı");
+    } finally {
+      setSharePreparing(false);
+    }
+  };
   const handleExport = async () => {
     if (filtered.length === 0) {
       toast.error("Dışa aktarılacak denetim bulunamadı");
@@ -774,13 +846,15 @@ export default function Inspections() {
                 <Button
                   variant="outline"
                   className="flex-1 gap-2"
-                  onClick={() => {
-                    navigator.clipboard.writeText(window.location.href);
-                    toast.success("Link kopyalandı");
-                  }}
+                  onClick={handleOpenShareModal}
+                  disabled={sharePreparing}
                 >
-                  <Share2 className="h-4 w-4" />
-                  Paylaş
+                  {sharePreparing ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Share2 className="h-4 w-4" />
+                  )}
+                  E-posta Gönder
                 </Button>
                 <Button
                   variant="ghost"
@@ -806,6 +880,14 @@ export default function Inspections() {
           </div>
         </div>
       )}
+      <SendReportModal
+        open={sendModalOpen}
+        onOpenChange={setSendModalOpen}
+        reportType="inspection"
+        reportUrl={currentReportUrl}
+        reportFilename={currentReportFilename}
+        companyName={selectedInspection?.location_name || "Denetim"}
+      />
     </div>
   );
 }

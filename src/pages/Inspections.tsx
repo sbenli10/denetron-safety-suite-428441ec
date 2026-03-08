@@ -108,6 +108,8 @@ export default function Inspections() {
   const [sharePreparing, setSharePreparing] = useState(false);
   const [currentReportUrl, setCurrentReportUrl] = useState("");
   const [currentReportFilename, setCurrentReportFilename] = useState("");
+  const [linkedReport, setLinkedReport] = useState<{ url: string; filename: string; kind: "dof" | "inspection" } | null>(null);
+  const [loadingLinkedReport, setLoadingLinkedReport] = useState(false);
 
   const [locationName, setLocationName] = useState("");
   const [equipmentCategory, setEquipmentCategory] = useState("");
@@ -261,8 +263,55 @@ export default function Inspections() {
   };
 
 
+
+  const loadLinkedReport = async (inspectionId: string) => {
+    if (!user) return;
+
+    setLoadingLinkedReport(true);
+    setLinkedReport(null);
+    try {
+      const { data, error } = await supabase
+        .from("reports")
+        .select("file_url, title, export_format, content")
+        .eq("user_id", user.id)
+        .contains("content", { inspection_id: inspectionId })
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (error) throw error;
+      if (!data?.file_url) return;
+
+      const reportKind = (data as any)?.content?.report_kind === "dof" ? "dof" : "inspection";
+      const fallbackExt = data.export_format === "docx" ? "docx" : "pdf";
+      const title = data.title || `Rapor.${fallbackExt}`;
+
+      setLinkedReport({
+        url: data.file_url,
+        filename: title,
+        kind: reportKind,
+      });
+    } catch (error) {
+      console.error("Linked report load error:", error);
+    } finally {
+      setLoadingLinkedReport(false);
+    }
+  };
+
+  const openInspectionDetails = async (inspection: Inspection) => {
+    setSelectedInspection(inspection);
+    setDetailsOpen(true);
+    await loadLinkedReport(inspection.id);
+  };
   const handleOpenShareModal = async () => {
     if (!user || !selectedInspection) return;
+
+    if (linkedReport?.url) {
+      setCurrentReportUrl(linkedReport.url);
+      setCurrentReportFilename(linkedReport.filename);
+      setSendModalOpen(true);
+      return;
+    }
 
     setSharePreparing(true);
     try {
@@ -639,8 +688,7 @@ export default function Inspections() {
             <div
               key={inspection.id}
               onClick={() => {
-                setSelectedInspection(inspection);
-                setDetailsOpen(true);
+                void openInspectionDetails(inspection);
               }}
               className="glass-card p-5 border border-border/50 hover:border-primary/50 cursor-pointer transition-all group hover:shadow-lg"
             >
@@ -706,8 +754,7 @@ export default function Inspections() {
                   className="w-full gap-2 h-9"
                   onClick={(e) => {
                     e.stopPropagation();
-                    setSelectedInspection(inspection);
-                    setDetailsOpen(true);
+                    void openInspectionDetails(inspection);
                   }}
                 >
                   <Eye className="h-4 w-4" />
@@ -810,6 +857,29 @@ export default function Inspections() {
                 </div>
               )}
 
+
+              {/* LINKED REPORT */}
+              <div className="glass-card p-4 border border-border/50 space-y-2">
+                <p className="text-sm font-semibold flex items-center gap-2">
+                  <FileText className="h-4 w-4" /> Oluşturulan Rapor
+                </p>
+                {loadingLinkedReport ? (
+                  <p className="text-sm text-muted-foreground">Rapor bağlantısı kontrol ediliyor...</p>
+                ) : linkedReport?.url ? (
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm text-muted-foreground truncate">{linkedReport.filename}</p>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => window.open(linkedReport.url, "_blank")}
+                    >
+                      Raporu Aç
+                    </Button>
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Bu denetime bağlı rapor bulunamadı.</p>
+                )}
+              </div>
               {/* PHOTOS */}
               {selectedInspection.media_urls && selectedInspection.media_urls.length > 0 && (
                 <div className="space-y-2">
@@ -883,7 +953,7 @@ export default function Inspections() {
       <SendReportModal
         open={sendModalOpen}
         onOpenChange={setSendModalOpen}
-        reportType="inspection"
+        reportType={linkedReport?.kind === "dof" ? "dof" : "inspection"}
         reportUrl={currentReportUrl}
         reportFilename={currentReportFilename}
         companyName={selectedInspection?.location_name || "Denetim"}

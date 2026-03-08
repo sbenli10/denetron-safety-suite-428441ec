@@ -1330,6 +1330,7 @@ const handleSaveAndExport = async () => {
   try {
     let savedReportUrl: string | null = null;
     let reportFileName: string = "";
+    let createdInspectionId: string | null = null;
 
     // ✅ 1. DATABASE KAYITLARI
     if (user) {
@@ -1362,6 +1363,7 @@ const handleSaveAndExport = async () => {
           if (inspectionError) throw inspectionError;
 
           if (inspection) {
+            createdInspectionId = inspection.id;
             for (const entry of entries) {
               await supabase.from("findings").insert({
                 inspection_id: inspection.id,
@@ -1437,6 +1439,8 @@ const handleSaveAndExport = async () => {
           export_format: "docx",
           file_url: savedReportUrl,
           content: {
+            inspection_id: createdInspectionId,
+            report_kind: "dof",
             entries_count: entries.length,
             ai_analyzed_count: entries.filter((e) => e.ai_analyzed).length,
             location: siteName,
@@ -2073,7 +2077,6 @@ const handleSaveAndExport = async () => {
                 </div>
               ))}
             </div>
-
             <Button
               onClick={() => setPreviewOpen(false)}
               className="w-full"

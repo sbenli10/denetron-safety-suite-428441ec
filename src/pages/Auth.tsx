@@ -449,7 +449,7 @@ const handleVerify2FA = async (e: React.FormEvent) => {
 
         {/* Card */}
         <div className="bg-slate-900/50 backdrop-blur border border-slate-800 rounded-xl p-6 shadow-2xl">
-          {/* LOGIN */}
+                    {/* LOGIN */}
           {mode === "login" && (
             <>
               <div className="flex gap-2 bg-slate-800/50 p-1 rounded-lg mb-6">
@@ -467,6 +467,13 @@ const handleVerify2FA = async (e: React.FormEvent) => {
                 </button>
               </div>
 
+              <div className="mb-4 rounded-xl border border-emerald-500/30 bg-gradient-to-r from-emerald-500/10 to-cyan-500/10 p-4">
+                <h3 className="text-white font-semibold text-base">Güvenli Giriş</h3>
+                <p className="text-slate-300 text-sm mt-1">
+                  Hesabınıza güvenli şekilde erişin. Şüpheli cihazlarda ek doğrulama otomatik devreye girer.
+                </p>
+              </div>
+
               <form onSubmit={handleLogin} className="space-y-4">
                 <div className="space-y-2">
                   <Label className="text-white flex items-center gap-2">
@@ -478,8 +485,8 @@ const handleVerify2FA = async (e: React.FormEvent) => {
                     name="email"
                     value={formData.email}
                     onChange={handleInputChange}
-                    placeholder="ornek@email.com"
-                    className="bg-slate-800 border-slate-700 text-white"
+                    placeholder="ornek@firma.com"
+                    className="bg-slate-800/70 border-slate-700 text-white h-11"
                     disabled={loading}
                     required
                   />
@@ -497,7 +504,7 @@ const handleVerify2FA = async (e: React.FormEvent) => {
                       value={formData.password}
                       onChange={handleInputChange}
                       placeholder="••••••••"
-                      className="bg-slate-800 border-slate-700 text-white pr-10"
+                      className="bg-slate-800/70 border-slate-700 text-white pr-10 h-11"
                       disabled={loading}
                       required
                     />
@@ -505,16 +512,22 @@ const handleVerify2FA = async (e: React.FormEvent) => {
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
                       className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                      aria-label={showPassword ? "Şifreyi gizle" : "Şifreyi göster"}
                     >
                       {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </button>
                   </div>
                 </div>
 
+                <div className="flex items-center justify-between text-xs text-slate-400 rounded-lg border border-slate-700 bg-slate-800/30 px-3 py-2">
+                  <span>2FA aktif hesaplarda ekstra doğrulama uygulanır.</span>
+                  <Shield className="h-4 w-4 text-emerald-400" />
+                </div>
+
                 <Button
                   type="submit"
                   disabled={loading}
-                  className="w-full bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
+                  className="w-full h-11 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
                 >
                   {loading ? (
                     <>
@@ -529,7 +542,7 @@ const handleVerify2FA = async (e: React.FormEvent) => {
             </>
           )}
 
-                    {/* REGISTER */}
+          {/* REGISTER */}
           {mode === "register" && (
             <>
               <div className="flex gap-2 bg-slate-800/50 p-1 rounded-lg mb-6">

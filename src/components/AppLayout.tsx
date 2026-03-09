@@ -1,6 +1,5 @@
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
-import { ThemeToggle } from "@/components/theme-toggle";
 import { useAuth } from "@/contexts/AuthContext";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -55,9 +54,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
             <div className="flex items-center gap-2">
               {/* ✅ Notification Bell (BURAYA EKLENDİ) */}
               <NotificationBell />
-
-              {/* Theme Toggle Button */}
-              <ThemeToggle />
 
               {/* User Dropdown Menu */}
               <DropdownMenu>

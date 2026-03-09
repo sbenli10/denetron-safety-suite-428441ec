@@ -112,13 +112,14 @@ const App = () => (
     <ThemeProvider
       attribute="class"
       defaultTheme="dark"
-      enableSystem
+      forcedTheme="dark"
+      enableSystem={false}
       storageKey="denetron-theme"
       disableTransitionOnChange
     >
       <TooltipProvider>
         <Toaster />
-        <Sonner theme="system" />
+        <Sonner theme="dark" />
         <BrowserRouter
           future={{
             v7_startTransition: true,

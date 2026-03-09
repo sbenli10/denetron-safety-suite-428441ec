@@ -2322,6 +2322,67 @@ export type Database = {
         }
         Relationships: []
       }
+      profile_notes: {
+        Row: {
+          category: string
+          company_id: string | null
+          content: string
+          created_at: string
+          due_date: string | null
+          id: string
+          is_completed: boolean
+          organization_id: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          category?: string
+          company_id?: string | null
+          content: string
+          created_at?: string
+          due_date?: string | null
+          id?: string
+          is_completed?: boolean
+          organization_id?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          category?: string
+          company_id?: string | null
+          content?: string
+          created_at?: string
+          due_date?: string | null
+          id?: string
+          is_completed?: boolean
+          organization_id?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "profile_notes_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "profile_notes_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "profile_notes_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "v_dashboard_stats"
+            referencedColumns: ["org_id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           avatar_url: string | null

@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback,useEffect } from "react";
+﻿import { useState, useRef, useCallback,useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { 
   Upload, Building2, Shield, AlertTriangle, CheckCircle2, Loader2, 
@@ -35,7 +35,7 @@ interface ProjectInfo {
   area_type: string;
   detected_floor: number;
   building_category: string;
-  estimated_area_sqm: number;
+  estimated_area_sqm: number | null;
   usage_type?: string;
   construction_year?: number;
   occupancy_count?: number;
@@ -64,7 +64,7 @@ interface AnalysisResult {
   equipment_inventory: Equipment[];
   safety_violations: Violation[];
   expert_suggestions: string[];
-  compliance_score: number;
+  compliance_score: number | null;
   risk_assessment?: {
     fire_risk: "low" | "medium" | "high";
     structural_risk: "low" | "medium" | "high";
@@ -80,7 +80,7 @@ interface AnalysisResult {
 interface AnalysisHistory {
   id: string;
   created_at: string;
-  compliance_score: number;
+  compliance_score: number | null;
   building_type: string;
   violations_count: number;
 }
@@ -137,6 +137,15 @@ const parseFloorNumber = (floor: any): number => {
 };
   
 
+
+const formatCompliance = (score: number | null | undefined): string =>
+  typeof score === "number" ? `${score}%` : "N/A";
+
+const complianceProgressValue = (score: number | null | undefined): number =>
+  typeof score === "number" ? score : 0;
+
+const formatAreaWithUnit = (area: number | null | undefined): string =>
+  typeof area === "number" ? `${area} m\u00B2` : "N/A";
 export default function BlueprintAnalyzer() {
   const { user } = useAuth();
     const navigate = useNavigate();
@@ -185,8 +194,8 @@ export default function BlueprintAnalyzer() {
           created_at: d.created_at,
           compliance_score: 
             typeof d.analysis_result === 'object' && d.analysis_result !== null && 'compliance_score' in d.analysis_result
-              ? (d.analysis_result as any).compliance_score || 0
-              : 0,
+              ? (typeof (d.analysis_result as any).compliance_score === "number" ? (d.analysis_result as any).compliance_score : null)
+              : null,
           building_type: d.building_type || "Bilinmiyor",
           violations_count: 0
         }))
@@ -470,7 +479,7 @@ export default function BlueprintAnalyzer() {
 
       // ✅ Success notification
       toast.success(
-        `✅ Analiz tamamlandı! Uygunluk: ${data.analysis.compliance_score}%`,
+        `✅ Analiz tamamlandı! Uygunluk: ${formatCompliance(data.analysis.compliance_score)}`,
         {
           duration: 5000,
           description: `${data.analysis.equipment_inventory.length} ekipman türü tespit edildi`,
@@ -560,11 +569,11 @@ export default function BlueprintAnalyzer() {
     doc.circle(pageWidth / 2, 145, 25, 'F');
     doc.setFont("Inter", "bold");
     doc.setFontSize(24);
-    const scoreColor = analysisResult.compliance_score >= 80 ? [34, 197, 94] : 
-                       analysisResult.compliance_score >= 60 ? [245, 158, 11] : [220, 38, 38];
+    const scoreColor = typeof analysisResult.compliance_score === "number" && analysisResult.compliance_score >= 80 ? [34, 197, 94] : 
+                       typeof analysisResult.compliance_score === "number" && analysisResult.compliance_score >= 60 ? [245, 158, 11] : [220, 38, 38];
     // Satır 363 civarı
     doc.setTextColor(...(scoreColor as [number, number, number]));
-    doc.text(`${analysisResult.compliance_score}%`, pageWidth / 2, 150, { align: 'center' });
+    doc.text(formatCompliance(analysisResult.compliance_score), pageWidth / 2, 150, { align: 'center' });
 
     doc.setFontSize(10);
     doc.setTextColor(255, 255, 255);
@@ -591,7 +600,7 @@ export default function BlueprintAnalyzer() {
       ["Bina Tipi", analysisResult.project_info.building_category],
       ["Kullanım Amacı", analysisResult.project_info.area_type],
       ["Kat Sayısı", analysisResult.project_info.detected_floor.toString()],
-      ["Tahmini Alan", `${analysisResult.project_info.estimated_area_sqm} m²`],
+      ["Tahmini Alan", formatAreaWithUnit(analysisResult.project_info.estimated_area_sqm)],
       ["Kapasite", analysisResult.project_info.occupancy_count?.toString() || "—"]
     ];
 
@@ -854,7 +863,7 @@ export default function BlueprintAnalyzer() {
 
     const shareData = {
       title: `Kroki Güvenlik Analizi - ${projectName}`,
-      text: `Uygunluk Skoru: ${analysisResult.compliance_score}%\n${analysisResult.safety_violations.length} uyumsuzluk tespit edildi.`,
+      text: `Uygunluk Skoru: ${formatCompliance(analysisResult.compliance_score)}\n${analysisResult.safety_violations.length} uyumsuzluk tespit edildi.`,
       url: window.location.href
     };
 
@@ -879,7 +888,6 @@ export default function BlueprintAnalyzer() {
           <h1 className="text-4xl font-black text-foreground flex items-center gap-3">
             <Building2 className="h-10 w-10 text-primary" />
             AI Kroki Okuyucu
-            <Badge variant="outline" className="text-sm">v2.0</Badge>
           </h1>
           <p className="text-muted-foreground mt-2 flex items-center gap-2">
             <Sparkles className="h-4 w-4 text-yellow-500" />
@@ -1120,13 +1128,13 @@ export default function BlueprintAnalyzer() {
               <div>
                 <p className="text-xs text-muted-foreground">Uygunluk Skoru</p>
                 <p className="text-3xl font-black text-primary mt-1">
-                  {analysisResult.compliance_score}%
+                  {formatCompliance(analysisResult.compliance_score)}
                 </p>
               </div>
               <TrendingUp className="h-8 w-8 text-primary" />
             </div>
             <Progress 
-              value={analysisResult.compliance_score} 
+              value={complianceProgressValue(analysisResult.compliance_score)} 
               className="mt-3 h-2"
             />
           </CardContent>
@@ -1166,9 +1174,8 @@ export default function BlueprintAnalyzer() {
               <div>
                 <p className="text-xs text-muted-foreground">Bina Alanı</p>
                 <p className="text-3xl font-black mt-1">
-                  {analysisResult.project_info.estimated_area_sqm}
+                  {formatAreaWithUnit(analysisResult.project_info.estimated_area_sqm)}
                 </p>
-                <p className="text-xs text-muted-foreground">m²</p>
               </div>
               <Building2 className="h-8 w-8 text-blue-600" />
             </div>
@@ -1570,7 +1577,7 @@ export default function BlueprintAnalyzer() {
               <div className="flex items-center gap-4">
                 <div className="text-right">
                   <p className="text-2xl font-bold text-primary">
-                    {item.compliance_score}%
+                    {formatCompliance(item.compliance_score)}
                   </p>
                   <p className="text-xs text-muted-foreground">
                     Uygunluk

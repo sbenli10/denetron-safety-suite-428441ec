@@ -1,4 +1,4 @@
-// ====================================================
+﻿// ====================================================
 // APP SIDEBAR - FIXED & COMPLETE
 // ====================================================
 
@@ -25,6 +25,9 @@ import {
   Mail,
   Bot,
   ChevronDown,
+  PencilRuler,
+  History,
+  Award,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useAuth } from "@/contexts/AuthContext";
@@ -75,7 +78,7 @@ export function AppSidebar() {
   const [collapsedGroups, setCollapsedGroups] = useState<string[]>([]);
   const [draftMeetingsCount, setDraftMeetingsCount] = useState(0);
 
-  // ✅ Fetch draft meetings count
+  // Fetch draft meetings count
   useEffect(() => {
     if (user) {
       fetchDraftMeetingsCount();
@@ -100,7 +103,7 @@ export function AppSidebar() {
     }
   };
 
-  // ✅ Menu Groups Configuration
+  // Menu Groups Configuration
   const menuGroups: MenuGroup[] = [
     {
       label: "GENEL",
@@ -121,6 +124,8 @@ export function AppSidebar() {
       icon: Building2,
       items: [
         { title: "Firmalar", url: "/companies", icon: Building2, badge: null },
+        { title: "Sertifika Merkezi", url: "/dashboard/certificates", icon: Award, badge: "NEW" },
+        { title: "Sertifika Geçmişi", url: "/dashboard/certificates/history", icon: History, badge: null },
         {
           title: "Denetimler",
           url: "/inspections",
@@ -182,6 +187,18 @@ export function AppSidebar() {
           url: "/blueprint-analyzer",
           icon: Target,
           badge: "Pro",
+        },
+        {
+          title: "Kroki Düzenleyici",
+          url: "/evacuation-editor",
+          icon: PencilRuler,
+          badge: "NEW",
+        },
+        {
+          title: "Kroki Geçmişleri",
+          url: "/evacuation-editor/history",
+          icon: History,
+          badge: null,
         },
       ],
     },
@@ -454,3 +471,7 @@ export function AppSidebar() {
     </Sidebar>
   );
 }
+
+
+
+

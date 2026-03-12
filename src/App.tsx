@@ -1,4 +1,4 @@
-//src/App.tsx
+﻿//src/App.tsx
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -29,10 +29,15 @@ const FormBuilder = lazy(() => import("./pages/FormBuilder"));
 const Reports = lazy(() => import("./pages/Reports"));
 const CAPA = lazy(() => import("./pages/CAPA"));
 const BulkCAPA = lazy(() => import("./pages/BulkCAPA"));
+const BulkCAPAHowTo = lazy(() => import("./pages/BulkCAPAHowTo"));
 const SafetyLibrary = lazy(() => import("./pages/SafetyLibrary"));
 const Settings = lazy(() => import("./pages/Settings"));
 const Profile = lazy(() => import("./pages/Profile"));
 const CompanyManager = lazy(() => import("./pages/CompanyManager"));
+const CertificatesDashboard = lazy(() => import("./pages/CertificatesDashboard"));
+const CertificatesHistory = lazy(() => import("./pages/CertificatesHistory"));
+const CertificateJobDetail = lazy(() => import("./pages/CertificateJobDetail"));
+const CertificateVerifyPage = lazy(() => import("./pages/CertificateVerifyPage"));
 const Auth = lazy(() => import("./pages/Auth"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 const ISGBotSetup = lazy(() => import("@/pages/ISGBotSetup"));
@@ -53,6 +58,8 @@ const RiskAssessments = lazy(() => import("@/pages/RiskAssessments"));
 // BLUEPRINT ANALYZER
 // ============================================
 const BlueprintAnalyzer = lazy(() => import("@/pages/BlueprintAnalyzer"));
+const EvacuationEditor = lazy(() => import("@/pages/EvacuationEditor"));
+const EvacuationHistory = lazy(() => import("@/pages/EvacuationHistory"));
 
 // ============================================
 // ✅ ADEP (Acil Durum Eylem Planı) - 13 MODÜL
@@ -133,6 +140,7 @@ const App = () => (
               {/* ============================================ */}
 
               <Route path="/auth" element={<Auth />} />
+              <Route path="/certificate-verify/:code" element={<Suspense fallback={<PageLoader />}><CertificateVerifyPage /></Suspense>} />
               <Route
                 path="/auth/login"
                 element={
@@ -169,6 +177,9 @@ const App = () => (
                           {/* PROFILE & SETTINGS */}
                           {/* ============================================ */}
                           <Route path="/companies" element={<CompanyManager />} />
+                          <Route path="/dashboard/certificates" element={<CertificatesDashboard />} />
+                          <Route path="/dashboard/certificates/history" element={<CertificatesHistory />} />
+                          <Route path="/dashboard/certificates/:id" element={<CertificateJobDetail />} />
                           <Route path="/profile" element={<Profile />} />
                           <Route path="/settings" element={<Settings />} />
                           <Route path="/notifications" element={<NotificationCenter />} />
@@ -212,6 +223,7 @@ const App = () => (
                           {/* ============================================ */}
                           <Route path="/capa" element={<CAPA />} />
                           <Route path="/bulk-capa" element={<BulkCAPA />} />
+                          <Route path="/bulk-capa/how-to" element={<BulkCAPAHowTo />} />
 
                           {/* ============================================ */}
                           {/* BOARD MEETINGS */}
@@ -252,6 +264,8 @@ const App = () => (
                           {/* BLUEPRINT ANALYZER */}
                           {/* ============================================ */}
                           <Route path="/blueprint-analyzer" element={<BlueprintAnalyzer />} />
+                          <Route path="/evacuation-editor" element={<EvacuationEditor />} />
+                          <Route path="/evacuation-editor/history" element={<EvacuationHistory />} />
 
                           {/* ============================================ */}
                           {/* SAFETY LIBRARY */}
@@ -280,3 +294,7 @@ const App = () => (
 );
 
 export default App;
+
+
+
+

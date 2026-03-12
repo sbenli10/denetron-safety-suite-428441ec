@@ -1,4 +1,4 @@
-//src\pages\BulkCAPA.tsx
+﻿//src\pages\BulkCAPA.tsx
 import { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -77,6 +77,18 @@ interface AIAnalysisResult {
   importance_level: "Normal" | "Yüksek" | "Kritik";
 }
 
+const coerceText = (value: unknown): string => {
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => (typeof item === 'string' ? item : String(item ?? '')))
+      .filter(Boolean)
+      .join('\n');
+  }
+  if (value == null) return '';
+  return String(value);
+};
+
 // ✅ CONSTANTS
 const DEPARTMENTS = [
   "İşveren",
@@ -93,8 +105,8 @@ const DEPARTMENTS = [
 
 
 const IMPORTANCE_LEVELS = [
-  { value: "Normal", label: "🟢 Normal", color: "bg-success/10 text-success" },
-  { value: "Yüksek", label: "🟡 Yüksek", color: "bg-warning/10 text-warning" },
+  { value: "Normal", label: "Normal", color: "bg-success/10 text-success" },
+  { value: "Yüksek", label: "Yüksek", color: "bg-warning/10 text-warning" },
   {
     value: "Kritik",
     label: "🔴 Kritik",
@@ -155,7 +167,7 @@ const safeJsonParse = (jsonText: string): AIAnalysisResult | null => {
       importance_level: parsed.importance_level || "Normal",
     } as AIAnalysisResult;
   } catch (error) {
-    console.error("❌ JSON Parse Error:", error);
+    console.error("JSON Parse Error:", error);
     console.error("Raw text:", jsonText.substring(0, 300));
     return null;
   }
@@ -190,7 +202,7 @@ const dataUrlToBuffer = (dataUrl: string): Uint8Array => {
 
     return bytes;
   } catch (error) {
-    console.error("❌ Buffer conversion error:", error);
+    console.error("Buffer conversion error:", error);
     throw error;
   }
 };
@@ -201,7 +213,8 @@ const generateWordDocument = async (
   siteName: string,
   orgData: OrganizationData,
   user: any,
-  orgId: string
+  orgId: string,
+  overallAnalysis: string
 ): Promise<Blob> => {
   try {
     const today = new Date();
@@ -861,7 +874,7 @@ const generateWordDocument = async (
               })
             );
           } catch (err) {
-            console.error(`❌ Image error at index ${imgIdx}:`, err);
+            console.error(`Image error at index ${imgIdx}:`, err);
           }
         }
       }
@@ -881,6 +894,51 @@ const generateWordDocument = async (
       );
     }
 
+    if (overallAnalysis.trim()) {
+      sections.push(
+        new Paragraph({
+          children: [
+            new TextRun({
+              text: "GENEL DEĞERLENDİRME",
+              bold: true,
+              size: 24,
+              color: "FFFFFF",
+            }),
+          ],
+          alignment: AlignmentType.CENTER,
+          spacing: { before: 200, after: 120 },
+          shading: { fill: "000000" },
+        })
+      );
+
+      sections.push(
+        new Table({
+          width: { size: 100, type: WidthType.PERCENTAGE },
+          rows: [
+            new TableRow({
+              children: [
+                new TableCell({
+                  children: [
+                    new Paragraph({
+                      children: [
+                        new TextRun({
+                          text: overallAnalysis,
+                          size: 20,
+                        }),
+                      ],
+                      alignment: AlignmentType.LEFT,
+                    }),
+                  ],
+                  margins: { top: 120, bottom: 120, left: 120, right: 120 },
+                }),
+              ],
+            }),
+          ],
+        })
+      );
+
+      sections.push(new Paragraph({ children: [new TextRun("")] }));
+    }
     // ✅ Create document
     const doc = new Document({
       sections: [
@@ -895,7 +953,7 @@ const generateWordDocument = async (
     return blob;
 
   } catch (error: any) {
-    console.error("❌ Word generation error:", error);
+    console.error("Word generation error:", error);
     throw error; // ✅ Hata fırlat, handleSaveAndExport yakalayacak
   }
 };
@@ -914,6 +972,8 @@ export default function BulkCAPA() {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
+  const [overallAnalysis, setOverallAnalysis] = useState("");
+  const [overallAnalyzing, setOverallAnalyzing] = useState(false);
 
   const [newEntry, setNewEntry] = useState<HazardEntry>({
     id: "",
@@ -929,9 +989,44 @@ export default function BulkCAPA() {
     ai_analyzed: false,
   });
 
-  // ✅ AI IMAGE ANALYSIS
-  const analyzeImageWithAI = async (
-    imageUrl: string
+  const imageToInlineDataPart = async (imageUrl: string) => {
+    let imageData: string;
+    let mediaType = "image/jpeg";
+
+    if (imageUrl.startsWith("data:")) {
+      const matches = imageUrl.match(/data:([^;]+);base64,(.+)/);
+      if (!matches) {
+        throw new Error("Invalid data URL format");
+      }
+      mediaType = matches[1];
+      imageData = matches[2];
+    } else {
+      const response = await fetch(imageUrl);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch image: ${response.statusText}`);
+      }
+
+      const blob = await response.blob();
+      mediaType = blob.type || "image/jpeg";
+      const arrayBuffer = await blob.arrayBuffer();
+      const bytes = new Uint8Array(arrayBuffer);
+      let binary = "";
+      for (let i = 0; i < bytes.byteLength; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      imageData = btoa(binary);
+    }
+
+    return {
+      inline_data: {
+        mime_type: mediaType,
+        data: imageData,
+      },
+    };
+  };
+
+  const analyzeImagesWithAI = async (
+    imageUrls: string[]
   ): Promise<AIAnalysisResult | null> => {
     try {
       const apiKey = import.meta.env.VITE_GOOGLE_API_KEY;
@@ -941,67 +1036,43 @@ export default function BulkCAPA() {
         throw new Error("Google API Key not configured");
       }
 
-      let imageData: string;
-      let mediaType = "image/jpeg";
+      const inlineParts = await Promise.all(
+        imageUrls.map((url) => imageToInlineDataPart(url))
+      );
 
-      if (imageUrl.startsWith("data:")) {
-        const matches = imageUrl.match(/data:([^;]+);base64,(.+)/);
-        if (!matches) {
-          throw new Error("Invalid data URL format");
-        }
-        mediaType = matches[1];
-        imageData = matches[2];
-      } else {
-        const response = await fetch(imageUrl);
-        if (!response.ok) {
-          throw new Error(`Failed to fetch image: ${response.statusText}`);
-        }
+   const prompt = `Bir iş sağlığı ve güvenliği (İSG) uzmanı gibi davran ve verilen tüm fotoğrafları analiz et.
 
-        const blob = await response.blob();
-        mediaType = blob.type || "image/jpeg";
-        const arrayBuffer = await blob.arrayBuffer();
-        const bytes = new Uint8Array(arrayBuffer);
-        let binary = "";
-        for (let i = 0; i < bytes.byteLength; i++) {
-          binary += String.fromCharCode(bytes[i]);
-        }
-        imageData = btoa(binary);
-      }
+Analiz yöntemi:
+- Önce tüm fotoğrafları tek tek incele.
+- Her fotoğrafta görülen riskleri zihinsel olarak belirle.
+- Hiçbir fotoğrafı göz ardı etme.
+- Fotoğrafların aynı ortamdan gelmeyebileceğini varsay ve her fotoğrafı bağımsız bir çalışma alanı gibi değerlendir.
+- Ardından tüm bulguları birleştirerek tek bir genel İSG bulgusu oluştur.
+- Farklı fotoğraflarda görülen farklı riskleri sonuçta birlikte özetle.
 
-     const enhancedPrompt = `İşyeri güvenliği ve sağlığı (İSG) uzmanı olarak, görseldeki tehlikeleri analiz edin.
+Kurallar:
+- Sadece fotoğrafta görülebilen durumları yaz.
+- Belirsiz veya uydurma ayrıntı ekleme.
+- Açıklama kısmında görülen tüm önemli riskleri kısa ve net şekilde özetle.
+- Sonuç tek bir bulgu olacak ancak birden fazla ilişkili risk içerebilir.
+- Çıktı sadece geçerli bir JSON nesnesi olmalıdır.
+- JSON dışında hiçbir metin, açıklama veya kod bloğu yazma.
 
-⚠️ KRITIK TALIMATLAR - KESIN OLARAK UYUN:
-- Yanıt SADECE GEÇERLI bir JSON objesi olmalı
-- JSON asla yarıda kesilmemeli - her zaman TAMAMLANMALI
-- Tüm tırnak işaretleri ve parantezler KAPATILMALI
-- Markdown YOK, kod blokları YOK, ekstra metin YOK
-- Yanıt { ile başlayıp } ile BİTMELİDİR
-- "undefined" YAZILMAMALI
-- Tüm alanlar MUTLAKA doldurulmalı - boş bırakmayın
-- Türkçe ve NET cevaplar verin
-- UZUN ve DETAYLı cevaplar verin (en az 2-3 cümle her alan)
-
-EXACTLY şu yapı döndürün:
-
+JSON formatı:
 {
-  "description": "Açık, net ve profesyonel bulgu açıklaması (2-3 tam cümle Türkçe)",
-  "riskDefinition": "Riski açıkça tanımlayan, sonuçlarını vurgulayan açıklama (2-3 tam cümle Türkçe)",
-  "correctiveAction": "Hemen yapılması gereken faaliyetler:\n- Madde 1\n- Madde 2\n- Madde 3",
-  "preventiveAction": "İleride önlemek için alınacak faaliyetler:\n- Madde 1\n- Madde 2\n- Madde 3",
-  "importance_level": "Normal"
+"description": "4-5 cümlelik bulgu özeti",
+"riskDefinition": "En fazla 4 cümlelik genel risk özeti",
+"correctiveAction": "- madde 1\n- madde 2\n- madde 3",
+"preventiveAction": "- madde 1\n- madde 2\n- madde 3",
+"importance_level": "Normal"
 }
 
-UYARI: Her alan MUTLAKA doldurulmalı. "undefined" veya boş değer YASAK!
+importance_level seçimi:
+- Elektrik, yangın, kimyasal veya ciddi yaralanma riski varsa → Kritik
+- Yaralanma veya kaza ihtimali yüksekse → Yüksek
+- Düzen ve düşük riskli uygunsuzluklar → Normal
 
-Eğer görüntüde İSG riski yoksa:
-
-{
-  "description": "Görüntüde belirgin bir iş güvenliği riski tespit edilmemiştir. Çalışma ortamı güvenli görünmektedir.",
-  "riskDefinition": "Acil bir risk bulunmamaktadır.",
-  "correctiveAction": "Uygulanacak özel faaliyet bulunmamaktadır.",
-  "preventiveAction": "Genel iş güvenliği uygulamalarına uyulmalıdır.",
-  "importance_level": "Normal"
-}`;
+Birden fazla risk varsa importance_level en tehlikeli riske göre belirlenmelidir.`;
 
       const response = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
@@ -1013,21 +1084,11 @@ Eğer görüntüde İSG riski yoksa:
           body: JSON.stringify({
             contents: [
               {
-                parts: [
-                  {
-                    text: enhancedPrompt,
-                  },
-                  {
-                    inline_data: {
-                      mime_type: mediaType,
-                      data: imageData,
-                    },
-                  },
-                ],
+                parts: [{ text: prompt }, ...inlineParts],
               },
             ],
             generationConfig: {
-              temperature: 0.1,
+              temperature: 0.15,
               top_p: 0.95,
               top_k: 40,
               max_output_tokens: 4016,
@@ -1038,7 +1099,6 @@ Eğer görüntüde İSG riski yoksa:
 
       if (!response.ok) {
         const errorData = await response.json();
-        console.error("Gemini API error:", errorData);
         throw new Error(
           `Gemini API error: ${errorData.error?.message || response.statusText}`
         );
@@ -1051,18 +1111,21 @@ Eğer görüntüde İSG riski yoksa:
         throw new Error("No text response from Gemini");
       }
 
-      console.log("📝 Raw response:", textContent.substring(0, 300));
-
       const analysis = safeJsonParse(textContent);
 
       if (!analysis) {
         throw new Error("Could not parse AI response as JSON");
       }
 
-      console.log("✅ Successfully parsed:", analysis);
-      return analysis;
+      return {
+        ...analysis,
+        description: coerceText(analysis.description).trim(),
+        riskDefinition: coerceText(analysis.riskDefinition).trim(),
+        correctiveAction: coerceText(analysis.correctiveAction).trim(),
+        preventiveAction: coerceText(analysis.preventiveAction).trim(),
+      };
     } catch (error) {
-      console.error("❌ AI Analysis error:", error);
+      console.error("AI analysis error:", error);
       return null;
     }
   };
@@ -1109,37 +1172,42 @@ Eğer görüntüde İSG riski yoksa:
     setAnalyzing(true);
 
     try {
-      toast.info("🤖 Fotoğraflar analiz ediliyor...");
+      const total = newEntry.media_urls.length;
+      toast.info(`${total} fotoğraf analiz ediliyor`);
 
-      const analyses: AIAnalysisResult[] = [];
+      let finalAnalysis = await analyzeImagesWithAI(newEntry.media_urls);
 
-      for (let i = 0; i < newEntry.media_urls.length; i++) {
-        const analysis = await analyzeImageWithAI(newEntry.media_urls[i]);
-        if (analysis) {
-          analyses.push(analysis);
+      if (!finalAnalysis) {
+        const analyses: AIAnalysisResult[] = [];
+
+        for (let i = 0; i < newEntry.media_urls.length; i++) {
+          const analysis = await analyzeImagesWithAI([newEntry.media_urls[i]]);
+          if (analysis) {
+            analyses.push(analysis);
+          }
+          await new Promise((resolve) => setTimeout(resolve, 300));
         }
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-      }
 
-      if (analyses.length === 0) {
-        throw new Error("Fotoğraflar analiz edilemedi");
-      }
+        if (analyses.length === 0) {
+          throw new Error("Fotoğraflar analiz edilemedi");
+        }
 
-      const mergedAnalysis = mergeAnalyses(analyses);
+        finalAnalysis = mergeAnalyses(analyses);
+      }
 
       setNewEntry((prev) => ({
         ...prev,
-        description: mergedAnalysis.description,
-        riskDefinition: mergedAnalysis.riskDefinition,
-        correctiveAction: mergedAnalysis.correctiveAction,
-        preventiveAction: mergedAnalysis.preventiveAction,
-        importance_level: mergedAnalysis.importance_level,
+        description: finalAnalysis.description,
+        riskDefinition: finalAnalysis.riskDefinition,
+        correctiveAction: finalAnalysis.correctiveAction,
+        preventiveAction: finalAnalysis.preventiveAction,
+        importance_level: finalAnalysis.importance_level,
         ai_analyzed: true,
       }));
 
-      toast.success("✅ Fotoğraflar başarıyla analiz edildi!");
+      toast.success(`${total} fotoğraf için analiz tamamlandı`);
     } catch (error: any) {
-      toast.error(`❌ AI Analizi başarısız: ${error.message}`);
+      toast.error(`AI analizi başarısız: ${error.message}`);
       console.error("Analysis error:", error);
     } finally {
       setAnalyzing(false);
@@ -1155,19 +1223,113 @@ Eğer görüntüde İSG riski yoksa:
       return currPriority > maxPriority ? curr : max;
     });
 
+    const descriptions = analyses
+      .map((a) => coerceText(a.description).trim())
+      .filter(Boolean);
+    const riskLines = analyses
+      .map((a) => coerceText(a.riskDefinition).trim())
+      .filter(Boolean);
+    const correctiveActions = analyses
+      .map((a) => coerceText(a.correctiveAction).trim())
+      .filter(Boolean);
+    const preventiveActions = analyses
+      .map((a) => coerceText(a.preventiveAction).trim())
+      .filter(Boolean);
+
+    const shortRiskSummary = riskLines
+      .slice(0, 3)
+      .map((line) => line.split(".")[0].trim())
+      .filter(Boolean)
+      .join(". ");
+
     return {
-      description: analyses[0].description,
-      riskDefinition: analyses
-        .map((a, i) => `${i + 1}. ${a.riskDefinition}`)
-        .join("\n"),
-      correctiveAction: analyses
-        .map((a, i) => `${i + 1}. ${a.correctiveAction}`)
-        .join("\n"),
-      preventiveAction: analyses
-        .map((a, i) => `${i + 1}. ${a.preventiveAction}`)
-        .join("\n"),
+      description: descriptions.slice(0, 2).join(" "),
+      riskDefinition: shortRiskSummary
+        ? `${shortRiskSummary}.`
+        : riskLines[0] || "Genel risk değerlendirmesi tamamlandı.",
+      correctiveAction: correctiveActions.slice(0, 3).join("\n"),
+      preventiveAction: preventiveActions.slice(0, 3).join("\n"),
       importance_level: maxImportance.importance_level,
     };
+  };
+  const generateOverallAnalysis = async () => {
+    if (entries.length === 0) {
+      toast.error("Önce en az bir bulgu ekleyin");
+      return;
+    }
+
+    setOverallAnalyzing(true);
+
+    try {
+      const apiKey = import.meta.env.VITE_GOOGLE_API_KEY;
+      const model = import.meta.env.VITE_GOOGLE_MODEL || "gemini-2.5-flash";
+
+      if (!apiKey) {
+        throw new Error("Google API anahtarı tanımlı değil");
+      }
+
+      const prompt = `Sen deneyimli bir iş sağlığı ve güvenliği uzmanısın.
+Aşağıdaki DÖF maddelerini birlikte değerlendir ve raporun sonuna eklenecek tek bir genel analiz yaz.
+
+Kurallar:
+- Kısa, net ve profesyonel yaz.
+- Tek paragraf ya da en fazla 2 kısa paragraf üret.
+- Tekrar eden maddeleri birleştir.
+- Genel risk eğilimini, ortak kök nedenleri ve kapanış değerlendirmesini özetle.
+- Madde madde yazma.
+- Sadece düz metin döndür.
+
+DÖF maddeleri:
+${entries
+  .map(
+    (entry, index) =>
+      `${index + 1}. Bulgu: ${entry.description}\nRisk: ${entry.riskDefinition}\nDüzeltici Faaliyet: ${entry.correctiveAction}\nÖnleyici Faaliyet: ${entry.preventiveAction}\nBölüm: ${entry.related_department}\nÖnemlilik: ${entry.importance_level}`
+  )
+  .join("\n\n")}`;
+
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            contents: [
+              {
+                parts: [{ text: prompt }],
+              },
+            ],
+            generationConfig: {
+              temperature: 0.2,
+              top_p: 0.9,
+              top_k: 32,
+              max_output_tokens: 1200,
+            },
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error?.message || response.statusText);
+      }
+
+      const result = await response.json();
+      const textContent = coerceText(result.candidates?.[0]?.content?.parts?.[0]?.text).trim();
+
+      if (!textContent) {
+        throw new Error("Genel analiz metni üretilemedi");
+      }
+
+      setOverallAnalysis(textContent);
+      toast.success("Genel analiz oluşturuldu");
+    } catch (error: any) {
+      console.error("Genel analiz hatası:", error);
+      toast.error(`Genel analiz oluşturulamadı: ${error.message}`);
+    } finally {
+      setOverallAnalyzing(false);
+    }
   };
 
   // ✅ DRAG & DROP
@@ -1214,7 +1376,7 @@ Eğer görüntüde İSG riski yoksa:
           ...prev,
           media_urls: [...prev.media_urls, dataUrl],
         }));
-        toast.success("📷 Fotoğraf eklendi");
+        toast.success("Fotoğraf eklendi");
       };
       reader.readAsDataURL(file);
     });
@@ -1260,22 +1422,31 @@ Eğer görüntüde İSG riski yoksa:
 
   // ✅ ADD ENTRY
   const handleAddEntry = () => {
-    if (!newEntry.description.trim()) {
+    const normalizedEntry: HazardEntry = {
+      ...newEntry,
+      description: coerceText(newEntry.description),
+      riskDefinition: coerceText(newEntry.riskDefinition),
+      correctiveAction: coerceText(newEntry.correctiveAction),
+      preventiveAction: coerceText(newEntry.preventiveAction),
+      notification_method: coerceText(newEntry.notification_method),
+    };
+
+    if (!normalizedEntry.description.trim()) {
       toast.error("Lütfen bulgu açıklaması girin");
       return;
     }
 
-    if (!newEntry.riskDefinition.trim()) {
+    if (!normalizedEntry.riskDefinition.trim()) {
       toast.error("Lütfen risk tanımını girin");
       return;
     }
 
-    if (!newEntry.correctiveAction.trim()) {
+    if (!normalizedEntry.correctiveAction.trim()) {
       toast.error("Lütfen düzeltici faaliyeti girin");
       return;
     }
 
-    if (!newEntry.preventiveAction.trim()) {
+    if (!normalizedEntry.preventiveAction.trim()) {
       toast.error("Lütfen önleyici faaliyeti girin");
       return;
     }
@@ -1286,7 +1457,7 @@ Eğer görüntüde İSG riski yoksa:
     }
 
     const entry: HazardEntry = {
-      ...newEntry,
+      ...normalizedEntry,
       id: `entry-${Date.now()}`,
     };
 
@@ -1305,7 +1476,7 @@ Eğer görüntüde İSG riski yoksa:
       media_urls: [],
       ai_analyzed: false,
     });
-    toast.success("✅ Bulgu eklendi");
+    toast.success("Bulgu eklendi");
   };
 
   // ✅ DELETE ENTRY
@@ -1351,7 +1522,7 @@ const handleSaveAndExport = async () => {
               status: "completed",
               risk_level: "high",
               media_urls: entries.flatMap(e => e.media_urls),
-              notes: `Bulk CAPA Formu - ${entries.length} bulgu (AI Analiz)`,
+              notes: `Toplu DÖF Formu - ${entries.length} bulgu (AI Analiz)`,
               risk_definition: entries.map((e, i) => `${i + 1}. ${e.riskDefinition}`).join('\n\n'),
               corrective_action: entries.map((e, i) => `${i + 1}. ${e.correctiveAction}`).join('\n\n'),
               preventive_action: entries.map((e, i) => `${i + 1}. ${e.preventiveAction}`).join('\n\n'),
@@ -1382,18 +1553,18 @@ const handleSaveAndExport = async () => {
                 notification_method: entry.notification_method,
               });
             }
-            toast.success("✅ Veriler veritabanına kaydedildi");
+            toast.success("Veriler veritabanına kaydedildi");
           }
         }
       } catch (dbError) {
-        console.warn("⚠️ Database save failed:", dbError);
-        toast.warning("⚠️ Veritabanı kaydı başarısız, Word rapor oluşturuluyor...");
+        console.warn("Database save failed:", dbError);
+        toast.warning("Veritabanı kaydı başarısız, Word raporu oluşturuluyor.");
       }
     }
 
     // ✅ 2. WORD DOKÜMANI OLUŞTUR
     if (orgData && orgData.id) {
-      toast.info("📄 Word raporu oluşturuluyor...");
+      toast.info("Word raporu oluşturuluyor");
       
       // ✅ await ile blob al
       const wordBlob = await generateWordDocument(
@@ -1401,7 +1572,8 @@ const handleSaveAndExport = async () => {
         siteName,
         orgData,
         user,
-        orgData.id
+        orgData.id,
+        overallAnalysis
       );
 
       // ✅ 3. DOSYA ADI (Supabase object key için güvenli)
@@ -1426,7 +1598,7 @@ const handleSaveAndExport = async () => {
         });
 
       if (uploadError) {
-        console.error("❌ Storage upload error:", uploadError);
+        console.error("Storage upload error:", uploadError);
         toast.error(`Storage upload hatası: ${uploadError.message}`);
       } else {
         // ✅ 5. PUBLIC URL AL
@@ -1452,16 +1624,17 @@ const handleSaveAndExport = async () => {
           entries_count: entries.length,
           ai_analyzed_count: entries.filter((e) => e.ai_analyzed).length,
           location: siteName,
+          overall_analysis: overallAnalysis || null,
           storage_upload_ok: !uploadError,
           storage_error: uploadError?.message ?? null,
         },
       });
 
       if (dbError) {
-        console.error("❌ Reports insert error:", dbError);
+        console.error("Reports insert error:", dbError);
         toast.error(`Reports kaydı başarısız: ${dbError.message}`);
       } else {
-        toast.success("✅ Rapor arşivlendi");
+        toast.success("Rapor arşivlendi");
       }
 
       // ✅ 7. DOSYAYI İNDİR
@@ -1474,6 +1647,7 @@ const handleSaveAndExport = async () => {
       // ✅ 9. FORMU TEMIZLE
       setEntries([]);
       setSiteName("");
+      setOverallAnalysis("");
       setNewEntry({
         id: "",
         description: "",
@@ -1488,18 +1662,18 @@ const handleSaveAndExport = async () => {
         ai_analyzed: false,
       });
 
-      toast.success("✅ DÖF Raporu başarıyla oluşturuldu!");
+      toast.success("DÖF raporu oluşturuldu");
 
       // ✅ 10. YÖNLENDIR
       setTimeout(() => {
         navigate("/inspections");
       }, 3000);
     } else {
-      toast.error("❌ Organization data not available");
+      toast.error("Kuruluş bilgisi bulunamadı");
     }
   } catch (error: any) {
-    console.error("❌ Error:", error);
-    toast.error(`❌ Hata: ${error.message}`);
+    console.error("Error:", error);
+    toast.error(`Hata: ${error.message}`);
   } finally {
     setSaving(false);
   }
@@ -1518,11 +1692,11 @@ const handleSaveAndExport = async () => {
       {/* HEADER */}
       <div>
         <h1 className="text-3xl font-bold text-foreground flex items-center gap-2">
-          📋 Bulk CAPA Formu
+          Toplu DÖF Formu
           <Sparkles className="h-8 w-8 text-yellow-500" />
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          AI Destekli Düzeltici ve Önleyici Faaliyet Planı Oluştur
+          AI destekli düzeltici ve önleyici faaliyet planı oluştur
         </p>
       </div>
 
@@ -1531,7 +1705,7 @@ const handleSaveAndExport = async () => {
         {/* SITE INFO */}
         <div className="space-y-3">
           <Label className="text-sm font-bold text-foreground">
-            🏭 Saha/Tesisis Adı
+            Saha/Tesis Adı
           </Label>
           <Input
             placeholder="Örn: Ankara Üretim Fabrikası"
@@ -1546,7 +1720,7 @@ const handleSaveAndExport = async () => {
               <AlertCircle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
               <div>
                 <p className="text-sm font-semibold text-amber-700">
-                  ⚠️ Saha Adı Gerekli
+                  Saha Adı Gerekli
                 </p>
                 <p className="text-xs text-amber-600 leading-relaxed mt-1">
                   "Kaydet ve Word İndir" butonunu etkinleştirmek için saha/tesis adını girmelisiniz.
@@ -1568,14 +1742,13 @@ const handleSaveAndExport = async () => {
             <Sparkles className="h-5 w-5 text-blue-500 shrink-0 mt-0.5" />
             <div>
               <p className="text-sm font-semibold text-blue-700">
-                🤖 AI Analizi Kullan
+                AI Analizi Kullan
               </p>
               <p className="text-xs text-blue-600 leading-relaxed mt-1">
-                Fotoğraf yükle → "AI ile Analiz Et" tıkla → Tüm alanlar
-                otomatik doldurulacak
+                Fotoğraf yükleyin ve AI ile Analiz Et butonuna basın. Tüm alanlar otomatik doldurulur.
               </p>
                <p className="text-xs text-blue-600 leading-relaxed mt-1">
-                Yapay Zeka hata yapabilir. Önemli bilgileri kontrol edin.
+                Yapay zeka tüm fotoğrafları birlikte yorumlar. Sonuçları yine de kontrol edin.
               </p>
             </div>
           </div>
@@ -1751,7 +1924,6 @@ const handleSaveAndExport = async () => {
             {/* Corrective Action */}
             <div className="lg:col-span-2 space-y-2">
               <Label className="text-sm font-semibold flex items-center gap-2">
-                🔧
                 Düzeltici Faaliyet *
                 {newEntry.ai_analyzed && (
                   <Sparkles className="h-3 w-3 text-yellow-500" />
@@ -1773,7 +1945,6 @@ const handleSaveAndExport = async () => {
             {/* Preventive Action */}
             <div className="lg:col-span-2 space-y-2">
               <Label className="text-sm font-semibold flex items-center gap-2">
-                ✅
                 Önleyici Faaliyet *
                 {newEntry.ai_analyzed && (
                   <Sparkles className="h-3 w-3 text-yellow-500" />
@@ -1869,7 +2040,7 @@ const handleSaveAndExport = async () => {
             {/* ✅ Notification Method - TEXT INPUT */}
             <div className="space-y-2">
               <Label className="text-sm font-semibold flex items-center gap-2">
-                📢 Bildirim Şekli
+                Bildirim Şekli
               </Label>
               <Input
                 placeholder="Örn: E-mail, SMS, Telefon, Yüz Yüze, vb..."
@@ -1898,7 +2069,7 @@ const handleSaveAndExport = async () => {
         {entries.length > 0 && (
           <div className="space-y-4">
             <h3 className="text-lg font-bold text-foreground">
-              📑 Eklenen Bulgular ({entries.length})
+              Eklenen Bulgular ({entries.length})
             </h3>
 
             <div className="space-y-3">
@@ -1930,7 +2101,7 @@ const handleSaveAndExport = async () => {
                           {entry.related_department}
                         </span>
                         <span className="text-xs px-2 py-1 rounded bg-blue-500/10 text-blue-600">
-                          📅{" "}
+                          
                           {new Date(entry.termin_date).toLocaleDateString(
                             "tr-TR"
                           )}
@@ -1938,12 +2109,12 @@ const handleSaveAndExport = async () => {
                         
                         {entry.media_urls.length > 0 && (
                           <span className="text-xs px-2 py-1 rounded bg-purple-500/10 text-purple-600">
-                            📷 {entry.media_urls.length}
+                            {entry.media_urls.length} fotoğraf
                           </span>
                         )}
                         {/* ✅ YENİ */}
                         <span className="text-xs px-2 py-1 rounded bg-green-500/10 text-green-600">
-                          📢 {entry.notification_method || "E-mail"}
+                          Bildirim: {entry.notification_method || "E-mail"}
                         </span>
                       </div>
                     </div>
@@ -1962,6 +2133,42 @@ const handleSaveAndExport = async () => {
           </div>
         )}
 
+        {entries.length > 0 && (
+          <div className="border border-border/50 rounded-lg p-6 space-y-4 bg-secondary/20">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <h3 className="text-lg font-bold text-foreground">Genel Analiz</h3>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Eklenen tüm DÖF maddeleri için tek bir genel değerlendirme oluşturabilirsiniz.
+                </p>
+              </div>
+              <Button
+                type="button"
+                onClick={generateOverallAnalysis}
+                disabled={overallAnalyzing || entries.length === 0}
+                className="gap-2 border-0 text-foreground font-semibold h-11 gradient-primary"
+              >
+                {overallAnalyzing ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Genel analiz hazırlanıyor...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="h-4 w-4" />
+                    AI ile Genel Analiz Oluştur
+                  </>
+                )}
+              </Button>
+            </div>
+            <Textarea
+              placeholder="Genel analiz burada yer alır. İsterseniz düzenleyebilirsiniz."
+              value={overallAnalysis}
+              onChange={(e) => setOverallAnalysis(e.target.value)}
+              className="bg-secondary/50 border-border/50 min-h-32 resize-y"
+            />
+          </div>
+        )}
         {/* ACTION BUTTONS */}
         <div className="flex gap-3 pt-4 border-t border-border">
           <Button
@@ -2034,6 +2241,15 @@ const handleSaveAndExport = async () => {
                 </p>
               </div>
 
+              {overallAnalysis.trim() && (
+                <div className="bg-secondary/50 p-4 rounded space-y-2 border border-border/50">
+                  <p className="font-semibold text-foreground">Genel Analiz ve Kapanış</p>
+                  <p className="text-sm leading-6 text-muted-foreground whitespace-pre-wrap">
+                    {overallAnalysis}
+                  </p>
+                </div>
+              )}
+
               {/* ENTRIES WITH IMAGE GALLERY */}
               {entries.map((entry, idx) => (
                 <div
@@ -2067,7 +2283,7 @@ const handleSaveAndExport = async () => {
                   {entry.media_urls.length > 0 && (
                     <div className="space-y-3 pt-4 border-t border-border">
                       <p className="text-sm font-semibold">
-                        📷 Fotoğraflar ({entry.media_urls.length})
+                        Fotoğraflar ({entry.media_urls.length})
                       </p>
                       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                         {entry.media_urls.map((imageUrl, imgIdx) => (

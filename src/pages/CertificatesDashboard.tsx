@@ -1,4 +1,4 @@
-﻿import { useEffect, useMemo, useState } from "react";
+﻿import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   Building2,
@@ -6,12 +6,14 @@ import {
   Eye,
   FileArchive,
   FileSpreadsheet,
+  Palette,
   History,
   ImagePlus,
   Loader2,
   Plus,
   RefreshCw,
   ShieldCheck,
+  Trash2,
   Upload,
   Users,
 } from "lucide-react";
@@ -30,7 +32,7 @@ import { Progress } from "@/components/ui/progress";
 import { createCertificate, generateCertificateJob, getCertificateDownload, getCertificateStatus } from "@/lib/certificateApi";
 import { createCertificateExcelTemplate, parseCertificateParticipantsExcel } from "@/lib/certificateExcel";
 import { CertificatePreviewCard } from "@/components/certificates/CertificatePreviewCard";
-import type { CertificateFormValues, CertificateJobItem, CertificateJobRecord, CertificateParticipantInput, CertificateRecord } from "@/types/certificates";
+import type { CertificateDesignConfig, CertificateFormValues, CertificateJobItem, CertificateJobRecord, CertificateParticipantInput, CertificateRecord } from "@/types/certificates";
 import type { Company } from "@/types/companies";
 
 const defaultForm: CertificateFormValues = {
@@ -48,12 +50,32 @@ const defaultForm: CertificateFormValues = {
   frame_style: "gold",
   trainer_names: [""],
   notes: "",
+  design_config: {
+    primaryColor: "#d4af37",
+    secondaryColor: "#294d77",
+    fontFamily: "serif",
+    showBadge: true,
+    showSeal: true,
+    titleText: "",
+    descriptionText: "",
+    osgb_logo_url: "",
+    signatureCount: 4,
+    signatures: [
+      { name: "", title: "İSG Uzmanı" },
+      { name: "", title: "İşyeri Hekimi" },
+      { name: "", title: "İşveren Vekili" },
+      { name: "", title: "OSGB Yetkilisi" },
+    ],
+  },
 };
 
 const templateCards = [
-  { value: "classic", title: "Prestij Klasik", text: "Resmi, çerçeveli ve geleneksel görünüm" },
-  { value: "modern", title: "Kurumsal Neon", text: "Yüksek kontrastlı, premium SaaS estetiği" },
-  { value: "minimal", title: "Yönetici Minimal", text: "Temiz çizgiler ve baskı odaklı tasarım" },
+  { value: "classic", title: "Prestij Klasik", text: "Geleneksel çerçeve, resmi görünüm ve sade kurumsal yerleşim" },
+  { value: "academy", title: "Akademi Mavi", text: "Mavi-gold üst bant, mühür hissi ve resmi eğitim belgesi kompozisyonu" },
+  { value: "executive", title: "Yönetici Altın", text: "Üst düzey teslimler için daha seçkin, premium ve davetiye benzeri sertifika yapısı" },
+  { value: "compliance", title: "Mevzuat Uyum", text: "OSGB ve İSG eğitimleri için bilgi yoğun, düzenli ve denetim dostu resmi düzen" },
+  { value: "modern", title: "Kurumsal Modern", text: "Çağdaş görünüm, yüksek kontrast ve dijital teslim odaklı premium tasarım" },
+  { value: "minimal", title: "Minimal Baskı", text: "Temiz çizgiler, sade tipografi ve hızlı baskı için dengeli görünüm" },
 ] as const;
 
 function getJobStatusMeta(job: CertificateJobRecord | null, participantCount: number) {
@@ -134,38 +156,167 @@ function getJobStatusMeta(job: CertificateJobRecord | null, participantCount: nu
   };
 }
 
+
+function toDisplayText(value: unknown) {
+  if (typeof value === "string") return value;
+  if (value && typeof value === "object") {
+    const candidate = (value as Record<string, unknown>).name;
+    return typeof candidate === "string" ? candidate : "";
+  }
+  return "";
+}
+
+function buildDefaultDesignConfig(trainerNames: string[] = [], companyName = ""): CertificateDesignConfig {
+  return {
+    primaryColor: "#d4af37",
+    secondaryColor: "#294d77",
+    fontFamily: "serif",
+    showBadge: true,
+    showSeal: true,
+    titleText: "",
+    descriptionText: "",
+    osgb_logo_url: "",
+    signatureCount: 4,
+    signatures: [
+      { name: trainerNames[0] || "", title: "İSG Uzmanı" },
+      { name: trainerNames[1] || "", title: "İşyeri Hekimi" },
+      { name: companyName || "", title: "İşveren Vekili" },
+      { name: "OSGB Yetkilisi", title: "Düzenleyen Birim" },
+    ],
+  };
+}
+
+function normalizeDesignConfig(value: unknown, trainerNames: string[] = [], companyName = ""): CertificateDesignConfig {
+  const source = value && typeof value === "object" ? (value as Partial<CertificateDesignConfig>) : {};
+  const defaults = buildDefaultDesignConfig(trainerNames, companyName);
+  const rawSignatures = Array.isArray(source.signatures) ? source.signatures : defaults.signatures;
+  const signatures: CertificateSignatureConfig[] = rawSignatures.slice(0, 4).map((signature, index) => ({
+    name: typeof signature?.name === "string" ? signature.name : defaults.signatures[index]?.name || "",
+    title: typeof signature?.title === "string" ? signature.title : defaults.signatures[index]?.title || "",
+    image_url: typeof signature?.image_url === "string" ? signature.image_url : "",
+  }));
+
+  while (signatures.length < 4) {
+    signatures.push(defaults.signatures[signatures.length]);
+  }
+
+  return {
+    primaryColor: typeof source.primaryColor === "string" ? source.primaryColor : defaults.primaryColor,
+    secondaryColor: typeof source.secondaryColor === "string" ? source.secondaryColor : defaults.secondaryColor,
+    fontFamily: source.fontFamily === "sans" || source.fontFamily === "gothic" ? source.fontFamily : defaults.fontFamily,
+    showBadge: typeof source.showBadge === "boolean" ? source.showBadge : defaults.showBadge,
+    showSeal: typeof source.showSeal === "boolean" ? source.showSeal : defaults.showSeal,
+    titleText: typeof source.titleText === "string" ? source.titleText : defaults.titleText,
+    descriptionText: typeof source.descriptionText === "string" ? source.descriptionText : defaults.descriptionText,
+    osgb_logo_url: typeof source.osgb_logo_url === "string" ? source.osgb_logo_url : defaults.osgb_logo_url,
+    signatureCount: Math.min(4, Math.max(1, Number(source.signatureCount || defaults.signatureCount))),
+    signatures,
+  };
+}
+
+function readStudioPreset(): CertificateFormValues | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem("certificate-studio-preset");
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<CertificateFormValues>;
+    return {
+      ...defaultForm,
+      ...parsed,
+      trainer_names: Array.isArray(parsed.trainer_names) ? parsed.trainer_names : defaultForm.trainer_names,
+      design_config: normalizeDesignConfig(parsed.design_config, Array.isArray(parsed.trainer_names) ? parsed.trainer_names : defaultForm.trainer_names, parsed.company_name || defaultForm.company_name),
+    };
+  } catch {
+    return null;
+  }
+}
+
 export default function CertificatesDashboard() {
-  const [form, setForm] = useState<CertificateFormValues>(defaultForm);
+  const [form, setForm] = useState<CertificateFormValues>(() => readStudioPreset() || defaultForm);
   const [participants, setParticipants] = useState<CertificateParticipantInput[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [recentCertificates, setRecentCertificates] = useState<CertificateRecord[]>([]);
   const [activeCertificate, setActiveCertificate] = useState<CertificateRecord | null>(null);
   const [activeJob, setActiveJob] = useState<CertificateJobRecord | null>(null);
   const [jobItems, setJobItems] = useState<CertificateJobItem[]>([]);
-  const [selectedParticipantIndex, setSelectedParticipantIndex] = useState<number>(0);
+  const [selectedPdfParticipantId, setSelectedPdfParticipantId] = useState("");
+  const [logoPreviewUrl, setLogoPreviewUrl] = useState("");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState(false);
+  const [deletingCertificateId, setDeletingCertificateId] = useState<string | null>(null);
   const [employeeLoadState, setEmployeeLoadState] = useState<"idle" | "loaded" | "empty">("idle");
   const [employeeLoadMessage, setEmployeeLoadMessage] = useState("");
   const [trainerNamesInput, setTrainerNamesInput] = useState(defaultForm.trainer_names.join(", "));
 
-  const completedItems = useMemo(() => jobItems.filter((item) => item.status === "completed"), [jobItems]);
+  const completedItems = useMemo(
+    () => jobItems.filter((item) => item.status === "completed" && item.pdf_path),
+    [jobItems]
+  );
   const previewParticipant = participants[0];
   const jobStatusMeta = useMemo(() => getJobStatusMeta(activeJob, participants.length), [activeJob, participants.length]);
+  const previewForm = useMemo(
+    () => ({
+      ...form,
+      logo_url: logoPreviewUrl || form.logo_url || "",
+      design_config: normalizeDesignConfig(form.design_config, form.trainer_names, form.company_name),
+    }),
+    [form, logoPreviewUrl]
+  );
+
+  const syncStoredPreview = useCallback(async (logoValue: string | undefined, setter: (value: string) => void) => {
+    const nextValue = (logoValue || "").trim();
+    if (!nextValue) {
+      setter("");
+      return;
+    }
+
+    if (/^https?:\/\//i.test(nextValue)) {
+      setter(nextValue);
+      return;
+    }
+
+    const companyLogoResult = await supabase.storage.from("company-logos").createSignedUrl(nextValue, 3600);
+    if (!companyLogoResult.error && companyLogoResult.data?.signedUrl) {
+      setter(companyLogoResult.data.signedUrl);
+      return;
+    }
+
+    const certificateLogoResult = await supabase.storage.from("certificate-files").createSignedUrl(nextValue, 3600);
+    if (!certificateLogoResult.error && certificateLogoResult.data?.signedUrl) {
+      setter(certificateLogoResult.data.signedUrl);
+      return;
+    }
+
+    setter("");
+  }, []);
+
+  const syncLogoPreview = useCallback(async (logoValue?: string) => {
+    await syncStoredPreview(logoValue, setLogoPreviewUrl);
+  }, [syncStoredPreview]);
 
   useEffect(() => {
     void bootstrap();
   }, []);
 
   useEffect(() => {
+    void syncLogoPreview(form.logo_url);
+  }, [form.logo_url, syncLogoPreview]);
+
+  useEffect(() => {
     if (!activeCertificate || !activeJob) return;
-    if (!["queued", "processing", "processing_with_errors"].includes(activeJob.status)) return;
+    if (!["queued", "processing", "processing_with_errors", "completed", "completed_with_errors"].includes(activeJob.status)) return;
     const interval = window.setInterval(() => {
       void refreshJobStatus(activeCertificate.id);
     }, 3000);
     return () => window.clearInterval(interval);
   }, [activeCertificate, activeJob]);
+
+  useEffect(() => {
+    if (!selectedPdfParticipantId && completedItems[0]?.participant_id) {
+      setSelectedPdfParticipantId(completedItems[0].participant_id);
+    }
+  }, [completedItems, selectedPdfParticipantId]);
 
   async function bootstrap() {
     setLoading(true);
@@ -209,6 +360,8 @@ export default function CertificatesDashboard() {
       company_name: company.company_name,
       company_address: [company.address, company.city].filter(Boolean).join(", "),
       company_phone: company.phone || "",
+      logo_url: company.logo_url || "",
+      design_config: normalizeDesignConfig(prev.design_config, prev.trainer_names, company.company_name),
     }));
 
     try {
@@ -260,6 +413,13 @@ export default function CertificatesDashboard() {
     setParticipants((prev) => prev.filter((_, itemIndex) => itemIndex !== index));
   }
 
+  async function uploadCertificateAsset(file: File) {
+    const fileName = `logos/${crypto.randomUUID()}-${file.name}`;
+    const { error } = await supabase.storage.from("certificate-files").upload(fileName, file, { upsert: true });
+    if (error) throw error;
+    return fileName;
+  }
+
   async function handleExcelUpload(file: File) {
     try {
       const parsed = await parseCertificateParticipantsExcel(file);
@@ -272,16 +432,18 @@ export default function CertificatesDashboard() {
 
   async function handleLogoUpload(file: File) {
     setUploadingLogo(true);
+    const localPreviewUrl = URL.createObjectURL(file);
+    setLogoPreviewUrl(localPreviewUrl);
     try {
-      const fileName = `logos/${crypto.randomUUID()}-${file.name}`;
-      const { error } = await supabase.storage.from("certificate-files").upload(fileName, file, { upsert: true });
-      if (error) throw error;
-      const { data } = await supabase.storage.from("certificate-files").getPublicUrl(fileName);
-      setForm((prev) => ({ ...prev, logo_url: data.publicUrl }));
+      const fileName = await uploadCertificateAsset(file);
+      setForm((prev) => ({ ...prev, logo_url: fileName }));
+      await syncLogoPreview(fileName);
       toast.success("Logo yüklendi");
     } catch (error: any) {
+      setLogoPreviewUrl("");
       toast.error(`Logo yüklenemedi: ${error.message}`);
     } finally {
+      URL.revokeObjectURL(localPreviewUrl);
       setUploadingLogo(false);
     }
   }
@@ -353,7 +515,9 @@ export default function CertificatesDashboard() {
   }
 
   async function handleDownloadSinglePdf() {
-    const item = completedItems[selectedParticipantIndex];
+    const item =
+      completedItems.find((entry) => entry.participant_id === selectedPdfParticipantId) ||
+      completedItems[0];
     if (!item?.pdf_path) {
       toast.error("İndirilebilir PDF bulunamadı");
       return;
@@ -383,12 +547,44 @@ export default function CertificatesDashboard() {
       frame_style: (certificate.frame_style as any) || "gold",
       trainer_names: certificate.trainer_names || [""],
       notes: certificate.notes || "",
+      design_config: normalizeDesignConfig((certificate as any).design_config, certificate.trainer_names || [""], certificate.company_name || ""),
     });
 
     const { data: participantRows } = await (supabase as any).from("certificate_participants").select("*").eq("certificate_id", certificate.id).order("created_at", { ascending: true });
     setParticipants(participantRows || []);
     setTrainerNamesInput((certificate.trainer_names || [""]).join(", "));
     await refreshJobStatus(certificate.id);
+  }
+
+  async function handleDeleteCertificate(certificate: CertificateRecord) {
+    const targetName = certificate.training_name?.trim() || "Bu sertifika kaydı";
+    const shouldDelete = window.confirm(`"${targetName}" kaydı silinsin mi? Bu işlem geri alınamaz.`);
+    if (!shouldDelete) return;
+
+    setDeletingCertificateId(certificate.id);
+    try {
+      const { error } = await (supabase as any)
+        .from("certificates")
+        .delete()
+        .eq("id", certificate.id);
+
+      if (error) throw error;
+
+      setRecentCertificates((prev) => prev.filter((item) => item.id !== certificate.id));
+
+      if (activeCertificate?.id === certificate.id) {
+        setActiveCertificate(null);
+        setActiveJob(null);
+        setJobItems([]);
+        setSelectedPdfParticipantId("");
+      }
+
+      toast.success("Sertifika kaydı silindi");
+    } catch (error: any) {
+      toast.error(`Sertifika kaydı silinemedi: ${error.message}`);
+    } finally {
+      setDeletingCertificateId(null);
+    }
   }
 
   if (loading) {
@@ -404,7 +600,7 @@ export default function CertificatesDashboard() {
         </div>
         <div className="flex flex-wrap gap-2">
           <Badge variant="secondary" className="px-3 py-1">10.000 kayıt hedefi</Badge>
-          <Badge variant="secondary" className="px-3 py-1">3 premium tema</Badge>
+          <Badge variant="secondary" className="px-3 py-1">6 premium tema</Badge>
           <Badge variant="secondary" className="px-3 py-1">Paralel worker</Badge>
           <Button asChild variant="outline" className="gap-2">
             <Link to="/dashboard/certificates/history"><History className="h-4 w-4" /> Geçmiş İşler</Link>
@@ -433,26 +629,48 @@ export default function CertificatesDashboard() {
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="space-y-2"><Label>Firma Adı</Label><Input value={form.company_name} onChange={(e) => setForm((prev) => ({ ...prev, company_name: e.target.value }))} /></div>
+                <div className="space-y-2"><Label>Firma Adı</Label><Input value={form.company_name} onChange={(e) => setForm((prev) => ({ ...prev, company_name: e.target.value, design_config: normalizeDesignConfig(prev.design_config, prev.trainer_names, e.target.value) }))} /></div>
                 <div className="space-y-2"><Label>Telefon</Label><Input value={form.company_phone} onChange={(e) => setForm((prev) => ({ ...prev, company_phone: e.target.value }))} /></div>
                 <div className="space-y-2 md:col-span-2"><Label>Adres</Label><Textarea value={form.company_address} onChange={(e) => setForm((prev) => ({ ...prev, company_address: e.target.value }))} className="min-h-20" /></div>
                 <div className="space-y-2"><Label>Eğitim Adı</Label><Input value={form.training_name} onChange={(e) => setForm((prev) => ({ ...prev, training_name: e.target.value }))} /></div>
                 <div className="space-y-2"><Label>Eğitim Tarihi</Label><Input type="date" value={form.training_date} onChange={(e) => setForm((prev) => ({ ...prev, training_date: e.target.value }))} /></div>
                 <div className="space-y-2"><Label>Eğitim Süresi</Label><Input value={form.training_duration} onChange={(e) => setForm((prev) => ({ ...prev, training_duration: e.target.value }))} /></div>
                 <div className="space-y-2"><Label>Geçerlilik Tarihi</Label><Input type="date" value={form.validity_date} onChange={(e) => setForm((prev) => ({ ...prev, validity_date: e.target.value }))} /></div>
-                <div className="space-y-2 md:col-span-2"><Label>Eğitmenler</Label><Input value={trainerNamesInput} onChange={(e) => { const nextValue = e.target.value; setTrainerNamesInput(nextValue); setForm((prev) => ({ ...prev, trainer_names: nextValue.split(",").map((item) => item.trim()).filter(Boolean) })); }} placeholder="Uzman adlarını virgül ile ayırın" /></div>
-                <div className="space-y-2 md:col-span-2"><Label>Notlar</Label><Textarea value={form.notes} onChange={(e) => setForm((prev) => ({ ...prev, notes: e.target.value }))} className="min-h-24" /></div>
+                <div className="space-y-2 md:col-span-2"><Label>Eğitmenler</Label><Input value={trainerNamesInput} onChange={(e) => { const nextValue = e.target.value; const trainerNames = nextValue.split(",").map((item) => item.trim()).filter(Boolean); setTrainerNamesInput(nextValue); setForm((prev) => ({ ...prev, trainer_names: trainerNames, design_config: { ...normalizeDesignConfig(prev.design_config, trainerNames, prev.company_name), signatures: normalizeDesignConfig(prev.design_config, trainerNames, prev.company_name).signatures.map((signature, index) => index === 0 ? { ...signature, name: signature.name || trainerNames[0] || "" } : index === 1 ? { ...signature, name: signature.name || trainerNames[1] || "" } : signature) } })); }} placeholder="Uzman adlarını virgül ile ayırın" /></div>
                 <div className="space-y-2 md:col-span-2">
+                  <Label>Eğitim Konuları</Label>
+                  <Textarea
+                    value={form.notes}
+                    onChange={(e) => setForm((prev) => ({ ...prev, notes: e.target.value }))}
+                    className="min-h-24"
+                    placeholder="İstersen eğitim konu başlıklarını satır satır, virgülle veya noktalı virgülle yazabilirsin."
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Bu alan isteğe bağlıdır. Doldurursan tüm sertifika tasarımlarında gösterilir, boş bırakırsan gizlenir.
+                  </p>
+                </div>
+                <div className="space-y-3 md:col-span-2">
                   <Label>Logo</Label>
-                  <div className="flex gap-2">
-                    <Input value={form.logo_url} onChange={(e) => setForm((prev) => ({ ...prev, logo_url: e.target.value }))} placeholder="Logo URL veya yükleme kullanın" />
-                    <label className="inline-flex">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <label>
                       <input type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && void handleLogoUpload(e.target.files[0])} />
                       <Button type="button" variant="outline" className="gap-2" asChild>
-                        <span>{uploadingLogo ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />} Logo</span>
+                        <span>{uploadingLogo ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImagePlus className="h-4 w-4" />} Logo Yükle</span>
                       </Button>
                     </label>
+                    {logoPreviewUrl ? (
+                      <div className="flex h-16 w-40 items-center justify-center rounded-xl border bg-card p-2">
+                        <img src={logoPreviewUrl} alt="Logo önizleme" className="max-h-full max-w-full object-contain" />
+                      </div>
+                    ) : (
+                      <div className="rounded-xl border border-dashed px-4 py-3 text-xs text-muted-foreground">
+                        Henüz logo yüklenmedi
+                      </div>
+                    )}
                   </div>
+                  <p className="text-xs text-muted-foreground">
+                    Yüklediğin logo önizlemede ve PDF sertifikada kullanılır. Görünmüyorsa yükleme sonrası birkaç saniye içinde otomatik yenilenir.
+                  </p>
                 </div>
               </div>
             </CardContent>
@@ -460,22 +678,38 @@ export default function CertificatesDashboard() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Premium Tema Seçimi</CardTitle>
-              <CardDescription>Kurumsal baskı ihtiyacına uygun üç farklı sertifika görünümünden birini seçin.</CardDescription>
+              <CardTitle className="flex items-center gap-2"><Palette className="h-5 w-5 text-primary" /> Sertifika Tasarım Stüdyosu</CardTitle>
+              <CardDescription>Tasarım özelleştirme artık ayrı bir premium modül sayfasında yer alıyor. Buradan üretim akışını bozmadan detaylı tema çalışmasına geçebilirsin.</CardDescription>
             </CardHeader>
-            <CardContent className="grid gap-4 md:grid-cols-3">
-              {templateCards.map((template) => (
-                <button
-                  key={template.value}
-                  type="button"
-                  onClick={() => setForm((prev) => ({ ...prev, template_type: template.value }))}
-                  className={`rounded-2xl border p-4 text-left transition-all ${form.template_type === template.value ? "border-primary bg-primary/5 shadow-lg shadow-primary/10" : "border-border hover:border-primary/40 hover:bg-secondary/40"}`}
-                >
-                  <p className="text-sm font-semibold">{template.title}</p>
-                  <p className="mt-2 text-xs leading-5 text-muted-foreground">{template.text}</p>
-                  <Badge variant="secondary" className="mt-4">{template.value}</Badge>
-                </button>
-              ))}
+            <CardContent className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-3">
+                {templateCards.map((template) => (
+                  <button
+                    key={template.value}
+                    type="button"
+                    onClick={() => setForm((prev) => ({ ...prev, template_type: template.value }))}
+                    className={`rounded-2xl border p-4 text-left transition-all ${form.template_type === template.value ? "border-primary bg-primary/5 shadow-lg shadow-primary/10" : "border-border hover:border-primary/40 hover:bg-secondary/40"}`}
+                  >
+                    <p className="text-sm font-semibold">{template.title}</p>
+                    <p className="mt-2 text-xs leading-5 text-muted-foreground">{template.text}</p>
+                  </button>
+                ))}
+              </div>
+              <div className="rounded-2xl border bg-secondary/20 p-4">
+                <p className="text-sm font-semibold">Ayrı premium modül hazır</p>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Renk paleti, ikinci logo, mühür, özel başlık, açıklama, imza görselleri ve canlı stüdyo önizlemesi için bağımsız sayfayı kullanabilirsin.
+                </p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <Badge variant="secondary">Canlı önizleme</Badge>
+                  <Badge variant="secondary">Tema stüdyosu</Badge>
+                  <Badge variant="secondary">İmza görseli</Badge>
+                  <Badge variant="secondary">Premium hazırlık</Badge>
+                </div>
+                <Button asChild className="mt-4 gap-2">
+                  <Link to="/dashboard/certificate-studio"><Palette className="h-4 w-4" /> Stüdyoyu Aç</Link>
+                </Button>
+              </div>
             </CardContent>
           </Card>
 
@@ -509,7 +743,7 @@ export default function CertificatesDashboard() {
               )}
               <div className="flex flex-wrap gap-3">
                 <Button onClick={() => void handleCreate()} disabled={submitting} variant="outline" className="gap-2"><Plus className="h-4 w-4" /> İşi Kaydet</Button>
-                <Button onClick={() => void handleGenerate()} disabled={submitting} className="gap-2"><RefreshCw className="h-4 w-4" /> Generate Certificates</Button>
+                <Button onClick={() => void handleGenerate()} disabled={submitting} className="gap-2"><RefreshCw className="h-4 w-4" /> Sertifikaları Üret</Button>
                 <Dialog>
                   <DialogTrigger asChild>
                     <Button variant="outline" className="gap-2"><Eye className="h-4 w-4" /> Preview Certificate</Button>
@@ -521,12 +755,30 @@ export default function CertificatesDashboard() {
                         Seçilen tema, firma bilgileri ve ilk katılımcı ile oluşturulan örnek sertifika görünümü.
                       </DialogDescription>
                     </DialogHeader>
-                    <CertificatePreviewCard form={form} participant={previewParticipant} className="min-h-[540px]" />
+                    <CertificatePreviewCard form={previewForm} participant={previewParticipant} className="min-h-[540px]" />
                   </DialogContent>
                 </Dialog>
-                <Button onClick={() => void handleDownloadSinglePdf()} disabled={completedItems.length === 0} variant="outline" className="gap-2"><Download className="h-4 w-4" /> Download PDF</Button>
-                <Button onClick={() => void handleDownloadZip()} disabled={!activeJob?.zip_path} variant="outline" className="gap-2"><FileArchive className="h-4 w-4" /> Download ZIP</Button>
+                <Button onClick={() => void handleDownloadSinglePdf()} disabled={completedItems.length === 0} variant="outline" className="gap-2"><Download className="h-4 w-4" /> Seçili PDF İndir</Button>
+                <Button onClick={() => void handleDownloadZip()} disabled={!activeJob?.zip_path} variant="outline" className="gap-2"><FileArchive className="h-4 w-4" /> ZIP İndir</Button>
               </div>
+              {completedItems.length > 0 && (
+                <div className="space-y-2 rounded-xl border p-4">
+                  <Label>İndirilecek katılımcı PDF'i</Label>
+                  <Select value={selectedPdfParticipantId} onValueChange={setSelectedPdfParticipantId}>
+                    <SelectTrigger><SelectValue placeholder="Katılımcı seçin" /></SelectTrigger>
+                    <SelectContent>
+                      {completedItems.map((item) => (
+                        <SelectItem key={item.id} value={item.participant_id}>
+                          {toDisplayText(item.participant_name) || item.participant_id}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground">
+                    Tüm katılımcılar üretildi. Bu alan tekil PDF açar, toplu indirme için ZIP kullanılmalıdır.
+                  </p>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -538,7 +790,7 @@ export default function CertificatesDashboard() {
               <CardDescription className="text-slate-300">Seçilen tema ve firma bilgileriyle gerçek baskı hissine yakın önizleme.</CardDescription>
             </CardHeader>
             <CardContent className="p-6">
-              <CertificatePreviewCard form={form} participant={previewParticipant} className="min-h-[540px]" />
+              <CertificatePreviewCard form={previewForm} participant={previewParticipant} className="min-h-[540px]" />
             </CardContent>
           </Card>
 
@@ -607,6 +859,20 @@ export default function CertificatesDashboard() {
                     <Button variant="outline" size="sm" onClick={() => void loadCertificate(certificate)}>Yükle</Button>
                     <Button variant="outline" size="sm" asChild><Link to={`/dashboard/certificates/${certificate.id}`}>Detay</Link></Button>
                     <Button size="sm" onClick={() => void handleGenerate(certificate)}>Tekrar Bas</Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-2 border-red-500/30 text-red-500 hover:bg-red-500/10 hover:text-red-400"
+                      disabled={deletingCertificateId === certificate.id}
+                      onClick={() => void handleDeleteCertificate(certificate)}
+                    >
+                      {deletingCertificateId === certificate.id ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Trash2 className="h-4 w-4" />
+                      )}
+                      Sil
+                    </Button>
                   </div>
                 </div>
               ))}

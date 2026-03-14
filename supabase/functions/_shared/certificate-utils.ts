@@ -22,6 +22,7 @@ export type CertificateRecord = {
   trainer_names: string[];
   frame_style: string;
   notes: string | null;
+  design_config: Record<string, unknown> | null;
   created_at: string;
 };
 

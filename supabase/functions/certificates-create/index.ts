@@ -30,6 +30,7 @@ Deno.serve(async (req) => {
     const companyAddress = normalizeText(payload.company_address);
     const companyPhone = normalizeText(payload.company_phone);
     const notes = normalizeText(payload.notes);
+    const designConfig = payload.design_config && typeof payload.design_config === "object" ? payload.design_config : {};
 
     if (!companyName || !trainingName || !trainingDate || !trainingDuration) {
       return jsonResponse({ error: "Firma adı, eğitim adı, eğitim tarihi ve eğitim süresi zorunludur." }, 400);
@@ -57,6 +58,7 @@ Deno.serve(async (req) => {
         : [],
       frame_style: normalizeText(payload.frame_style) ?? "gold",
       notes,
+      design_config: designConfig,
     };
 
     const { data: certificate, error: certificateError } = await supabase

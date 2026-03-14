@@ -9,7 +9,7 @@ function normalizeText(value: unknown) {
 function normalizePositiveInteger(value: unknown, fallback: number) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
-  return Math.min(Math.floor(parsed), 24);
+  return Math.min(Math.floor(parsed), 4);
 }
 
 Deno.serve(async (req) => {
@@ -19,9 +19,9 @@ Deno.serve(async (req) => {
 
   try {
     await requireAuthUser(req);
-    const { certificateId, workerConcurrency = 6 } = await req.json();
+    const { certificateId, workerConcurrency = 2 } = await req.json();
     const normalizedCertificateId = normalizeText(certificateId);
-    const normalizedConcurrency = normalizePositiveInteger(workerConcurrency, 6);
+    const normalizedConcurrency = normalizePositiveInteger(workerConcurrency, 2);
 
     if (!normalizedCertificateId) {
       return jsonResponse({ error: "certificateId is required" }, 400);
@@ -85,16 +85,20 @@ Deno.serve(async (req) => {
 
     console.log("generate job items created", { jobId: job.id, itemCount: validParticipants.length });
 
-    const workerResponse = await fetch(`${workerBaseUrl()}/certificates-worker`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""}`,
-      },
-      body: JSON.stringify({ jobId: job.id, concurrency: normalizedConcurrency }),
-    });
+    try {
+      const workerResponse = await fetch(`${workerBaseUrl()}/certificates-worker`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? ""}`,
+        },
+        body: JSON.stringify({ jobId: job.id, concurrency: normalizedConcurrency }),
+      });
 
-    console.log("generate worker trigger response", { jobId: job.id, status: workerResponse.status });
+      console.log("generate worker trigger response", { jobId: job.id, status: workerResponse.status });
+    } catch (workerTriggerError) {
+      console.error("generate worker trigger failed", { jobId: job.id, workerTriggerError });
+    }
 
     return jsonResponse({ certificate, job });
   } catch (error) {

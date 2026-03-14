@@ -1,4 +1,4 @@
-export interface Company {
+﻿export interface Company {
   id: string;
   owner_id: string;
   company_name: string;
@@ -12,6 +12,7 @@ export interface Company {
   postal_code?: string;
   phone?: string;
   email?: string;
+  logo_url?: string;
   employee_count: number;
   workplace_registration_number?: string;
   sgk_workplace_number?: string;

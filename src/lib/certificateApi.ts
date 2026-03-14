@@ -1,5 +1,6 @@
 ﻿import { supabase } from "@/integrations/supabase/client";
 import type {
+  CertificateDesignConfig,
   CertificateFormValues,
   CertificateJobItem,
   CertificateJobRecord,
@@ -18,7 +19,41 @@ function normalizeOptionalText(value: unknown) {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+function normalizePrimitiveText(value: unknown) {
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  }
+
+  if (value && typeof value === "object") {
+    const candidate = (value as Record<string, unknown>).name;
+    if (typeof candidate === "string") {
+      const trimmed = candidate.trim();
+      return trimmed.length > 0 ? trimmed : null;
+    }
+  }
+
+  return null;
+}
+
 function normalizeCertificatePayload(input: CertificateFormValues, participants: CertificateParticipantInput[]) {
+  const defaultDesignConfig: CertificateDesignConfig = {
+    primaryColor: "#d4af37",
+    secondaryColor: "#294d77",
+    fontFamily: "serif",
+    showBadge: true,
+    showSeal: true,
+    titleText: "",
+    descriptionText: "",
+    osgb_logo_url: "",
+    signatureCount: 4,
+    signatures: (Array.isArray(input.design_config?.signatures) ? input.design_config?.signatures : []).slice(0, 4).map((signature) => ({
+      name: typeof signature?.name === "string" ? signature.name.trim() : "",
+      title: typeof signature?.title === "string" ? signature.title.trim() : "",
+      image_url: normalizeOptionalText(signature?.image_url),
+    })),
+  };
+
   return {
     ...input,
     company_name: input.company_name.trim(),
@@ -34,6 +69,15 @@ function normalizeCertificatePayload(input: CertificateFormValues, participants:
       ? input.trainer_names.map((item) => item.trim()).filter(Boolean)
       : [],
     notes: normalizeOptionalText(input.notes),
+    design_config: {
+      ...defaultDesignConfig,
+      ...(input.design_config || {}),
+      titleText: normalizeOptionalText(input.design_config?.titleText),
+      descriptionText: normalizeOptionalText(input.design_config?.descriptionText),
+      osgb_logo_url: normalizeOptionalText(input.design_config?.osgb_logo_url),
+      signatureCount: Math.min(4, Math.max(1, Number(input.design_config?.signatureCount || 4))),
+      signatures: defaultDesignConfig.signatures,
+    },
     participants: participants.map((participant) => ({
       ...participant,
       name: participant.name.trim(),
@@ -82,11 +126,19 @@ export async function generateCertificateJob(certificateId: string) {
 }
 
 export async function getCertificateStatus(certificateId: string) {
-  return await callFunction<{ certificate: CertificateRecord; job: CertificateJobRecord; items: CertificateJobItem[] }>(
+  const payload = await callFunction<{ certificate: CertificateRecord; job: CertificateJobRecord; items: CertificateJobItem[] }>(
     "certificates-status",
     { method: "GET" },
     { certificateId }
   );
+
+  return {
+    ...payload,
+    items: (payload.items || []).map((item: any) => ({
+      ...item,
+      participant_name: normalizePrimitiveText(item.participant_name) || normalizePrimitiveText(item.certificate_participants) || null,
+    })),
+  };
 }
 
 export async function getCertificateDownload(certificateId: string) {

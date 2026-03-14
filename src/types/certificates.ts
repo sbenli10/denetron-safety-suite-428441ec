@@ -1,5 +1,13 @@
-﻿export type CertificateTemplateType = "classic" | "modern" | "minimal";
+﻿export type CertificateTemplateType =
+  | "classic"
+  | "modern"
+  | "minimal"
+  | "academy"
+  | "executive"
+  | "compliance";
+
 export type CertificateFrameStyle = "gold" | "blue" | "green";
+export type CertificateFontFamily = "serif" | "sans" | "gothic";
 export type CertificateJobStatus =
   | "draft"
   | "queued"
@@ -19,6 +27,25 @@ export interface CertificateParticipantInput {
   verification_code?: string | null;
 }
 
+export interface CertificateSignatureConfig {
+  name: string;
+  title: string;
+  image_url?: string;
+}
+
+export interface CertificateDesignConfig {
+  primaryColor: string;
+  secondaryColor: string;
+  fontFamily: CertificateFontFamily;
+  showBadge: boolean;
+  showSeal: boolean;
+  titleText?: string;
+  descriptionText?: string;
+  osgb_logo_url?: string;
+  signatureCount: number;
+  signatures: CertificateSignatureConfig[];
+}
+
 export interface CertificateFormValues {
   company_id?: string | null;
   company_name: string;
@@ -34,6 +61,7 @@ export interface CertificateFormValues {
   frame_style: CertificateFrameStyle;
   trainer_names: string[];
   notes?: string;
+  design_config?: CertificateDesignConfig;
 }
 
 export interface CertificateRecord extends CertificateFormValues {
@@ -56,6 +84,7 @@ export interface CertificateJobRecord {
 export interface CertificateJobItem {
   id: string;
   participant_id: string;
+  participant_name?: string | null;
   status: string;
   pdf_path?: string | null;
   verification_code?: string | null;

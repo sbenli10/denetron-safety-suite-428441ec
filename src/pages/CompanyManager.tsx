@@ -8,7 +8,14 @@ import {
   X, Check, ChevronsUpDown,
   Mail,
   Phone,
-  MapPin
+  MapPin,
+  ImagePlus,
+  Warehouse,
+  GraduationCap,
+  ShoppingCart,
+  UtensilsCrossed,
+  Truck,
+  HeartPulse
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -50,7 +57,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { parseEmployeeExcel, downloadEmployeeTemplate, type ParsedEmployee } from "@/utils/excelParser";
 import { NACE_DATABASE, searchNACE, type NACECode } from "@/utils/naceDatabase";
-import type { Company, RiskTemplate } from "@/types/companies";
+import type { Company, Employee, RiskTemplate } from "@/types/companies";
 import { cn } from "@/lib/utils";
 
 interface NACEVirtualListProps {
@@ -139,6 +146,8 @@ const SECTOR_TEMPLATES = [
   {
     id: "construction",
     name: "İnşaat Sektörü",
+    industrySector: "İnşaat Sektörü",
+    aliases: ["İnşaat", "Şantiye", "Yapı", "Altyapı"],
     icon: HardHat,
     description: "50+ inşaat risk maddesi",
     color: "text-orange-600 bg-orange-50 border-orange-200"
@@ -146,6 +155,8 @@ const SECTOR_TEMPLATES = [
   {
     id: "office",
     name: "Ofis Ortamı",
+    industrySector: "Ofis Ortamı",
+    aliases: ["Ofis", "Büro", "İdari Birim", "Çağrı Merkezi"],
     icon: Briefcase,
     description: "50+ ofis risk maddesi",
     color: "text-blue-600 bg-blue-50 border-blue-200"
@@ -153,11 +164,98 @@ const SECTOR_TEMPLATES = [
   {
     id: "manufacturing",
     name: "Üretim Tesisi",
+    industrySector: "Üretim Tesisi",
+    aliases: ["Üretim", "İmalat", "Fabrika", "Atölye"],
     icon: Factory,
     description: "50+ üretim risk maddesi",
     color: "text-purple-600 bg-purple-50 border-purple-200"
+  },
+  {
+    id: "warehouse",
+    name: "Depo ve Lojistik",
+    industrySector: "Depo ve Lojistik",
+    aliases: ["Depo", "Lojistik", "Sevkiyat", "Stok Alanı"],
+    icon: Warehouse,
+    description: "50+ depolama ve sevkiyat risk maddesi",
+    color: "text-amber-700 bg-amber-50 border-amber-200"
+  },
+  {
+    id: "healthcare",
+    name: "Sağlık Kuruluşu",
+    industrySector: "Sağlık Kuruluşu",
+    aliases: ["Sağlık", "Hastane", "Klinik", "Poliklinik", "Laboratuvar"],
+    icon: HeartPulse,
+    description: "50+ sağlık hizmeti ve biyolojik risk maddesi",
+    color: "text-rose-700 bg-rose-50 border-rose-200"
+  },
+  {
+    id: "education",
+    name: "Eğitim Kurumu",
+    industrySector: "Eğitim Kurumu",
+    aliases: ["Okul", "Eğitim", "Kurs", "Üniversite", "Yurt"],
+    icon: GraduationCap,
+    description: "50+ eğitim ortamı ve kampüs risk maddesi",
+    color: "text-indigo-700 bg-indigo-50 border-indigo-200"
+  },
+  {
+    id: "retail",
+    name: "Mağaza ve Perakende",
+    industrySector: "Mağaza ve Perakende",
+    aliases: ["Mağaza", "Perakende", "Market", "AVM", "Satış Alanı"],
+    icon: ShoppingCart,
+    description: "50+ müşteri alanı ve perakende risk maddesi",
+    color: "text-cyan-700 bg-cyan-50 border-cyan-200"
+  },
+  {
+    id: "food",
+    name: "Yeme İçme ve Mutfak",
+    industrySector: "Yeme İçme ve Mutfak",
+    aliases: ["Restoran", "Kafe", "Mutfak", "Gıda", "Yemekhane"],
+    icon: UtensilsCrossed,
+    description: "50+ mutfak, hijyen ve sıcak yüzey risk maddesi",
+    color: "text-red-700 bg-red-50 border-red-200"
+  },
+  {
+    id: "transport",
+    name: "Taşımacılık ve Saha Operasyonu",
+    industrySector: "Taşımacılık ve Saha Operasyonu",
+    aliases: ["Taşımacılık", "Nakliye", "Servis", "Araç Filosu", "Saha Operasyonu"],
+    icon: Truck,
+    description: "50+ sürüş, yükleme ve saha operasyonu risk maddesi",
+    color: "text-emerald-700 bg-emerald-50 border-emerald-200"
   }
 ];
+
+function normalizeTemplateText(value: string) {
+  return value
+    .toLocaleLowerCase("tr-TR")
+    .replace(/ç/g, "c")
+    .replace(/ğ/g, "g")
+    .replace(/ı/g, "i")
+    .replace(/İ/g, "i")
+    .replace(/ö/g, "o")
+    .replace(/ş/g, "s")
+    .replace(/ü/g, "u");
+}
+
+function resolveSectorTemplateValue(industrySector?: string | null) {
+  const normalizedSource = normalizeTemplateText(industrySector || "");
+  if (!normalizedSource) return "";
+
+  const matchedTemplate = SECTOR_TEMPLATES.find((template) => {
+    const candidates = [template.industrySector, template.name, ...(template.aliases || [])];
+    return candidates.some((candidate) => {
+      const normalizedCandidate = normalizeTemplateText(candidate);
+      return (
+        normalizedSource === normalizedCandidate ||
+        normalizedSource.includes(normalizedCandidate) ||
+        normalizedCandidate.includes(normalizedSource)
+      );
+    });
+  });
+
+  return matchedTemplate?.industrySector || industrySector || "";
+}
 
 export default function CompanyManager() {
   const { user } = useAuth();
@@ -183,8 +281,11 @@ export default function CompanyManager() {
     city: "",
     phone: "",
     email: "",
+    logo_url: "",
     employee_count: 0
   });
+  const [logoPreviewUrl, setLogoPreviewUrl] = useState("");
+  const [uploadingLogo, setUploadingLogo] = useState(false);
 
   // NACE Combobox State
   const [naceOpen, setNaceOpen] = useState(false);
@@ -198,6 +299,14 @@ export default function CompanyManager() {
   // Step 3: Çalışan Yükleme
   const [employeeFile, setEmployeeFile] = useState<File | null>(null);
   const [parsedEmployees, setParsedEmployees] = useState<ParsedEmployee[]>([]);
+  const [existingEmployees, setExistingEmployees] = useState<Employee[]>([]);
+  const [loadingExistingEmployees, setLoadingExistingEmployees] = useState(false);
+  const [employeeSearchQuery, setEmployeeSearchQuery] = useState("");
+  const [employeeDepartmentFilter, setEmployeeDepartmentFilter] = useState("all");
+  const [editingEmployeeId, setEditingEmployeeId] = useState<string | null>(null);
+  const [employeeDraft, setEmployeeDraft] = useState<Partial<Employee>>({});
+  const [savingEmployeeId, setSavingEmployeeId] = useState<string | null>(null);
+  const [deletingEmployeeId, setDeletingEmployeeId] = useState<string | null>(null);
   const [editingCompanyId, setEditingCompanyId] = useState<string | null>(null);
 
   // ============================================
@@ -229,7 +338,8 @@ export default function CompanyManager() {
         owner_id: item.user_id,
         company_name: item.name,
         nace_code: item.industry || "",
-        hazard_class: item.hazard_class || "Az Tehlikeli"
+        hazard_class: item.hazard_class || "Az Tehlikeli",
+        logo_url: item.logo_url || "",
       }));
 
       setCompanies(mappedData as Company[]);
@@ -261,13 +371,210 @@ export default function CompanyManager() {
     }
   };
 
+  const loadExistingEmployees = async (companyId: string) => {
+    try {
+      setLoadingExistingEmployees(true);
+      const { data, error } = await supabase
+        .from("employees")
+        .select("*")
+        .eq("company_id", companyId)
+        .eq("is_active", true)
+        .order("first_name", { ascending: true });
+
+      if (error) throw error;
+      setExistingEmployees((data || []) as Employee[]);
+    } catch (error: any) {
+      console.error("Çalışanlar yüklenemedi:", error);
+      toast.error(`Firma çalışanları yüklenemedi: ${error.message}`);
+      setExistingEmployees([]);
+    } finally {
+      setLoadingExistingEmployees(false);
+    }
+  };
+
+  const employeeDepartments = useMemo(() => {
+    return Array.from(
+      new Set(
+        existingEmployees
+          .map((employee) => (employee.department || "").trim())
+          .filter((department) => department.length > 0)
+      )
+    ).sort((left, right) => left.localeCompare(right, "tr"));
+  }, [existingEmployees]);
+
+  const filteredExistingEmployees = useMemo(() => {
+    const normalizedSearch = employeeSearchQuery.trim().toLocaleLowerCase("tr-TR");
+
+    return existingEmployees.filter((employee) => {
+      const matchesDepartment =
+        employeeDepartmentFilter === "all" ||
+        (employee.department || "").trim() === employeeDepartmentFilter;
+
+      if (!matchesDepartment) return false;
+      if (!normalizedSearch) return true;
+
+      const haystack = [
+        employee.first_name,
+        employee.last_name,
+        employee.job_title,
+        employee.department,
+        employee.phone,
+        employee.email,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLocaleLowerCase("tr-TR");
+
+      return haystack.includes(normalizedSearch);
+    });
+  }, [employeeDepartmentFilter, employeeSearchQuery, existingEmployees]);
+
+  const startEmployeeEdit = (employee: Employee) => {
+    setEditingEmployeeId(employee.id);
+    setEmployeeDraft({
+      first_name: employee.first_name,
+      last_name: employee.last_name,
+      job_title: employee.job_title,
+      department: employee.department || "",
+      phone: employee.phone || "",
+      email: employee.email || "",
+    });
+  };
+
+  const cancelEmployeeEdit = () => {
+    setEditingEmployeeId(null);
+    setEmployeeDraft({});
+  };
+
+  const updateEmployeeDraft = (patch: Partial<Employee>) => {
+    setEmployeeDraft((prev) => ({ ...prev, ...patch }));
+  };
+
+  const saveEmployeeEdit = async (employeeId: string) => {
+    setSavingEmployeeId(employeeId);
+    try {
+      const payload = {
+        first_name: (employeeDraft.first_name || "").trim(),
+        last_name: (employeeDraft.last_name || "").trim(),
+        job_title: (employeeDraft.job_title || "").trim(),
+        department: (employeeDraft.department || "").trim() || null,
+        phone: (employeeDraft.phone || "").trim() || null,
+        email: (employeeDraft.email || "").trim() || null,
+      };
+
+      if (!payload.first_name || !payload.last_name || !payload.job_title) {
+        toast.error("Ad, soyad ve görev alanları zorunludur.");
+        return;
+      }
+
+      const { error } = await supabase.from("employees").update(payload).eq("id", employeeId);
+      if (error) throw error;
+
+      setExistingEmployees((prev) =>
+        prev.map((employee) => (employee.id === employeeId ? { ...employee, ...payload, department: payload.department || undefined, phone: payload.phone || undefined, email: payload.email || undefined } : employee))
+      );
+
+      toast.success("Çalışan bilgileri güncellendi.");
+      cancelEmployeeEdit();
+    } catch (error: any) {
+      toast.error(`Çalışan güncellenemedi: ${error.message}`);
+    } finally {
+      setSavingEmployeeId(null);
+    }
+  };
+
+  const deleteExistingEmployee = async (employee: Employee) => {
+    const confirmed = confirm(`${employee.first_name} ${employee.last_name} çalışanını firmadan kaldırmak istediğinize emin misiniz?`);
+    if (!confirmed) return;
+
+    setDeletingEmployeeId(employee.id);
+    try {
+      const { error } = await supabase.from("employees").update({ is_active: false }).eq("id", employee.id);
+      if (error) throw error;
+
+      setExistingEmployees((prev) => prev.filter((item) => item.id !== employee.id));
+      toast.success("Çalışan pasif hale getirildi.");
+      if (editingEmployeeId === employee.id) {
+        cancelEmployeeEdit();
+      }
+    } catch (error: any) {
+      toast.error(`Çalışan silinemedi: ${error.message}`);
+    } finally {
+      setDeletingEmployeeId(null);
+    }
+  };
+
+  const syncCompanyLogoPreview = async (logoValue?: string | null) => {
+    const nextValue = (logoValue || "").trim();
+    if (!nextValue) {
+      setLogoPreviewUrl("");
+      return;
+    }
+
+    if (/^https?:\/\//i.test(nextValue) || nextValue.startsWith("data:")) {
+      setLogoPreviewUrl(nextValue);
+      return;
+    }
+
+    const { data, error } = await supabase.storage.from("company-logos").createSignedUrl(nextValue, 3600);
+    if (error) {
+      setLogoPreviewUrl("");
+      return;
+    }
+
+    setLogoPreviewUrl(data?.signedUrl || "");
+  };
+
+  const handleCompanyLogoUpload = async (file: File) => {
+    if (!user?.id) {
+      toast.error("Logo yüklemek için kullanıcı bilgisi bulunamadı");
+      return;
+    }
+
+    setUploadingLogo(true);
+    const localPreview = URL.createObjectURL(file);
+    setLogoPreviewUrl(localPreview);
+
+    try {
+      const fileExtension = file.name.split(".").pop() || "png";
+      const fileName = `${user.id}/${crypto.randomUUID()}.${fileExtension}`;
+
+      const { error } = await supabase.storage.from("company-logos").upload(fileName, file, {
+        upsert: true,
+        cacheControl: "3600",
+      });
+
+      if (error) throw error;
+
+      setFormData((prev) => ({ ...prev, logo_url: fileName }));
+      await syncCompanyLogoPreview(fileName);
+      toast.success("Firma logosu yüklendi");
+    } catch (error: any) {
+      setLogoPreviewUrl("");
+      toast.error(`Firma logosu yüklenemedi: ${error.message}`);
+    } finally {
+      URL.revokeObjectURL(localPreview);
+      setUploadingLogo(false);
+    }
+  };
+
+  const clearCompanyLogo = () => {
+    setFormData((prev) => ({ ...prev, logo_url: "" }));
+    setLogoPreviewUrl("");
+  };
+
   // ============================================
   // HANDLERS
   // ============================================
 
-  const handleViewCompany = (companyId: string) => {
+  const handleViewCompany = async (companyId: string) => {
     const company = companies.find(c => c.id === companyId);
     if (company) {
+      if (company.logo_url && !/^https?:\/\//i.test(company.logo_url) && !company.logo_url.startsWith("data:")) {
+        const { data } = await supabase.storage.from("company-logos").createSignedUrl(company.logo_url, 3600);
+        setViewingCompany({ ...company, logo_url: data?.signedUrl || company.logo_url });
+        return;
+      }
       setViewingCompany(company);
     }
   };
@@ -283,8 +590,11 @@ export default function CompanyManager() {
       city: company.city || "",
       phone: company.phone || "",
       email: company.email || "",
+      logo_url: company.logo_url || "",
       employee_count: company.employee_count || 0,
     });
+
+    void syncCompanyLogoPreview(company.logo_url || "");
 
     const nace = NACE_DATABASE.find(n => n.code === company.nace_code);
     if (nace) {
@@ -292,12 +602,13 @@ export default function CompanyManager() {
     }
 
     if (company.industry_sector) {
-      setSelectedTemplate(company.industry_sector);
+      setSelectedTemplate(resolveSectorTemplateValue(company.industry_sector));
     }
 
     setEditingCompanyId(company.id);
     setWizardOpen(true);
     setCurrentStep(1);
+    void loadExistingEmployees(company.id);
   };
 
   const handleDeleteCompany = async (companyId: string, companyName: string) => {
@@ -306,12 +617,17 @@ export default function CompanyManager() {
     }
 
     try {
+      const existingCompany = companies.find((company) => company.id === companyId);
       const { error } = await supabase
         .from("companies")
         .delete()
         .eq("id", companyId);
 
       if (error) throw error;
+
+      if (existingCompany?.logo_url && !/^https?:\/\//i.test(existingCompany.logo_url) && !existingCompany.logo_url.startsWith("data:")) {
+        await supabase.storage.from("company-logos").remove([existingCompany.logo_url]);
+      }
 
       toast.success(`✅ "${companyName}" firması silindi`);
       loadCompanies();
@@ -322,6 +638,7 @@ export default function CompanyManager() {
   };
 
   const handleNACESelect = (nace: NACECode) => {
+    const resolvedTemplateValue = resolveSectorTemplateValue(nace.industry_sector);
     setSelectedNACE(nace);
     setFormData(prev => ({
       ...prev,
@@ -329,7 +646,7 @@ export default function CompanyManager() {
       hazard_class: nace.hazard_class,
       industry_sector: nace.industry_sector
     }));
-    setSelectedTemplate(nace.industry_sector);
+    setSelectedTemplate(resolvedTemplateValue);
     setNaceOpen(false);
     setNaceSearchQuery(""); // Reset search
     toast.success(`${nace.name} seçildi`);
@@ -366,7 +683,10 @@ export default function CompanyManager() {
     setSaving(true);
 
     try {
-      const template = riskTemplates.find((t) => t.industry_sector === selectedTemplate);
+      const template = riskTemplates.find((t) => {
+        const templateSector = resolveSectorTemplateValue(t.industry_sector);
+        return templateSector === selectedTemplate || t.industry_sector === selectedTemplate;
+      });
 
       const employeesJson = parsedEmployees.map((emp) => ({
         first_name: emp.first_name || "",
@@ -383,7 +703,8 @@ export default function CompanyManager() {
       }));
 
       if (editingCompanyId) {
-        const { error: companyError } = await supabase
+        const existingCompany = companies.find((company) => company.id === editingCompanyId);
+        const { error: companyError } = await (supabase as any)
           .from("companies")
           .update({
             name: formData.company_name,
@@ -392,11 +713,21 @@ export default function CompanyManager() {
             address: formData.address,
             phone: formData.phone,
             email: formData.email,
+            logo_url: formData.logo_url || null,
             employee_count: employeesJson.length || formData.employee_count,
           })
           .eq("id", editingCompanyId);
 
         if (companyError) throw companyError;
+
+        if (
+          existingCompany?.logo_url &&
+          existingCompany.logo_url !== formData.logo_url &&
+          !/^https?:\/\//i.test(existingCompany.logo_url) &&
+          !existingCompany.logo_url.startsWith("data:")
+        ) {
+          await supabase.storage.from("company-logos").remove([existingCompany.logo_url]);
+        }
 
         if (employeesJson.length > 0) {
           const employeesToInsert = employeesJson.map(emp => ({
@@ -456,6 +787,15 @@ export default function CompanyManager() {
         throw new Error(result.error || "Bilinmeyen hata");
       }
 
+      if (result.company_id && formData.logo_url) {
+        const { error: logoUpdateError } = await (supabase as any)
+          .from("companies")
+          .update({ logo_url: formData.logo_url })
+          .eq("id", result.company_id);
+
+        if (logoUpdateError) throw logoUpdateError;
+      }
+
       toast.success("🎉 Firma başarıyla kaydedildi!", {
         description: `${result.inserted_risks || 0} risk, ${result.inserted_employees || 0} çalışan eklendi`,
       });
@@ -484,13 +824,20 @@ export default function CompanyManager() {
       city: "",
       phone: "",
       email: "",
+      logo_url: "",
       employee_count: 0
     });
+    setLogoPreviewUrl("");
     setSelectedNACE(null);
     setNaceSearchQuery("");
     setSelectedTemplate("");
     setEmployeeFile(null);
     setParsedEmployees([]);
+    setExistingEmployees([]);
+    setEmployeeSearchQuery("");
+    setEmployeeDepartmentFilter("all");
+    setEditingEmployeeId(null);
+    setEmployeeDraft({});
     setEditingCompanyId(null);
   };
 
@@ -761,6 +1108,60 @@ export default function CompanyManager() {
                   className="mt-2"
                 />
               </div>
+
+              <div className="md:col-span-2">
+                <Label>Firma Logosu</Label>
+                <div className="mt-2 rounded-2xl border border-dashed border-border bg-secondary/20 p-4">
+                  <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className="flex h-24 w-32 items-center justify-center overflow-hidden rounded-xl border bg-background">
+                        {logoPreviewUrl ? (
+                          <img src={logoPreviewUrl} alt="Firma logosu önizleme" className="max-h-full max-w-full object-contain" />
+                        ) : (
+                          <div className="flex flex-col items-center gap-2 px-3 text-center text-xs text-muted-foreground">
+                            <ImagePlus className="h-5 w-5" />
+                            Logo önizleme
+                          </div>
+                        )}
+                      </div>
+                      <div className="space-y-1">
+                        <p className="text-sm font-medium text-foreground">Kurumsal logo yükleyin</p>
+                        <p className="text-xs text-muted-foreground">
+                          Yüklediğiniz logo sertifika, atama yazıları ve diğer belge modüllerinde otomatik kullanılabilir.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      <label>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => e.target.files?.[0] && void handleCompanyLogoUpload(e.target.files[0])}
+                        />
+                        <Button type="button" variant="outline" className="gap-2" asChild>
+                          <span>
+                            {uploadingLogo ? <Upload className="h-4 w-4 animate-pulse" /> : <Upload className="h-4 w-4" />}
+                            {formData.logo_url ? "Logoyu Güncelle" : "Logo Yükle"}
+                          </span>
+                        </Button>
+                      </label>
+
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="gap-2 border-red-500/30 text-red-500 hover:bg-red-500/10 hover:text-red-400"
+                        onClick={clearCompanyLogo}
+                        disabled={!formData.logo_url}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        Logoyu Sil
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         );
@@ -775,16 +1176,16 @@ export default function CompanyManager() {
               </p>
             </div>
 
-            <div className="grid md:grid-cols-3 gap-4">
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
               {SECTOR_TEMPLATES.map((template) => (
                 <Card
                   key={template.id}
                   className={`cursor-pointer transition-all hover:shadow-lg ${
-                    selectedTemplate === template.id
+                    selectedTemplate === template.industrySector
                       ? `ring-2 ring-primary ${template.color}`
                       : "hover:border-primary/50"
                   }`}
-                  onClick={() => setSelectedTemplate(template.id)}
+                  onClick={() => setSelectedTemplate(template.industrySector)}
                 >
                   <CardHeader>
                     <div className="flex items-center gap-3">
@@ -799,11 +1200,16 @@ export default function CompanyManager() {
                       </div>
                     </div>
                   </CardHeader>
-                  {selectedTemplate === template.id && (
+                  {selectedTemplate === template.industrySector && (
                     <CardContent>
-                      <div className="flex items-center gap-2 text-sm text-success">
-                        <CheckCircle2 className="h-4 w-4" />
-                        <span className="font-semibold">Seçildi</span>
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2 text-sm text-success">
+                          <CheckCircle2 className="h-4 w-4" />
+                          <span className="font-semibold">Seçildi</span>
+                        </div>
+                        <p className="text-xs leading-5 text-muted-foreground">
+                          Örnek alanlar: {template.aliases.slice(0, 3).join(", ")}
+                        </p>
                       </div>
                     </CardContent>
                   )}
@@ -814,7 +1220,7 @@ export default function CompanyManager() {
             {selectedTemplate && (
               <div className="bg-success/10 border border-success/30 rounded-lg p-4">
                 <p className="text-sm text-success font-semibold">
-                  ✅ {SECTOR_TEMPLATES.find(t => t.id === selectedTemplate)?.name} şablonu seçildi
+                  ✅ {SECTOR_TEMPLATES.find(t => t.industrySector === selectedTemplate)?.name || selectedTemplate} şablonu seçildi
                 </p>
                 <p className="text-xs text-muted-foreground mt-1">
                   Bu şablondaki tüm risk maddeleri firmaya otomatik atanacaktır
@@ -827,6 +1233,184 @@ export default function CompanyManager() {
       case 3:
         return (
           <div className="space-y-6">
+            {editingCompanyId && (
+              <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 dark:border-emerald-900 dark:bg-emerald-950/40">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-emerald-900 dark:text-emerald-100">
+                      Mevcut Firma Çalışanları
+                    </p>
+                    <p className="mt-1 text-xs text-emerald-800/80 dark:text-emerald-200/80">
+                      Firma düzenleme ekranındasınız. Sistemde kayıtlı çalışanları aşağıda görebilir, üzerine yeni çalışan yüklemesi yapabilirsiniz.
+                    </p>
+                  </div>
+                  <Badge variant="secondary" className="whitespace-nowrap">
+                    {existingEmployees.length} kayıtlı çalışan
+                  </Badge>
+                </div>
+
+                <div className="mt-4 grid gap-3 md:grid-cols-[1fr_240px]">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      value={employeeSearchQuery}
+                      onChange={(e) => setEmployeeSearchQuery(e.target.value)}
+                      placeholder="Ad, görev, bölüm, telefon veya e-posta ile ara"
+                      className="pl-10"
+                    />
+                  </div>
+
+                  <select
+                    value={employeeDepartmentFilter}
+                    onChange={(e) => setEmployeeDepartmentFilter(e.target.value)}
+                    className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                  >
+                    <option value="all">Tüm departmanlar</option>
+                    {employeeDepartments.map((department) => (
+                      <option key={department} value={department}>
+                        {department}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="mt-4 rounded-xl border bg-background">
+                  {loadingExistingEmployees ? (
+                    <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+                      Firma çalışanları yükleniyor...
+                    </div>
+                  ) : existingEmployees.length === 0 ? (
+                    <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+                      Bu firmaya ait kayıtlı çalışan bulunamadı.
+                    </div>
+                  ) : filteredExistingEmployees.length === 0 ? (
+                    <div className="px-4 py-8 text-center text-sm text-muted-foreground">
+                      Arama ve filtreye uygun çalışan bulunamadı.
+                    </div>
+                  ) : (
+                    <div className="max-h-72 overflow-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Ad Soyad</TableHead>
+                            <TableHead>Görev</TableHead>
+                            <TableHead>Bölüm</TableHead>
+                            <TableHead>Telefon</TableHead>
+                            <TableHead>E-posta</TableHead>
+                            <TableHead className="text-right">İşlemler</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {filteredExistingEmployees.map((employee) => (
+                            <TableRow key={employee.id}>
+                              <TableCell className="font-medium">
+                                {editingEmployeeId === employee.id ? (
+                                  <div className="grid gap-2 md:grid-cols-2">
+                                    <Input
+                                      value={employeeDraft.first_name || ""}
+                                      onChange={(e) => updateEmployeeDraft({ first_name: e.target.value })}
+                                      placeholder="Ad"
+                                    />
+                                    <Input
+                                      value={employeeDraft.last_name || ""}
+                                      onChange={(e) => updateEmployeeDraft({ last_name: e.target.value })}
+                                      placeholder="Soyad"
+                                    />
+                                  </div>
+                                ) : (
+                                  `${employee.first_name} ${employee.last_name}`
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                {editingEmployeeId === employee.id ? (
+                                  <Input
+                                    value={employeeDraft.job_title || ""}
+                                    onChange={(e) => updateEmployeeDraft({ job_title: e.target.value })}
+                                    placeholder="Görev"
+                                  />
+                                ) : (
+                                  employee.job_title || "-"
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                {editingEmployeeId === employee.id ? (
+                                  <Input
+                                    value={employeeDraft.department || ""}
+                                    onChange={(e) => updateEmployeeDraft({ department: e.target.value })}
+                                    placeholder="Bölüm"
+                                  />
+                                ) : (
+                                  employee.department || "-"
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                {editingEmployeeId === employee.id ? (
+                                  <Input
+                                    value={employeeDraft.phone || ""}
+                                    onChange={(e) => updateEmployeeDraft({ phone: e.target.value })}
+                                    placeholder="Telefon"
+                                  />
+                                ) : (
+                                  employee.phone || "-"
+                                )}
+                              </TableCell>
+                              <TableCell>
+                                {editingEmployeeId === employee.id ? (
+                                  <Input
+                                    value={employeeDraft.email || ""}
+                                    onChange={(e) => updateEmployeeDraft({ email: e.target.value })}
+                                    placeholder="E-posta"
+                                  />
+                                ) : (
+                                  employee.email || "-"
+                                )}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <div className="flex justify-end gap-2">
+                                  {editingEmployeeId === employee.id ? (
+                                    <>
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        variant="outline"
+                                        onClick={() => saveEmployeeEdit(employee.id)}
+                                        disabled={savingEmployeeId === employee.id}
+                                      >
+                                        {savingEmployeeId === employee.id ? "Kaydediliyor..." : "Kaydet"}
+                                      </Button>
+                                      <Button type="button" size="sm" variant="ghost" onClick={cancelEmployeeEdit}>
+                                        Vazgeç
+                                      </Button>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Button type="button" size="sm" variant="outline" onClick={() => startEmployeeEdit(employee)}>
+                                        Düzenle
+                                      </Button>
+                                      <Button
+                                        type="button"
+                                        size="sm"
+                                        variant="outline"
+                                        className="border-red-500/30 text-red-500 hover:bg-red-500/10 hover:text-red-400"
+                                        onClick={() => void deleteExistingEmployee(employee)}
+                                        disabled={deletingEmployeeId === employee.id}
+                                      >
+                                        {deletingEmployeeId === employee.id ? "Siliniyor..." : "Sil"}
+                                      </Button>
+                                    </>
+                                  )}
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             <div className="bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded-lg p-4">
               <p className="text-sm text-amber-900 dark:text-amber-100">
                 <strong>📋 Excel Şablonu:</strong> Çalışanlarınızı toplu olarak yüklemek için 
@@ -1266,6 +1850,14 @@ export default function CompanyManager() {
             </DialogHeader>
 
             <div className="space-y-4">
+              {viewingCompany.logo_url && (
+                <div className="flex justify-center rounded-2xl border bg-secondary/20 p-4">
+                  <div className="flex h-28 w-40 items-center justify-center overflow-hidden rounded-xl border bg-background">
+                    <img src={viewingCompany.logo_url} alt="Firma logosu" className="max-h-full max-w-full object-contain" />
+                  </div>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label className="text-muted-foreground">Vergi No</Label>
@@ -1327,8 +1919,9 @@ export default function CompanyManager() {
 
               <div className="flex gap-2 pt-4 border-t">
                 <Button onClick={() => {
+                  const rawCompany = companies.find((company) => company.id === viewingCompany.id) || viewingCompany;
                   setViewingCompany(null);
-                  handleEditCompany(viewingCompany);
+                  handleEditCompany(rawCompany);
                 }}>
                   <Edit className="h-4 w-4 mr-2" />
                   Düzenle

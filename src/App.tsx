@@ -3,7 +3,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Navigate, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { AppLayout } from "@/components/AppLayout";
@@ -34,7 +34,9 @@ const SafetyLibrary = lazy(() => import("./pages/SafetyLibrary"));
 const Settings = lazy(() => import("./pages/Settings"));
 const Profile = lazy(() => import("./pages/Profile"));
 const CompanyManager = lazy(() => import("./pages/CompanyManager"));
+const AssignmentLetters = lazy(() => import("./pages/AssignmentLetters"));
 const CertificatesDashboard = lazy(() => import("./pages/CertificatesDashboard"));
+const CertificateStudio = lazy(() => import("./pages/CertificateStudio"));
 const CertificatesHistory = lazy(() => import("./pages/CertificatesHistory"));
 const CertificateJobDetail = lazy(() => import("./pages/CertificateJobDetail"));
 const CertificateVerifyPage = lazy(() => import("./pages/CertificateVerifyPage"));
@@ -58,6 +60,7 @@ const RiskAssessments = lazy(() => import("@/pages/RiskAssessments"));
 // BLUEPRINT ANALYZER
 // ============================================
 const BlueprintAnalyzer = lazy(() => import("@/pages/BlueprintAnalyzer"));
+const BlueprintAnalyzerGuide = lazy(() => import("@/pages/BlueprintAnalyzerGuide"));
 const EvacuationEditor = lazy(() => import("@/pages/EvacuationEditor"));
 const EvacuationHistory = lazy(() => import("@/pages/EvacuationHistory"));
 
@@ -177,9 +180,12 @@ const App = () => (
                           {/* PROFILE & SETTINGS */}
                           {/* ============================================ */}
                           <Route path="/companies" element={<CompanyManager />} />
+                          <Route path="/assignment-letters" element={<AssignmentLetters />} />
                           <Route path="/dashboard/certificates" element={<CertificatesDashboard />} />
+                          <Route path="/dashboard/certificate-studio" element={<CertificateStudio />} />
                           <Route path="/dashboard/certificates/history" element={<CertificatesHistory />} />
                           <Route path="/dashboard/certificates/:id" element={<CertificateJobDetail />} />
+                          <Route path="/dashboard/profil" element={<Navigate to="/profile" replace />} />
                           <Route path="/profile" element={<Profile />} />
                           <Route path="/settings" element={<Settings />} />
                           <Route path="/notifications" element={<NotificationCenter />} />
@@ -264,6 +270,7 @@ const App = () => (
                           {/* BLUEPRINT ANALYZER */}
                           {/* ============================================ */}
                           <Route path="/blueprint-analyzer" element={<BlueprintAnalyzer />} />
+                          <Route path="/blueprint-analyzer/how-to" element={<BlueprintAnalyzerGuide />} />
                           <Route path="/evacuation-editor" element={<EvacuationEditor />} />
                           <Route path="/evacuation-editor/history" element={<EvacuationHistory />} />
 

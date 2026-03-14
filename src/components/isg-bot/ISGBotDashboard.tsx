@@ -794,24 +794,6 @@ export default function ISGBotDashboard() {
 
 return (
   <div className="space-y-6">
-    {/* DEBUG INFO - Geçici olarak ekle */}
-    {process.env.NODE_ENV === "development" && (
-      <Card className="bg-yellow-50 dark:bg-yellow-900/10 border-yellow-200">
-        <CardHeader>
-          <CardTitle className="text-sm">🔍 Debug Info</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="text-xs space-y-1">
-            <p>Total Companies: {companies.length}</p>
-            <p>Filtered Companies: {filteredCompanies.length}</p>
-            <p>Search Term: "{searchTerm}"</p>
-            <p>Compliance Filter: {complianceFilter}</p>
-            <p>Hazard Filter: {hazardFilter}</p>
-          </div>
-        </CardContent>
-      </Card>
-    )}
-
     {/* Header */}
     <div className="flex items-center justify-between">
       <div className="space-y-1">

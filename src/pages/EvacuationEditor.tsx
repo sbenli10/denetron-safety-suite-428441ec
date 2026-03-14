@@ -1,7 +1,7 @@
 ﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { format } from "date-fns";
 import { toast } from "sonner";
-import { Layers3, Loader2 } from "lucide-react";
+import { BookOpenCheck, History, Layers3, Loader2, Route, Save, Sparkles, UploadCloud } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import {
   createImageFromURLCompat,
@@ -71,6 +71,7 @@ export default function EvacuationEditor() {
   const [focusMode, setFocusMode] = useState(false);
   const [legendOpen, setLegendOpen] = useState(false);
   const [zoomPercent, setZoomPercent] = useState(100);
+  const [showWelcomeScreen, setShowWelcomeScreen] = useState(true);
 
   const [aiDialogOpen, setAiDialogOpen] = useState(false);
   const [aiPrompt, setAiPrompt] = useState("");
@@ -804,6 +805,133 @@ export default function EvacuationEditor() {
     window.addEventListener("keydown", listener);
     return () => window.removeEventListener("keydown", listener);
   }, []);
+
+  if (showWelcomeScreen) {
+    return (
+      <div className="-mx-4 -my-4 min-h-[calc(100vh-3.8rem)] bg-[radial-gradient(circle_at_top_left,rgba(34,211,238,0.18),transparent_28%),radial-gradient(circle_at_top_right,rgba(59,130,246,0.16),transparent_22%),linear-gradient(180deg,#020617_0%,#06132b_45%,#081a39_100%)] px-4 py-6 lg:-mx-6 lg:-my-6 lg:px-6">
+        <div className="mx-auto flex max-w-7xl flex-col gap-6">
+          <div className="overflow-hidden rounded-[28px] border border-cyan-500/20 bg-slate-950/70 shadow-[0_30px_100px_rgba(2,12,27,0.55)] backdrop-blur-xl">
+            <div className="grid gap-0 xl:grid-cols-[1.2fr_0.8fr]">
+              <div className="border-b border-slate-800/80 p-6 xl:border-b-0 xl:border-r">
+                <div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/30 bg-cyan-400/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-cyan-300">
+                  <BookOpenCheck className="h-4 w-4" />
+                  Ön Kullanım Rehberi
+                </div>
+                <h1 className="mt-4 text-3xl font-black tracking-tight text-slate-50 lg:text-5xl">
+                  Acil Durum Kroki Düzenleyici
+                </h1>
+                <p className="mt-4 max-w-3xl text-sm leading-7 text-slate-300 lg:text-base">
+                  Bu ekran, profesyonel kroki editörüne geçmeden önce size çalışma mantığını baştan sona anlatır.
+                  Kullanıcı önce sembolleri yerleştirir, ardından tahliye yollarını çizer, kat planını ekler,
+                  lejantı kontrol eder ve son olarak PDF veya PNG dışa aktarımını alır.
+                </p>
+
+                <div className="mt-6 grid gap-4 md:grid-cols-2">
+                  <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
+                    <div className="flex items-center gap-3 text-slate-100">
+                      <UploadCloud className="h-5 w-5 text-cyan-300" />
+                      <p className="font-semibold">1. Kat Planını Yükle</p>
+                    </div>
+                    <p className="mt-2 text-sm leading-6 text-slate-400">
+                      Araç çubuğundaki arka plan yükleme alanından plan görselini ekleyin. Görseli ölçekleyebilir, sabitleyebilir ve
+                      krokinin temelini hızlıca kurabilirsiniz.
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
+                    <div className="flex items-center gap-3 text-slate-100">
+                      <Layers3 className="h-5 w-5 text-cyan-300" />
+                      <p className="font-semibold">2. ISO 7010 Sembollerini Yerleştir</p>
+                    </div>
+                    <p className="mt-2 text-sm leading-6 text-slate-400">
+                      Sol panelden acil çıkış, yangın söndürücü, ilk yardım, alarm ve yönlendirme sembollerini sürükleyerek planın üzerine ekleyin.
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
+                    <div className="flex items-center gap-3 text-slate-100">
+                      <Route className="h-5 w-5 text-cyan-300" />
+                      <p className="font-semibold">3. Tahliye Yolunu Çizin</p>
+                    </div>
+                    <p className="mt-2 text-sm leading-6 text-slate-400">
+                      Çizgi, ok ve poliline araçlarıyla tahliye akışını oluşturun. Grid, snap ve merkez yakalama seçenekleri ile daha düzenli çalışın.
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
+                    <div className="flex items-center gap-3 text-slate-100">
+                      <Save className="h-5 w-5 text-cyan-300" />
+                      <p className="font-semibold">4. Kaydet, Geçmişten Yükle, Dışa Aktar</p>
+                    </div>
+                    <p className="mt-2 text-sm leading-6 text-slate-400">
+                      Çalışmanızı kaydedin, geçmiş krokilerden tekrar yükleyin ve hazır olduğunda PNG, SVG veya PDF çıktısı alın.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-6">
+                <div className="rounded-3xl border border-slate-800 bg-slate-900/75 p-5">
+                  <p className="text-xs font-semibold uppercase tracking-[0.26em] text-slate-400">Bu sayfada neler var</p>
+                  <div className="mt-4 space-y-3">
+                    <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
+                      <div className="flex items-center gap-2 text-slate-100">
+                        <Sparkles className="h-4 w-4 text-cyan-300" />
+                        <p className="font-semibold">AI destekli plan üretimi</p>
+                      </div>
+                      <p className="mt-2 text-sm text-slate-400">
+                        Bina açıklamasından otomatik yerleşim oluşturabilir, mevcut krokiyi yapay zeka ile geliştirebilirsiniz.
+                      </p>
+                    </div>
+                    <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
+                      <div className="flex items-center gap-2 text-slate-100">
+                        <History className="h-4 w-4 text-cyan-300" />
+                        <p className="font-semibold">Çok katlı çalışma ve geçmiş yönetimi</p>
+                      </div>
+                      <p className="mt-2 text-sm text-slate-400">
+                        Zemin kat, 1. kat ve diğer katlar için ayrı canvas durumları tutulur. Geçmişler sayfasından eski projeler tekrar açılabilir.
+                      </p>
+                    </div>
+                    <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
+                      <div className="flex items-center gap-2 text-slate-100">
+                        <Layers3 className="h-4 w-4 text-cyan-300" />
+                        <p className="font-semibold">Katman, özellik ve lejant kontrolü</p>
+                      </div>
+                      <p className="mt-2 text-sm text-slate-400">
+                        Sağ panelden seçili objeyi düzenleyin, sol alttan katmanları yönetin ve alttaki lejant paneli ile kullanılan sembolleri doğrulayın.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-5 rounded-2xl border border-cyan-500/20 bg-cyan-500/10 p-4">
+                    <p className="text-sm font-semibold text-cyan-200">Önerilen kullanım sırası</p>
+                    <ol className="mt-3 space-y-2 text-sm text-slate-300">
+                      <li>1. Proje adını verin ve kat planını ekleyin.</li>
+                      <li>2. Gerekli güvenlik sembollerini yerleştirin.</li>
+                      <li>3. Tahliye güzergahlarını ve açıklama metinlerini tamamlayın.</li>
+                      <li>4. Katmanlar ve lejantı kontrol edin.</li>
+                      <li>5. Krokileri kaydedin, ardından PDF veya PNG çıktısı alın.</li>
+                    </ol>
+                  </div>
+
+                  <div className="mt-6 flex flex-col gap-3 sm:flex-row">
+                    <Button className="gap-2" onClick={() => setShowWelcomeScreen(false)}>
+                      <Layers3 className="h-4 w-4" />
+                      Editöre Geç
+                    </Button>
+                    <Button variant="outline" className="gap-2" onClick={() => navigate("/evacuation-editor/history")}>
+                      <History className="h-4 w-4" />
+                      Geçmiş Krokileri Gör
+                    </Button>
+                  </div>
+                  <p className="mt-3 text-xs text-slate-500">
+                    Editöre geçtiğinizde tüm araç çubuğu, sembol kütüphanesi ve profesyonel çizim alanı aktif olur.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>

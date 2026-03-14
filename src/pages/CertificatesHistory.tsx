@@ -204,6 +204,9 @@ export default function CertificatesHistory() {
             <SelectContent>
               <SelectItem value="all">Tüm temalar</SelectItem>
               <SelectItem value="classic">Klasik</SelectItem>
+              <SelectItem value="academy">Akademi Mavi</SelectItem>
+              <SelectItem value="executive">Yönetici Altın</SelectItem>
+              <SelectItem value="compliance">Mevzuat Uyum</SelectItem>
               <SelectItem value="modern">Modern</SelectItem>
               <SelectItem value="minimal">Minimal</SelectItem>
             </SelectContent>

@@ -4,7 +4,7 @@ import {
   Upload, Building2, Shield, AlertTriangle, CheckCircle2, Loader2, 
   FileImage, Trash2, Download, MapPin, Ruler, Layers, Eye, 
   ZoomIn, ZoomOut, RotateCw, Share2, ChevronRight, ArrowRight,
-  Target, TrendingUp, Clock, Users, AlertCircle, Info, Sparkles,
+  Target, TrendingUp, Clock, Users, AlertCircle, CircleHelp, Info, Sparkles,
   Plus, Edit2, Save, X, CheckSquare, Square
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -894,14 +894,24 @@ export default function BlueprintAnalyzer() {
             Teknik çizimleri, kat planlarını ve tahliye krokilerini yapay zeka ile analiz edin
           </p>
         </div>
-        <Button
-          variant="outline"
-          onClick={() => navigate("/adep-wizard")}
-          className="gap-2"
-        >
-          <ArrowRight className="h-4 w-4" />
-          ADEP Sihirbazı'na Git
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            onClick={() => navigate("/blueprint-analyzer/how-to")}
+            className="gap-2"
+          >
+            <CircleHelp className="h-4 w-4" />
+            Nasıl Kullanılır
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => navigate("/adep-wizard")}
+            className="gap-2"
+          >
+            <ArrowRight className="h-4 w-4" />
+            ADEP Sihirbazı'na Git
+          </Button>
+        </div>
       </div>
 
       {/* TABS */}

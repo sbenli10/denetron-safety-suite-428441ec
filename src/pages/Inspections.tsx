@@ -70,6 +70,11 @@ interface Inspection {
   created_at: string;
 }
 
+interface InspectionCachePayload {
+  data: Inspection[];
+  timestamp: number;
+}
+
 interface StatCard {
   title: string;
   value: number;
@@ -79,40 +84,73 @@ interface StatCard {
 }
 
 const INSPECTIONS_CACHE_TTL = 10 * 60 * 1000;
+const INSPECTIONS_CACHE_LIMIT = 75;
 
 const getInspectionsCacheKey = (userId: string) =>
   `denetron:inspections:${userId}:v2`;
 
-const readCachedInspections = (userId: string): Inspection[] | null => {
-  const raw = localStorage.getItem(getInspectionsCacheKey(userId));
+const getInspectionsSessionCacheKey = (userId: string) =>
+  `denetron:inspections:${userId}:session:v2`;
+
+const createCacheableInspections = (data: Inspection[]): Inspection[] =>
+  data.slice(0, INSPECTIONS_CACHE_LIMIT).map((inspection) => ({
+    ...inspection,
+    answers: {},
+    media_urls: inspection.media_urls?.slice(0, 1) ?? [],
+    notes: inspection.notes ? inspection.notes.slice(0, 500) : inspection.notes,
+  }));
+
+const parseInspectionCache = (raw: string | null): Inspection[] | null => {
   if (!raw) return null;
 
   try {
-    const parsed = JSON.parse(raw) as {
-      data: Inspection[];
-      timestamp: number;
-    };
+    const parsed = JSON.parse(raw) as InspectionCachePayload;
 
     if (Date.now() - parsed.timestamp > INSPECTIONS_CACHE_TTL) {
-      localStorage.removeItem(getInspectionsCacheKey(userId));
       return null;
     }
 
     return parsed.data ?? null;
   } catch {
-    localStorage.removeItem(getInspectionsCacheKey(userId));
     return null;
   }
 };
 
+const readCachedInspections = (userId: string): Inspection[] | null => {
+  const localKey = getInspectionsCacheKey(userId);
+  const sessionKey = getInspectionsSessionCacheKey(userId);
+
+  const localCached = parseInspectionCache(localStorage.getItem(localKey));
+  if (localCached) return localCached;
+
+  localStorage.removeItem(localKey);
+
+  const sessionCached = parseInspectionCache(sessionStorage.getItem(sessionKey));
+  if (sessionCached) return sessionCached;
+
+  sessionStorage.removeItem(sessionKey);
+  return null;
+};
+
 const writeCachedInspections = (userId: string, data: Inspection[]) => {
-  localStorage.setItem(
-    getInspectionsCacheKey(userId),
-    JSON.stringify({
-      data,
-      timestamp: Date.now(),
-    })
-  );
+  const payload: InspectionCachePayload = {
+    data: createCacheableInspections(data),
+    timestamp: Date.now(),
+  };
+
+  try {
+    localStorage.setItem(getInspectionsCacheKey(userId), JSON.stringify(payload));
+  } catch {
+    try {
+      sessionStorage.setItem(
+        getInspectionsSessionCacheKey(userId),
+        JSON.stringify(payload)
+      );
+    } catch {
+      sessionStorage.removeItem(getInspectionsSessionCacheKey(userId));
+      localStorage.removeItem(getInspectionsCacheKey(userId));
+    }
+  }
 };
 
 const statusFilters = ["all", "completed", "in_progress", "draft", "cancelled"] as const;
@@ -173,6 +211,7 @@ export default function Inspections() {
     if (cached) {
       setInspections(cached);
       setLoading(false);
+      void fetchInspections(true);
       return;
     }
 

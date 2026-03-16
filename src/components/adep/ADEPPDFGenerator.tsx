@@ -1,4 +1,4 @@
-// src/components/adep/ADEPPDFGenerator.tsx
+﻿// src/components/adep/ADEPPDFGenerator.tsx
 
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
@@ -63,6 +63,16 @@ interface ADEPPlanData {
   toplanma_yeri: {
     aciklama: string;
     harita_url: string;
+  };
+  export_preferences?: {
+    cover_style?:
+      | "classic"
+      | "gold"
+      | "blueprint"
+      | "minimal"
+      | "nature"
+      | "official-red"
+      | "shadow";
   };
 }
 
@@ -131,15 +141,19 @@ const addFooter = (doc: jsPDF, pageNumber: number, totalPages: number) => {
   const pageWidth = doc.internal.pageSize.getWidth();
   const pageHeight = doc.internal.pageSize.getHeight();
 
+  doc.setDrawColor(COLORS.border[0], COLORS.border[1], COLORS.border[2]);
+  doc.setLineWidth(0.2);
+  doc.line(15, pageHeight - 15, pageWidth - 15, pageHeight - 15);
+
   doc.setFontSize(8);
   doc.setTextColor(COLORS.secondary[0], COLORS.secondary[1], COLORS.secondary[2]);
 
-  doc.text("Denetron İSG Yazılımı - Gizli Doküman", 15, pageHeight - 10);
+  doc.text("Denetron İSG Yazılımı", 15, pageHeight - 10.5);
 
   doc.text(
     `Sayfa ${pageNumber} / ${totalPages}`,
     pageWidth - 15,
-    pageHeight - 10,
+    pageHeight - 10.5,
     { align: "right" }
   );
 };
@@ -197,6 +211,27 @@ const getTeamRoleDescription = (teamName: string): string => {
   return roles[teamName] || "Acil durum müdahale ekibi görevi üstlenir.";
 };
 
+const parseDefinitionLines = (definitions: string) => {
+  return definitions
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const separatorIndex = line.indexOf(":");
+      if (separatorIndex === -1) {
+        return {
+          term: "Tanım",
+          description: line,
+        };
+      }
+
+      return {
+        term: line.slice(0, separatorIndex).trim(),
+        description: line.slice(separatorIndex + 1).trim(),
+      };
+    });
+};
+
 const addPageHeader = (doc: jsPDF, title: string, icon?: string) => {
   const pageWidth = doc.internal.pageSize.getWidth();
 
@@ -206,6 +241,111 @@ const addPageHeader = (doc: jsPDF, title: string, icon?: string) => {
   doc.setFontSize(14);
   setFontStyle(doc, "bold");
   doc.text(title, 15, 10);
+};
+
+const COVER_STYLE_MAP = {
+  classic: {
+    primary: [15, 23, 42],
+    secondary: [71, 85, 105],
+    badge: [226, 232, 240],
+  },
+  gold: {
+    primary: [120, 53, 15],
+    secondary: [217, 119, 6],
+    badge: [254, 243, 199],
+  },
+  blueprint: {
+    primary: [30, 64, 175],
+    secondary: [59, 130, 246],
+    badge: [219, 234, 254],
+  },
+  minimal: {
+    primary: [51, 65, 85],
+    secondary: [148, 163, 184],
+    badge: [241, 245, 249],
+  },
+  nature: {
+    primary: [21, 128, 61],
+    secondary: [74, 222, 128],
+    badge: [220, 252, 231],
+  },
+  "official-red": {
+    primary: [153, 27, 27],
+    secondary: [239, 68, 68],
+    badge: [254, 226, 226],
+  },
+  shadow: {
+    primary: [30, 41, 59],
+    secondary: [251, 146, 60],
+    badge: [255, 237, 213],
+  },
+} as const;
+
+const drawCoverDecoration = (
+  doc: jsPDF,
+  style: keyof typeof COVER_STYLE_MAP,
+  pageWidth: number,
+  pageHeight: number,
+  margin: number
+) => {
+  const palette = COVER_STYLE_MAP[style];
+  const primary = palette.primary as [number, number, number];
+  const secondary = palette.secondary as [number, number, number];
+  const badge = palette.badge as [number, number, number];
+
+  doc.setFillColor(primary[0], primary[1], primary[2]);
+  doc.rect(0, 0, pageWidth, 36, "F");
+
+  switch (style) {
+    case "blueprint":
+      doc.setFillColor(secondary[0], secondary[1], secondary[2]);
+      doc.triangle(0, 36, pageWidth * 0.42, 36, 0, 68, "F");
+      doc.setDrawColor(235, 245, 255);
+      doc.setLineWidth(0.1);
+      for (let x = margin; x < pageWidth - margin; x += 10) {
+        doc.line(x, 44, x, pageHeight - 20);
+      }
+      for (let y = 44; y < pageHeight - 20; y += 10) {
+        doc.line(margin, y, pageWidth - margin, y);
+      }
+      break;
+    case "gold":
+      doc.setDrawColor(secondary[0], secondary[1], secondary[2]);
+      doc.setLineWidth(0.8);
+      doc.line(18, 46, pageWidth - 18, 46);
+      break;
+    case "minimal":
+      doc.setDrawColor(secondary[0], secondary[1], secondary[2]);
+      doc.setLineWidth(0.35);
+      doc.line(margin, 48, pageWidth - margin, 48);
+      doc.line(margin, pageHeight - 26, pageWidth - margin, pageHeight - 26);
+      break;
+    case "nature":
+      doc.setFillColor(badge[0], badge[1], badge[2]);
+      doc.roundedRect(pageWidth - 54, pageHeight - 54, 30, 18, 4, 4, "F");
+      doc.setDrawColor(secondary[0], secondary[1], secondary[2]);
+      doc.setLineWidth(0.4);
+      doc.line(18, 46, pageWidth - 18, 46);
+      break;
+    case "official-red":
+      doc.setDrawColor(secondary[0], secondary[1], secondary[2]);
+      doc.setLineWidth(0.8);
+      doc.line(18, 46, pageWidth - 18, 46);
+      break;
+    case "shadow":
+      doc.setFillColor(badge[0], badge[1], badge[2]);
+      doc.roundedRect(margin + 2, 67, pageWidth - margin * 2, 44, 3, 3, "F");
+      doc.setDrawColor(secondary[0], secondary[1], secondary[2]);
+      doc.setLineWidth(0.35);
+      doc.line(18, 46, pageWidth - 18, 46);
+      break;
+    case "classic":
+    default:
+      doc.setDrawColor(secondary[0], secondary[1], secondary[2]);
+      doc.setLineWidth(0.5);
+      doc.line(18, 46, pageWidth - 18, 46);
+      break;
+  }
 };
 
 // ============================================
@@ -269,6 +409,19 @@ export const generateADEPPDF = async (planId: string) => {
     const raciMatrix = (raciRes.data || []) as unknown as RACIItem[];
     const legalReferences = (legalRes.data || []) as unknown as LegalReference[];
     const riskSources = (riskRes.data || []) as unknown as RiskSource[];
+    const exportPreferences = {
+      cover_style:
+        plan.plan_data.export_preferences?.cover_style || "shadow",
+    };
+    const filteredScenarios = scenarios;
+    const activeCoverStyle =
+      exportPreferences.cover_style in COVER_STYLE_MAP
+        ? (exportPreferences.cover_style as keyof typeof COVER_STYLE_MAP)
+        : "shadow";
+    const coverPalette = COVER_STYLE_MAP[activeCoverStyle];
+    const coverPrimary = coverPalette.primary as [number, number, number];
+    const coverSecondary = coverPalette.secondary as [number, number, number];
+    const coverBadge = coverPalette.badge as [number, number, number];
 
     console.log("✅ Tüm modül verileri yüklendi");
 
@@ -313,7 +466,7 @@ export const generateADEPPDF = async (planId: string) => {
     let estimatedPages = 5; // Base pages
     estimatedPages += teams.length > 0 ? 1 : 0;
     estimatedPages += contacts.length > 0 ? 1 : 0;
-    estimatedPages += scenarios.length;
+    estimatedPages += filteredScenarios.length;
     estimatedPages += preventiveMeasures.length > 0 ? 1 : 0;
     estimatedPages += equipment.length > 0 ? 1 : 0;
     estimatedPages += drills.length > 0 ? 1 : 0;
@@ -327,45 +480,89 @@ export const generateADEPPDF = async (planId: string) => {
     // ============================================
     // PAGE 1: COVER PAGE
     // ============================================
-    doc.setFillColor(COLORS.primary[0], COLORS.primary[1], COLORS.primary[2]);
-    doc.rect(0, 0, pageWidth, 40, "F");
+    drawCoverDecoration(doc, activeCoverStyle, pageWidth, pageHeight, margin);
 
     doc.setTextColor(255, 255, 255);
+    doc.setFontSize(20);
+    setFontStyle(doc, "bold");
+    doc.text("ACİL DURUM EYLEM PLANI", pageWidth / 2, 16, { align: "center" });
+
+    doc.setFontSize(11);
+    setFontStyle(doc, "normal");
+    doc.text("(ADEP)", pageWidth / 2, 24, { align: "center" });
+
+    doc.setFontSize(8.5);
+    doc.text(
+      "6331 SAYILI İŞ SAĞLIĞI VE GÜVENLİĞİ KANUNU KAPSAMINDA HAZIRLANMIŞTIR",
+      pageWidth / 2,
+      31,
+      { align: "center" }
+    );
+
+    const boxY = 62;
+    const boxHeight = 36;
+
+    doc.setDrawColor(coverPrimary[0], coverPrimary[1], coverPrimary[2]);
+    doc.setLineWidth(0.8);
+    doc.roundedRect(margin, boxY, contentWidth, boxHeight, 2, 2);
+
+    doc.setDrawColor(coverSecondary[0], coverSecondary[1], coverSecondary[2]);
+    doc.setLineWidth(0.25);
+    doc.roundedRect(margin + 4, boxY + 4, contentWidth - 8, boxHeight - 8, 2, 2);
+
+    doc.setTextColor(coverPrimary[0], coverPrimary[1], coverPrimary[2]);
     doc.setFontSize(22);
     setFontStyle(doc, "bold");
-    doc.text("ACİL DURUM EYLEM PLANI", pageWidth / 2, 18, { align: "center" });
+    doc.text(plan.company_name, pageWidth / 2, boxY + 15, { align: "center" });
 
-    doc.setFontSize(12);
-    setFontStyle(doc, "normal");
-    doc.text("(ADEP)", pageWidth / 2, 28, { align: "center" });
-
-    const boxY = 60;
-    const boxHeight = 60;
-
-    doc.setDrawColor(COLORS.primary[0], COLORS.primary[1], COLORS.primary[2]);
-    doc.setLineWidth(1);
-    doc.rect(margin, boxY, contentWidth, boxHeight);
-
-    doc.setDrawColor(
-      COLORS.secondary[0],
-      COLORS.secondary[1],
-      COLORS.secondary[2]
-    );
-    doc.setLineWidth(0.5);
-    doc.rect(margin + 5, boxY + 5, contentWidth - 10, boxHeight - 10);
-
-    doc.setTextColor(COLORS.primary[0], COLORS.primary[1], COLORS.primary[2]);
-    doc.setFontSize(24);
-    setFontStyle(doc, "bold");
-    doc.text(plan.company_name, pageWidth / 2, boxY + 30, { align: "center" });
-
-    doc.setFontSize(12);
+    doc.setFontSize(10.5);
     setFontStyle(doc, "normal");
     doc.setTextColor(COLORS.text[0], COLORS.text[1], COLORS.text[2]);
-    doc.text(plan.plan_name, pageWidth / 2, boxY + 45, { align: "center" });
+    doc.text(plan.plan_name, pageWidth / 2, boxY + 24, { align: "center" });
+    doc.setFontSize(9);
+    doc.text("İşletme Acil Durum Yönetim Dokümanı", pageWidth / 2, boxY + 31, {
+      align: "center",
+    });
 
-    const tableY = boxY + boxHeight + 20;
     const genelBilgiler = plan.plan_data.genel_bilgiler;
+    const isyeriBilgileri = plan?.plan_data?.isyeri_bilgileri ?? {
+      adres: "",
+      telefon: "",
+      tehlike_sinifi: "",
+      sgk_sicil_no: "",
+    };
+
+    const metaY = boxY + boxHeight + 10;
+    const metaCellWidth = contentWidth / 3;
+
+    autoTable(doc, {
+      startY: metaY,
+      body: [
+        [
+          `Doküman No\nADEP-${plan.id.slice(0, 8).toUpperCase()}`,
+          `Revizyon\n${genelBilgiler.revizyon_no || "Rev. 0"} / ${genelBilgiler.revizyon_tarihi || "-"}`,
+          `Tehlike Sınıfı\n${isyeriBilgileri.tehlike_sinifi || plan.hazard_class} • ${plan.employee_count} çalışan`,
+        ],
+      ],
+      theme: "grid",
+      styles: {
+        fontSize: 9,
+        cellPadding: 5,
+        valign: "middle",
+        halign: "center",
+        textColor: COLORS.text,
+        lineColor: COLORS.border,
+        lineWidth: 0.4,
+        font: "Inter",
+      },
+      columnStyles: {
+        0: { cellWidth: metaCellWidth, fontStyle: "bold" },
+        1: { cellWidth: metaCellWidth, fontStyle: "bold" },
+        2: { cellWidth: metaCellWidth, fontStyle: "bold" },
+      },
+    });
+
+    const tableY = (doc as any).lastAutoTable.finalY + 10;
 
     autoTable(doc, {
       startY: tableY,
@@ -410,8 +607,8 @@ export const generateADEPPDF = async (planId: string) => {
       ],
       theme: "grid",
       styles: {
-        fontSize: 10,
-        cellPadding: 8,
+        fontSize: 9.5,
+        cellPadding: 6.5,
         valign: "middle",
         halign: "center",
         textColor: COLORS.text,
@@ -423,7 +620,7 @@ export const generateADEPPDF = async (planId: string) => {
         fillColor: COLORS.tableHeader,
         textColor: [255, 255, 255],
         fontStyle: "bold",
-        fontSize: 11,
+        fontSize: 10.5,
         font: "Inter",
       },
       columnStyles: {
@@ -433,8 +630,8 @@ export const generateADEPPDF = async (planId: string) => {
       },
     });
 
-    const revY = (doc as any).lastAutoTable.finalY + 15;
-    doc.setFontSize(10);
+    const revY = (doc as any).lastAutoTable.finalY + 8;
+    doc.setFontSize(9);
     setFontStyle(doc, "normal");
     doc.setTextColor(
       COLORS.secondary[0],
@@ -466,14 +663,6 @@ export const generateADEPPDF = async (planId: string) => {
 
     yPos = 25;
 
-    const isyeriBilgileri =
-    plan?.plan_data?.isyeri_bilgileri ?? {
-      adres: "",
-      telefon: "",
-      tehlike_sinifi: "",
-      sgk_sicil_no: "",
-    };
-    
     autoTable(doc, {
       startY: yPos,
       head: [
@@ -605,7 +794,75 @@ export const generateADEPPDF = async (planId: string) => {
     doc.setFontSize(10);
     setFontStyle(doc, "normal");
     doc.setTextColor(COLORS.text[0], COLORS.text[1], COLORS.text[2]);
-    yPos = addJustifiedText(doc, mevzuat.tanimlar, margin, yPos, contentWidth);
+    yPos = addJustifiedText(
+      doc,
+      "Bu bölümde plan boyunca kullanılan temel acil durum kavramları resmi ve operasyonel anlamlarıyla tanımlanmıştır.",
+      margin,
+      yPos,
+      contentWidth,
+      5.5
+    );
+    yPos += 8;
+
+    const definitionRows = parseDefinitionLines(mevzuat.tanimlar).map((item) => [
+      item.term,
+      item.description,
+    ]);
+
+    autoTable(doc, {
+      startY: yPos,
+      head: [
+        [
+          {
+            content: "KAVRAM",
+            styles: {
+              halign: "center",
+              fillColor: COLORS.primary,
+              fontStyle: "bold",
+              font: "Inter",
+            },
+          },
+          {
+            content: "AÇIKLAMA",
+            styles: {
+              halign: "center",
+              fillColor: COLORS.primary,
+              fontStyle: "bold",
+              font: "Inter",
+            },
+          },
+        ],
+      ],
+      body: definitionRows,
+      theme: "grid",
+      styles: {
+        fontSize: 9.5,
+        cellPadding: 6,
+        valign: "middle",
+        textColor: COLORS.text,
+        lineColor: COLORS.border,
+        lineWidth: 0.4,
+        font: "Inter",
+      },
+      headStyles: {
+        fillColor: COLORS.tableHeader,
+        textColor: [255, 255, 255],
+        fontStyle: "bold",
+        fontSize: 10.5,
+        font: "Inter",
+      },
+      alternateRowStyles: {
+        fillColor: COLORS.tableAlt,
+      },
+      columnStyles: {
+        0: {
+          cellWidth: 48,
+          fontStyle: "bold",
+          fillColor: [248, 250, 252],
+        },
+        1: { cellWidth: contentWidth - 48 },
+      },
+    });
 
     addFooter(doc, currentPage++, totalPages);
 
@@ -825,8 +1082,8 @@ export const generateADEPPDF = async (planId: string) => {
     // ============================================
     // PAGE: SENARYOLAR
     // ============================================
-    if (scenarios.length > 0) {
-      scenarios.forEach((scenario, index) => {
+    if (filteredScenarios.length > 0) {
+      filteredScenarios.forEach((scenario, index) => {
         doc.addPage();
         yPos = margin;
 

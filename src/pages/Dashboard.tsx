@@ -1,11 +1,10 @@
-import { useState, useEffect,useCallback,useRef } from "react";
+﻿import { useState, useEffect,useCallback,useRef } from "react";
 import {
   Activity,
   AlertTriangle,
   CheckCircle2,
   Clock,
   TrendingUp,
-  Loader2,
   AlertCircle,
   BarChart3,
   PieChart as PieChartIcon,
@@ -411,25 +410,6 @@ export default function Dashboard() {
     return colors[status] || "bg-secondary";
   };
 
-  // 🔄 Loading State
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center min-h-[600px]">
-        <div className="text-center space-y-4">
-          <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto" />
-          <div>
-            <p className="text-lg font-semibold text-foreground">
-              Dashboard yükleniyor...
-            </p>
-            <p className="text-sm text-muted-foreground mt-1">
-              Veriler hazırlanıyor
-            </p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   const metrics: MetricCard[] = [
     {
       title: "Aktif Denetim",
@@ -470,17 +450,12 @@ export default function Dashboard() {
             İSG Yönetim Paneli
           </h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Gerçek zamanlı denetim ve risk analizi
-            {orgId && (
-              <span className="ml-2 text-xs opacity-60">
-                • Org: {orgId.substring(0, 8)}...
-              </span>
-            )}
+            Gerçek zamanlı denetim ve risk analizi           
           </p>
         </div>
         <Button
           onClick={handleRefresh}
-          disabled={refreshing}
+          disabled={refreshing || loading}
           variant="outline"
           size="sm"
           className="gap-2"
@@ -492,39 +467,57 @@ export default function Dashboard() {
 
       {/* 📊 KPI Kartları */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {metrics.map((metric, idx) => (
-          <div
-            key={idx}
-            className="glass-card p-5 border border-primary/20 space-y-3 hover:border-primary/40 transition-all"
-          >
-            <div className="flex items-center justify-between">
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                {metric.title}
-              </h3>
-              <div
-                className={`p-2.5 rounded-lg bg-gradient-to-br ${metric.color} text-white`}
-              >
-                {metric.icon}
+        {loading ? (
+          Array.from({ length: 4 }).map((_, idx) => (
+            <div
+              key={idx}
+              className="glass-card space-y-3 border border-primary/10 p-5"
+            >
+              <div className="flex items-center justify-between">
+                <div className="h-3 w-24 animate-pulse rounded bg-slate-800" />
+                <div className="h-10 w-10 animate-pulse rounded-lg bg-slate-800" />
+              </div>
+              <div className="space-y-2">
+                <div className="h-8 w-16 animate-pulse rounded bg-slate-800" />
+                <div className="h-3 w-28 animate-pulse rounded bg-slate-900" />
               </div>
             </div>
-            <div className="space-y-1">
-              <p className="text-3xl font-bold text-foreground">
-                {metric.value}
-              </p>
-              <p
-                className={`text-xs font-medium ${
-                  metric.change.includes("📈") || metric.change.includes("⚠️")
-                    ? "text-orange-500"
-                    : metric.change.includes("✅")
-                    ? "text-success"
-                    : "text-muted-foreground"
-                }`}
-              >
-                {metric.change}
-              </p>
+          ))
+        ) : (
+          metrics.map((metric, idx) => (
+            <div
+              key={idx}
+              className="glass-card p-5 border border-primary/20 space-y-3 hover:border-primary/40 transition-all"
+            >
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  {metric.title}
+                </h3>
+                <div
+                  className={`p-2.5 rounded-lg bg-gradient-to-br ${metric.color} text-white`}
+                >
+                  {metric.icon}
+                </div>
+              </div>
+              <div className="space-y-1">
+                <p className="text-3xl font-bold text-foreground">
+                  {metric.value}
+                </p>
+                <p
+                  className={`text-xs font-medium ${
+                    metric.change.includes("📈") || metric.change.includes("⚠️")
+                      ? "text-orange-500"
+                      : metric.change.includes("✅")
+                      ? "text-success"
+                      : "text-muted-foreground"
+                  }`}
+                >
+                  {metric.change}
+                </p>
+              </div>
             </div>
-          </div>
-        ))}
+          ))
+        )}
       </div>
 
       {/* 📈 Grafikler */}
@@ -535,7 +528,9 @@ export default function Dashboard() {
             <PieChartIcon className="h-4 w-4 text-primary" />
             Risk Dağılımı Analizi
           </h3>
-          {riskDistribution.length > 0 ? (
+          {loading ? (
+            <div className="h-[280px] animate-pulse rounded-xl bg-slate-900/70" />
+          ) : riskDistribution.length > 0 ? (
             <ResponsiveContainer width="100%" height={280}>
               <PieChart>
                 <Pie
@@ -570,7 +565,9 @@ export default function Dashboard() {
             <BarChart3 className="h-4 w-4 text-primary" />
             Aylık Denetim Trendi (Son 6 Ay)
           </h3>
-          {monthlyTrend.some((m) => m.denetimler > 0) ? (
+          {loading ? (
+            <div className="h-[280px] animate-pulse rounded-xl bg-slate-900/70" />
+          ) : monthlyTrend.some((m) => m.denetimler > 0) ? (
             <ResponsiveContainer width="100%" height={280}>
               <AreaChart data={monthlyTrend}>
                 <defs>
@@ -628,7 +625,17 @@ export default function Dashboard() {
           Son Denetimler
         </h3>
         <div className="space-y-3">
-          {recentInspections.length > 0 ? (
+          {loading ? (
+            Array.from({ length: 4 }).map((_, idx) => (
+              <div
+                key={idx}
+                className="rounded-lg border border-border/40 bg-secondary/30 p-4"
+              >
+                <div className="mb-2 h-4 w-52 animate-pulse rounded bg-slate-800" />
+                <div className="h-3 w-36 animate-pulse rounded bg-slate-900" />
+              </div>
+            ))
+          ) : recentInspections.length > 0 ? (
             recentInspections.map((inspection) => (
               <div
                 key={inspection.id}

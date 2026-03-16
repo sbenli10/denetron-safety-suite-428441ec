@@ -1,152 +1,108 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { Loader2, CheckCircle2, AlertTriangle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 export default function AuthCallback() {
+  const navigate = useNavigate();
+  const [status, setStatus] = useState("Giriş doğrulanıyor...");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const [status,setStatus] = useState("Giriş doğrulanıyor...");
-  const [success,setSuccess] = useState(false);
-
-  useEffect(()=>{
-    handleCallback();
-  },[]);
+  useEffect(() => {
+    void handleCallback();
+  }, []);
 
   const handleCallback = async () => {
-
-    try{
-
+    try {
       const params = new URLSearchParams(window.location.search);
+      const code = params.get("code");
       const isExtension = params.get("ext") === "true";
 
-      if(!isExtension){
-        window.location.href="/";
-        return;
+      if (code) {
+        setStatus("Oturum doğrulanıyor...");
+
+        const { error } = await supabase.auth.exchangeCodeForSession(code);
+        if (error) {
+          throw error;
+        }
       }
 
-      // session bazen geç gelir
-      for(let i=0;i<8;i++){
+      for (let attempt = 0; attempt < 12; attempt += 1) {
+        const { data, error } = await supabase.auth.getSession();
 
-        const {data,error} = await supabase.auth.getSession();
+        if (error) {
+          throw error;
+        }
 
-        if(data?.session){
+        if (data.session) {
+          if (isExtension) {
+            localStorage.setItem(
+              "denetron_extension_auth",
+              JSON.stringify({
+                access_token: data.session.access_token,
+                refresh_token: data.session.refresh_token,
+                expires_in: data.session.expires_in,
+                user: data.session.user,
+              })
+            );
 
-          const session = data.session;
+            setStatus("Giriş başarılı. Uzantı bağlantısı tamamlandı.");
 
-          const payload = {
-            access_token: session.access_token,
-            refresh_token: session.refresh_token,
-            expires_in: session.expires_in,
-            user: session.user
-          };
+            setTimeout(() => {
+              window.close();
+            }, 1200);
 
-          // extension'a aktarmak için localStorage
-          localStorage.setItem(
-            "denetron_extension_auth",
-            JSON.stringify(payload)
-          );
+            return;
+          }
 
-          setSuccess(true);
-          setStatus("Giriş başarılı!");
-
-          // otomatik kapatma denemesi
-          setTimeout(()=>{
-            window.close();
-          },1500);
-
+          setStatus("Oturum hazır. Yönlendiriliyorsunuz...");
+          navigate("/", { replace: true });
           return;
         }
 
-        await new Promise(r=>setTimeout(r,400));
-
+        await wait(250);
       }
 
-      setStatus("Session alınamadı");
-
-    }catch(e){
-
-      console.error(e);
-      setStatus("Giriş sırasında hata oluştu");
-
+      throw new Error("Oturum oluşturulamadı. Lütfen tekrar deneyin.");
+    } catch (error) {
+      console.error("Auth callback failed:", error);
+      setErrorMessage(error instanceof Error ? error.message : "Bilinmeyen hata");
+      setStatus("Giriş tamamlanamadı.");
     }
-
   };
 
   return (
-
-    <div style={{
-      minHeight:"100vh",
-      display:"flex",
-      alignItems:"center",
-      justifyContent:"center",
-      background:"#020617",
-      color:"white",
-      flexDirection:"column",
-      gap:"20px",
-      textAlign:"center",
-      padding:"40px"
-    }}>
-
-      <div style={{
-        width:60,
-        height:60,
-        border:"4px solid #334155",
-        borderTopColor:"#6366f1",
-        borderRadius:"50%",
-        animation:"spin 1s linear infinite"
-      }}/>
-
-      <h2>{status}</h2>
-
-      {success && (
-
-        <div style={{maxWidth:420,opacity:.9}}>
-
-          <p>
-          ✅ <b>Denetron hesabınıza başarıyla giriş yaptınız.</b>
-          </p>
-
-          <p style={{marginTop:10}}>
-          Chrome Extension artık hesabınıza bağlandı.
-          </p>
-
-          <p style={{marginTop:10}}>
-            Denetron Extension popup'ını açarak özelliklere erişebilirsiniz,Extension'da oturumunuzun aktif olduğunu göreceksiniz.
-          </p>
-
-          <p style={{marginTop:10}}>
-            Extension'da herhangi bir sorun yaşarsanız, bu sayfayı tekrar açarak oturumu yenileyebilirsiniz.
-          </p>
-
-
-          <p style={{marginTop:10}}>
-          👉 Devam etmek için <b>tarayıcıdaki Denetron Extension popup'ını açın.</b>
-          </p>
-
-          <p style={{marginTop:10,fontSize:13,opacity:.7}}>
-          Bu sekme otomatik kapanmazsa aşağıdaki butona basabilirsiniz.
-          </p>
+    <div className="flex min-h-screen items-center justify-center bg-slate-950 px-6 text-white">
+      <div className="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-900/80 p-8 text-center shadow-2xl">
+        <div className="mx-auto mb-5 flex h-14 w-14 items-center justify-center rounded-full border border-slate-700 bg-slate-800">
+          {errorMessage ? (
+            <AlertTriangle className="h-7 w-7 text-amber-400" />
+          ) : status.includes("başarılı") || status.includes("hazır") ? (
+            <CheckCircle2 className="h-7 w-7 text-emerald-400" />
+          ) : (
+            <Loader2 className="h-7 w-7 animate-spin text-cyan-400" />
+          )}
         </div>
-      )}
 
-      <a
-        href="/auth/login"
-        style={{
-          marginTop:5,
-          fontSize:13,
-          opacity:.7,
-          color:"#94a3b8"
-        }}
-      >
-        Tekrar giriş yap
-      </a>
+        <h1 className="mb-2 text-xl font-semibold">Denetron Oturum Doğrulama</h1>
+        <p className="text-sm text-slate-300">{status}</p>
 
-      <style>{`
-        @keyframes spin {
-          to { transform: rotate(360deg); }
-        }
-      `}</style>
-
+        {errorMessage && (
+          <div className="mt-5 rounded-xl border border-amber-500/20 bg-amber-500/10 p-4 text-left">
+            <p className="text-sm font-medium text-amber-200">Hata detayı</p>
+            <p className="mt-1 text-sm text-amber-100/90">{errorMessage}</p>
+            <button
+              type="button"
+              onClick={() => navigate("/auth", { replace: true })}
+              className="mt-4 inline-flex rounded-lg border border-slate-700 px-4 py-2 text-sm text-white transition hover:bg-slate-800"
+            >
+              Giriş sayfasına dön
+            </button>
+          </div>
+        )}
+      </div>
     </div>
-
   );
-
 }

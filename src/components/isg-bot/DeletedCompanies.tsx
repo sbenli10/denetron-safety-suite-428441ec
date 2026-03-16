@@ -224,12 +224,24 @@ export default function DeletedCompanies() {
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[600px] gap-4">
-        <Loader2 className="h-12 w-12 animate-spin text-primary" />
-        <div className="text-center">
-          <p className="text-lg font-semibold">Silinmiş Firmalar Yükleniyor</p>
-          <p className="text-sm text-muted-foreground">Lütfen bekleyin...</p>
+      <div className="space-y-6">
+        <div className="space-y-2">
+          <div className="h-8 w-52 animate-pulse rounded bg-slate-800" />
+          <div className="h-4 w-72 animate-pulse rounded bg-slate-900" />
         </div>
+        <Card>
+          <CardHeader>
+            <div className="h-6 w-48 animate-pulse rounded bg-slate-800" />
+            <div className="h-4 w-72 animate-pulse rounded bg-slate-900" />
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {Array.from({ length: 6 }).map((_, index) => (
+                <div key={index} className="h-14 animate-pulse rounded-lg bg-slate-900/70" />
+              ))}
+            </div>
+          </CardContent>
+        </Card>
       </div>
     );
   }

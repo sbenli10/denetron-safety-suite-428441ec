@@ -588,7 +588,32 @@ export default function CertificatesDashboard() {
   }
 
   if (loading) {
-    return <div className="flex items-center justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+          <div className="space-y-2">
+            <div className="h-8 w-72 animate-pulse rounded bg-slate-800" />
+            <div className="h-4 w-96 animate-pulse rounded bg-slate-900" />
+          </div>
+          <div className="flex gap-2">
+            {Array.from({ length: 3 }).map((_, index) => (
+              <div key={index} className="h-9 w-28 animate-pulse rounded-lg bg-slate-900" />
+            ))}
+          </div>
+        </div>
+
+        <div className="grid gap-6 xl:grid-cols-[1.05fr_1.25fr]">
+          <div className="space-y-6">
+            <div className="h-[420px] animate-pulse rounded-xl border border-slate-800 bg-slate-900/70" />
+            <div className="h-[320px] animate-pulse rounded-xl border border-slate-800 bg-slate-900/70" />
+          </div>
+          <div className="space-y-6">
+            <div className="h-[420px] animate-pulse rounded-xl border border-slate-800 bg-slate-900/70" />
+            <div className="h-[260px] animate-pulse rounded-xl border border-slate-800 bg-slate-900/70" />
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (

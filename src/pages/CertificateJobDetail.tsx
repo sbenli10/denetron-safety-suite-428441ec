@@ -164,7 +164,29 @@ export default function CertificateJobDetail() {
   const failedItems = useMemo(() => items.filter((item) => item.status === "failed"), [items]);
 
   if (loading || !certificate || !form) {
-    return <div className="flex items-center justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+          <div className="space-y-2">
+            <div className="h-8 w-56 animate-pulse rounded bg-slate-800" />
+            <div className="h-4 w-80 animate-pulse rounded bg-slate-900" />
+          </div>
+          <div className="flex gap-2">
+            {Array.from({ length: 2 }).map((_, index) => (
+              <div key={index} className="h-10 w-28 animate-pulse rounded-lg bg-slate-900" />
+            ))}
+          </div>
+        </div>
+
+        <div className="grid gap-6 xl:grid-cols-[0.95fr_1.05fr]">
+          <div className="space-y-6">
+            <div className="h-64 animate-pulse rounded-xl border border-slate-800 bg-slate-900/70" />
+            <div className="h-72 animate-pulse rounded-xl border border-slate-800 bg-slate-900/70" />
+          </div>
+          <div className="h-[560px] animate-pulse rounded-xl border border-slate-800 bg-slate-900/70" />
+        </div>
+      </div>
+    );
   }
 
   return (

@@ -64,18 +64,18 @@ interface ArchiveFile {
 const defaultCategories: Category[] = [
   {
     id: "construction",
-    label: "İnşaat",
+    label: "Ä°nÅŸaat",
     icon: HardHat,
     color: "from-yellow-500 to-orange-500",
     hazards: [
       {
         id: "fall-height",
         category_id: "construction",
-        name: "Yüksekten Düşme",
+        name: "YÃ¼ksekten DÃ¼ÅŸme",
         riskLevel: "high" as RiskLevel,
-        prevention: "Korkuluk kur, emniyet kemeri kullan, yapı iskelesi günlük denetle.",
-        regulation: "İSG Kanunu Md. 13-14 - Yüksekte Çalışma",
-        details: "Yüksekten düşme, inşaat sektöründe en sık karşılaşılan ölümcül kazalardan biridir. Minimum 1.1m yükseklikte korkuluk veya emniyet ağı kullanılmalıdır.",
+        prevention: "Korkuluk kur, emniyet kemeri kullan, yapÄ± iskelesi gÃ¼nlÃ¼k denetle.",
+        regulation: "Ä°SG Kanunu Md. 13-14 - YÃ¼ksekte Ã‡alÄ±ÅŸma",
+        details: "YÃ¼ksekten dÃ¼ÅŸme, inÅŸaat sektÃ¶rÃ¼nde en sÄ±k karÅŸÄ±laÅŸÄ±lan Ã¶lÃ¼mcÃ¼l kazalardan biridir. Minimum 1.1m yÃ¼kseklikte korkuluk veya emniyet aÄŸÄ± kullanÄ±lmalÄ±dÄ±r.",
       },
     ],
   },
@@ -90,9 +90,9 @@ const defaultCategories: Category[] = [
         category_id: "office",
         name: "Ergonomik Strain",
         riskLevel: "medium" as RiskLevel,
-        prevention: "Ayarlanabilir sandalye sağla, monitör göz hizasında olsun, her saatte ara ver.",
-        regulation: "6331 Sayılı Kanun - Ekran Başında Çalışma",
-        details: "Uzun süreli ofis çalışması boyun, sırt ve bel ağrılarına neden olabilir. Ergonomik değerlendirme yapılmalıdır.",
+        prevention: "Ayarlanabilir sandalye saÄŸla, monitÃ¶r gÃ¶z hizasÄ±nda olsun, her saatte ara ver.",
+        regulation: "6331 SayÄ±lÄ± Kanun - Ekran BaÅŸÄ±nda Ã‡alÄ±ÅŸma",
+        details: "Uzun sÃ¼reli ofis Ã§alÄ±ÅŸmasÄ± boyun, sÄ±rt ve bel aÄŸrÄ±larÄ±na neden olabilir. Ergonomik deÄŸerlendirme yapÄ±lmalÄ±dÄ±r.",
       },
     ],
   },
@@ -105,11 +105,11 @@ const defaultCategories: Category[] = [
       {
         id: "machine-entanglement",
         category_id: "factory",
-        name: "Makine Dolanması",
+        name: "Makine DolanmasÄ±",
         riskLevel: "critical" as RiskLevel,
-        prevention: "Hareketli parçalara koruma koy, lock-out/tag-out uygula, operatör eğitimi ver.",
-        regulation: "İSG Kanunu Md. 29 - Makine Güvenliği",
-        details: "Döner makine parçalarına kimse yaklaşmamalıdır. Bakım sırasında kesinlikle lock-out/tag-out uygulanmalıdır.",
+        prevention: "Hareketli parÃ§alara koruma koy, lock-out/tag-out uygula, operatÃ¶r eÄŸitimi ver.",
+        regulation: "Ä°SG Kanunu Md. 29 - Makine GÃ¼venliÄŸi",
+        details: "DÃ¶ner makine parÃ§alarÄ±na kimse yaklaÅŸmamalÄ±dÄ±r. BakÄ±m sÄ±rasÄ±nda kesinlikle lock-out/tag-out uygulanmalÄ±dÄ±r.",
       },
     ],
   },
@@ -140,7 +140,7 @@ export default function SafetyLibrary() {
   const [newHazard, setNewHazard] = useState({
     name: "",
     categoryId: "construction",
-    categoryLabel: "İnşaat",
+    categoryLabel: "Ä°nÅŸaat",
     riskLevel: "medium",
     prevention: "",
     regulation: "",
@@ -155,7 +155,7 @@ export default function SafetyLibrary() {
   }, [activeTab]);
 
   // ==========================================
-  // 1. VERİTABANI: TEHLİKELERİ ÇEKME
+  // 1. VERÄ°TABANI: TEHLÄ°KELERÄ° Ã‡EKME
   // ==========================================
   const fetchHazards = async () => {
     setLoading(true);
@@ -174,23 +174,23 @@ export default function SafetyLibrary() {
             name: item.hazard_name,
             riskLevel: item.risk_level as RiskLevel,
             prevention: item.prevention_text,
-            regulation: item.regulation || "Belirtilmemiş",
+            regulation: item.regulation || "BelirtilmemiÅŸ",
             details: item.details || "Detay yok.",
           };
 
           const catIndex = mergedCategories.findIndex(c => c.id === item.category_id);
           
           if (catIndex > -1) {
-            // Eğer kategori varsa ve bu tehlike eklenmemişse ekle
+            // EÄŸer kategori varsa ve bu tehlike eklenmemiÅŸse ekle
             if (!mergedCategories[catIndex].hazards.find(h => h.id === hazard.id)) {
               mergedCategories[catIndex].hazards.push(hazard);
             }
           } else {
-            // Yeni dinamik kategori oluştur
+            // Yeni dinamik kategori oluÅŸtur
             mergedCategories.push({
               id: item.category_id,
               label: item.category_label || item.category_id,
-              icon: BookOpen, // Varsayılan ikon
+              icon: BookOpen, // VarsayÄ±lan ikon
               color: "from-slate-500 to-gray-500",
               hazards: [hazard]
             });
@@ -199,15 +199,15 @@ export default function SafetyLibrary() {
       }
       setCategories(mergedCategories);
     } catch (err: any) {
-      console.error("Fetch hatası:", err);
-      toast.error("Veriler çekilirken hata oluştu, varsayılanlar gösteriliyor.");
+      console.error("Fetch hatasÄ±:", err);
+      toast.error("Veriler Ã§ekilirken hata oluÅŸtu, varsayÄ±lanlar gÃ¶steriliyor.");
     } finally {
       setLoading(false);
     }
   };
 
   // ==========================================
-  // 2. VERİTABANI: YENİ TEHLİKE EKLEME
+  // 2. VERÄ°TABANI: YENÄ° TEHLÄ°KE EKLEME
   // ==========================================
   const handleAddHazard = async (e: FormEvent) => {
     e.preventDefault();
@@ -224,19 +224,19 @@ export default function SafetyLibrary() {
 
       if (error) throw error;
 
-      toast.success("Yeni tehlike başarıyla eklendi!");
+      toast.success("Yeni tehlike baÅŸarÄ±yla eklendi!");
       setAddModalOpen(false);
-      fetchHazards(); // Listeyi güncelle
+      fetchHazards(); // Listeyi gÃ¼ncelle
       
-      // Formu sıfırla
-      setNewHazard({ name: "", categoryId: "construction", categoryLabel: "İnşaat", riskLevel: "medium", prevention: "", regulation: "", details: "" });
+      // Formu sÄ±fÄ±rla
+      setNewHazard({ name: "", categoryId: "construction", categoryLabel: "Ä°nÅŸaat", riskLevel: "medium", prevention: "", regulation: "", details: "" });
     } catch (err: any) {
       toast.error("Tehlike eklenemedi: " + err.message);
     }
   };
 
   // ==========================================
-  // 3. DOSYA ARŞİVİ: STORAGE İŞLEMLERİ
+  // 3. DOSYA ARÅžÄ°VÄ°: STORAGE Ä°ÅžLEMLERÄ°
   // ==========================================
   const fetchFiles = async () => {
     try {
@@ -257,8 +257,8 @@ export default function SafetyLibrary() {
         setFiles(fileList);
       }
     } catch (err: any) {
-      console.error("Dosyalar çekilemedi:", err);
-      // Bucket yoksa hata vermemesi için sessizce geç veya bilgi ver
+      console.error("Dosyalar Ã§ekilemedi:", err);
+      // Bucket yoksa hata vermemesi iÃ§in sessizce geÃ§ veya bilgi ver
     }
   };
 
@@ -274,10 +274,10 @@ export default function SafetyLibrary() {
       const { error } = await supabase.storage.from("safety_documents").upload(fileName, file);
       if (error) throw error;
 
-      toast.success("Dosya başarıyla yüklendi");
+      toast.success("Dosya baÅŸarÄ±yla yÃ¼klendi");
       fetchFiles();
     } catch (err: any) {
-      toast.error("Dosya yüklenemedi. 'safety_documents' bucket'ı kontrol edin.");
+      toast.error("Dosya yÃ¼klenemedi. 'safety_documents' bucket'Ä± kontrol edin.");
     } finally {
       setUploading(false);
     }
@@ -295,7 +295,7 @@ export default function SafetyLibrary() {
   };
 
   // ==========================================
-  // YARDIMCI FONKSİYONLAR
+  // YARDIMCI FONKSÄ°YONLAR
   // ==========================================
   const getRiskColor = (level: RiskLevel) => {
     switch (level) {
@@ -309,15 +309,15 @@ export default function SafetyLibrary() {
 
   const getRiskLabel = (level: RiskLevel) => {
     switch (level) {
-      case "low": return "Düşük";
+      case "low": return "DÃ¼ÅŸÃ¼k";
       case "medium": return "Orta";
-      case "high": return "Yüksek";
+      case "high": return "YÃ¼ksek";
       case "critical": return "Kritik";
       default: return "Bilinmiyor";
     }
   };
 
-  // 🔍 Gelişmiş Arama ve Filtreleme
+  // ðŸ” GeliÅŸmiÅŸ Arama ve Filtreleme
   const filteredCategories = activeCategory
     ? categories.filter((c) => c.id === activeCategory)
     : categories;
@@ -339,13 +339,13 @@ export default function SafetyLibrary() {
   });
 
   const handleStartInspection = (hazard: Hazard) => {
-    // Güvenlik (Guard Clause)
+    // GÃ¼venlik (Guard Clause)
     if (!hazard || !hazard.name) {
-      toast.error("Tehlike verisi eksik. Denetim başlatılamadı.");
+      toast.error("Tehlike verisi eksik. Denetim baÅŸlatÄ±lamadÄ±.");
       return;
     }
 
-    const prefilledNotes = `Tehlike: ${hazard.name}\nÖnleme Yöntemi: ${hazard.prevention}`;
+    const prefilledNotes = `Tehlike: ${hazard.name}\nÃ–nleme YÃ¶ntemi: ${hazard.prevention}`;
     navigate("/inspections", {
       state: { prefilledNotes, hazardName: hazard.name },
     });
@@ -355,10 +355,23 @@ export default function SafetyLibrary() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-12">
-        <div className="text-center space-y-3">
-          <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto" />
-          <p className="text-sm text-muted-foreground">Veriler yükleniyor...</p>
+      <div className="space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="space-y-2">
+            <div className="h-8 w-56 animate-pulse rounded bg-slate-800" />
+            <div className="h-4 w-96 animate-pulse rounded bg-slate-900" />
+          </div>
+          <div className="h-10 w-40 animate-pulse rounded-lg bg-slate-900" />
+        </div>
+
+        <div className="h-12 animate-pulse rounded-xl bg-slate-900/70" />
+        <div className="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
+          <div className="h-[520px] animate-pulse rounded-xl border border-slate-800 bg-slate-900/70" />
+          <div className="space-y-4">
+            {Array.from({ length: 6 }).map((_, index) => (
+              <div key={index} className="h-20 animate-pulse rounded-xl border border-slate-800 bg-slate-900/70" />
+            ))}
+          </div>
         </div>
       </div>
     );
@@ -369,9 +382,9 @@ export default function SafetyLibrary() {
       {/* HEADER & TABS */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-foreground">İSG Kütüphanesi</h1>
+          <h1 className="text-3xl font-bold text-foreground">Ä°SG KÃ¼tÃ¼phanesi</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Tehlikeleri inceleyin, denetim başlatın ve belgelerinizi arşivleyin
+            Tehlikeleri inceleyin, denetim baÅŸlatÄ±n ve belgelerinizi arÅŸivleyin
           </p>
         </div>
         
@@ -382,7 +395,7 @@ export default function SafetyLibrary() {
               activeTab === "library" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
             }`}
           >
-            <BookOpen className="h-4 w-4" /> Kütüphane
+            <BookOpen className="h-4 w-4" /> KÃ¼tÃ¼phane
           </button>
           <button
             onClick={() => setActiveTab("archive")}
@@ -390,7 +403,7 @@ export default function SafetyLibrary() {
               activeTab === "archive" ? "bg-background shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
             }`}
           >
-            <FolderArchive className="h-4 w-4" /> Dosya Arşivi
+            <FolderArchive className="h-4 w-4" /> Dosya ArÅŸivi
           </button>
         </div>
       </div>
@@ -408,7 +421,7 @@ export default function SafetyLibrary() {
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input
-                  placeholder="İsim, detay veya mevzuat ara..."
+                  placeholder="Ä°sim, detay veya mevzuat ara..."
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   className="pl-9 bg-card border-border"
@@ -423,10 +436,10 @@ export default function SafetyLibrary() {
                   onChange={(e) => setRiskFilter(e.target.value)}
                   className="bg-transparent text-sm text-foreground focus:outline-none"
                 >
-                  <option value="all">Tüm Riskler</option>
-                  <option value="low">Düşük</option>
+                  <option value="all">TÃ¼m Riskler</option>
+                  <option value="low">DÃ¼ÅŸÃ¼k</option>
                   <option value="medium">Orta</option>
-                  <option value="high">Yüksek</option>
+                  <option value="high">YÃ¼ksek</option>
                   <option value="critical">Kritik</option>
                 </select>
               </div>
@@ -437,7 +450,7 @@ export default function SafetyLibrary() {
             </Button>
           </div>
 
-          {/* KATEGORİLER GRID */}
+          {/* KATEGORÄ°LER GRID */}
           {!activeCategory ? (
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               {categories.map((cat) => {
@@ -460,7 +473,7 @@ export default function SafetyLibrary() {
               })}
             </div>
           ) : (
-            /* TEHLİKE LİSTESİ */
+            /* TEHLÄ°KE LÄ°STESÄ° */
             <div className="space-y-4">
               <div className="glass-card p-4 bg-secondary/30 border border-border/50">
                 <div className="flex items-center gap-3">
@@ -471,7 +484,7 @@ export default function SafetyLibrary() {
                       </div>
                       <div>
                         <h2 className="text-lg font-semibold text-foreground">{category.label}</h2>
-                        <p className="text-xs text-muted-foreground">Bu kategoride {searchResults.length} sonuç bulundu.</p>
+                        <p className="text-xs text-muted-foreground">Bu kategoride {searchResults.length} sonuÃ§ bulundu.</p>
                       </div>
                     </>
                   )}
@@ -495,7 +508,7 @@ export default function SafetyLibrary() {
                       </div>
                       <p className="text-xs text-muted-foreground leading-relaxed line-clamp-3">{hazard.prevention}</p>
                       <Button size="sm" className="w-full gap-1.5 bg-secondary hover:bg-secondary/80 text-foreground border border-border/50" onClick={() => handleStartInspection(hazard)}>
-                        Denetim Başlat <ArrowRight className="h-3.5 w-3.5" />
+                        Denetim BaÅŸlat <ArrowRight className="h-3.5 w-3.5" />
                       </Button>
                     </div>
                   ))}
@@ -503,7 +516,7 @@ export default function SafetyLibrary() {
               ) : (
                 <div className="text-center py-12 glass-card">
                   <AlertTriangle className="h-8 w-8 text-muted-foreground/40 mx-auto mb-2" />
-                  <p className="text-sm text-muted-foreground">Kriterlere uygun tehlike bulunamadı.</p>
+                  <p className="text-sm text-muted-foreground">Kriterlere uygun tehlike bulunamadÄ±.</p>
                 </div>
               )}
             </div>
@@ -512,14 +525,14 @@ export default function SafetyLibrary() {
       )}
 
       {/* ===================================== */}
-      {/* DOSYA ARŞİVİ SEKME İÇERİĞİ           */}
+      {/* DOSYA ARÅžÄ°VÄ° SEKME Ä°Ã‡ERÄ°ÄžÄ°           */}
       {/* ===================================== */}
       {activeTab === "archive" && (
         <div className="space-y-4">
           <div className="flex justify-between items-center bg-card p-4 rounded-xl border border-border shadow-sm">
             <div>
               <h3 className="font-semibold text-foreground">Sistem Belgeleri</h3>
-              <p className="text-xs text-muted-foreground">ISG prosedürleri, formlar ve kılavuzlar.</p>
+              <p className="text-xs text-muted-foreground">ISG prosedÃ¼rleri, formlar ve kÄ±lavuzlar.</p>
             </div>
             <div>
               <input type="file" id="file-upload" className="hidden" onChange={handleFileUpload} disabled={uploading} />
@@ -527,7 +540,7 @@ export default function SafetyLibrary() {
                 <Button asChild variant="default" className="gap-2 cursor-pointer bg-blue-600 hover:bg-blue-700 text-white" disabled={uploading}>
                   <span>
                     {uploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <UploadCloud className="h-4 w-4" />}
-                    Dosya Yükle
+                    Dosya YÃ¼kle
                   </span>
                 </Button>
               </label>
@@ -538,7 +551,7 @@ export default function SafetyLibrary() {
             {files.length === 0 && !uploading ? (
               <div className="col-span-full py-12 text-center text-muted-foreground border border-dashed rounded-xl border-border/50">
                 <FileText className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                <p>Henüz dosya yüklenmemiş.</p>
+                <p>HenÃ¼z dosya yÃ¼klenmemiÅŸ.</p>
               </div>
             ) : (
               files.map((file, idx) => (
@@ -554,7 +567,7 @@ export default function SafetyLibrary() {
                   </div>
                   <div className="mt-auto flex items-center justify-between border-t border-border/40 pt-3">
                     <Button variant="ghost" size="sm" className="h-8 text-xs gap-1 text-muted-foreground hover:text-foreground" onClick={() => window.open(file.url, "_blank")}>
-                      <Download className="h-3.5 w-3.5" /> İndir
+                      <Download className="h-3.5 w-3.5" /> Ä°ndir
                     </Button>
                     <Button variant="ghost" size="icon" className="h-8 w-8 text-destructive/70 hover:text-destructive hover:bg-destructive/10" onClick={() => handleDeleteFile(file.name)}>
                       <Trash2 className="h-4 w-4" />
@@ -571,7 +584,7 @@ export default function SafetyLibrary() {
       {/* MODALLAR                             */}
       {/* ===================================== */}
 
-      {/* 📋 Detay Modalı */}
+      {/* ðŸ“‹ Detay ModalÄ± */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
@@ -579,7 +592,7 @@ export default function SafetyLibrary() {
               <AlertCircle className="h-5 w-5 text-destructive" />
               {selectedHazard?.name}
             </DialogTitle>
-            <DialogDescription>Tehlike detayları ve mevzuat bilgileri</DialogDescription>
+            <DialogDescription>Tehlike detaylarÄ± ve mevzuat bilgileri</DialogDescription>
           </DialogHeader>
           {selectedHazard && (
             <div className="space-y-4 pt-4">
@@ -588,38 +601,38 @@ export default function SafetyLibrary() {
                 <Badge className={`inline-flex ${getRiskColor(selectedHazard.riskLevel)}`}>{getRiskLabel(selectedHazard.riskLevel)}</Badge>
               </div>
               <div className="space-y-2">
-                <h4 className="text-sm font-semibold">Tehlike Açıklaması</h4>
+                <h4 className="text-sm font-semibold">Tehlike AÃ§Ä±klamasÄ±</h4>
                 <p className="text-sm text-muted-foreground leading-relaxed">{selectedHazard.details}</p>
               </div>
               <div className="space-y-2">
-                <h4 className="text-sm font-semibold flex items-center gap-2"><BookOpen className="h-4 w-4" /> Önleme Yöntemi</h4>
+                <h4 className="text-sm font-semibold flex items-center gap-2"><BookOpen className="h-4 w-4" /> Ã–nleme YÃ¶ntemi</h4>
                 <p className="text-sm text-muted-foreground bg-secondary/50 p-3 rounded-lg">{selectedHazard.prevention}</p>
               </div>
               <div className="space-y-2">
-                <h4 className="text-sm font-semibold flex items-center gap-2"><AlertTriangle className="h-4 w-4 text-warning" /> İlgili Mevzuat</h4>
+                <h4 className="text-sm font-semibold flex items-center gap-2"><AlertTriangle className="h-4 w-4 text-warning" /> Ä°lgili Mevzuat</h4>
                 <div className="bg-warning/10 border border-warning/30 rounded-lg p-3">
                   <p className="text-xs font-medium text-warning">{selectedHazard.regulation}</p>
                 </div>
               </div>
               <Button className="w-full gap-2 bg-emerald-600 hover:bg-emerald-700 text-white" onClick={() => { handleStartInspection(selectedHazard); setDialogOpen(false); }}>
-                Bu Tehlikeyle Denetim Başlat <ArrowRight className="h-4 w-4" />
+                Bu Tehlikeyle Denetim BaÅŸlat <ArrowRight className="h-4 w-4" />
               </Button>
             </div>
           )}
         </DialogContent>
       </Dialog>
 
-      {/* ➕ Yeni Tehlike Ekle Modalı */}
+      {/* âž• Yeni Tehlike Ekle ModalÄ± */}
       <Dialog open={addModalOpen} onOpenChange={setAddModalOpen}>
         <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Yeni Tehlike Ekle</DialogTitle>
-            <DialogDescription>Kütüphaneye yeni bir risk tanımı ve önleme yöntemi ekleyin.</DialogDescription>
+            <DialogDescription>KÃ¼tÃ¼phaneye yeni bir risk tanÄ±mÄ± ve Ã¶nleme yÃ¶ntemi ekleyin.</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleAddHazard} className="space-y-4 mt-4">
             <div className="space-y-1">
-              <label className="text-sm font-medium">Tehlike Adı</label>
-              <Input required placeholder="Örn: Açık Elektrik Panosu" value={newHazard.name} onChange={(e) => setNewHazard({...newHazard, name: e.target.value})} />
+              <label className="text-sm font-medium">Tehlike AdÄ±</label>
+              <Input required placeholder="Ã–rn: AÃ§Ä±k Elektrik Panosu" value={newHazard.name} onChange={(e) => setNewHazard({...newHazard, name: e.target.value})} />
             </div>
             
             <div className="grid grid-cols-2 gap-4">
@@ -643,36 +656,36 @@ export default function SafetyLibrary() {
                   value={newHazard.riskLevel}
                   onChange={(e) => setNewHazard({...newHazard, riskLevel: e.target.value as RiskLevel})}
                 >
-                  <option value="low">Düşük</option>
+                  <option value="low">DÃ¼ÅŸÃ¼k</option>
                   <option value="medium">Orta</option>
-                  <option value="high">Yüksek</option>
+                  <option value="high">YÃ¼ksek</option>
                   <option value="critical">Kritik</option>
                 </select>
               </div>
             </div>
 
             <div className="space-y-1">
-              <label className="text-sm font-medium">Önleme Yöntemi</label>
-              <Input required placeholder="Alınacak tedbirler..." value={newHazard.prevention} onChange={(e) => setNewHazard({...newHazard, prevention: e.target.value})} />
+              <label className="text-sm font-medium">Ã–nleme YÃ¶ntemi</label>
+              <Input required placeholder="AlÄ±nacak tedbirler..." value={newHazard.prevention} onChange={(e) => setNewHazard({...newHazard, prevention: e.target.value})} />
             </div>
 
             <div className="space-y-1">
-              <label className="text-sm font-medium">İlgili Mevzuat</label>
-              <Input required placeholder="Örn: İSG Kanunu Md. X..." value={newHazard.regulation} onChange={(e) => setNewHazard({...newHazard, regulation: e.target.value})} />
+              <label className="text-sm font-medium">Ä°lgili Mevzuat</label>
+              <Input required placeholder="Ã–rn: Ä°SG Kanunu Md. X..." value={newHazard.regulation} onChange={(e) => setNewHazard({...newHazard, regulation: e.target.value})} />
             </div>
 
             <div className="space-y-1">
-              <label className="text-sm font-medium">Detaylı Açıklama</label>
+              <label className="text-sm font-medium">DetaylÄ± AÃ§Ä±klama</label>
               <textarea 
                 className="flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                placeholder="Tehlikenin oluşma şekli, potansiyel etkiler vb."
+                placeholder="Tehlikenin oluÅŸma ÅŸekli, potansiyel etkiler vb."
                 value={newHazard.details}
                 onChange={(e) => setNewHazard({...newHazard, details: e.target.value})}
               />
             </div>
 
             <div className="pt-4 flex justify-end gap-2">
-              <Button type="button" variant="outline" onClick={() => setAddModalOpen(false)}>İptal</Button>
+              <Button type="button" variant="outline" onClick={() => setAddModalOpen(false)}>Ä°ptal</Button>
               <Button type="submit">Kaydet</Button>
             </div>
           </form>

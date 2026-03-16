@@ -402,8 +402,34 @@ export default function RiskAnalyzer() {
   // ====================================================
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div className="space-y-2">
+            <div className="h-8 w-64 animate-pulse rounded bg-slate-800" />
+            <div className="h-4 w-64 animate-pulse rounded bg-slate-900" />
+          </div>
+          <div className="flex gap-2">
+            <div className="h-10 w-32 animate-pulse rounded bg-slate-800" />
+            <div className="h-10 w-32 animate-pulse rounded bg-slate-800" />
+          </div>
+        </div>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="h-[300px] animate-pulse rounded-xl bg-slate-900/70" />
+          </CardContent>
+        </Card>
+        <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+          <Card>
+            <CardContent className="pt-6">
+              <div className="h-[250px] animate-pulse rounded-xl bg-slate-900/70" />
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-6">
+              <div className="h-[250px] animate-pulse rounded-xl bg-slate-900/70" />
+            </CardContent>
+          </Card>
+        </div>
       </div>
     );
   }

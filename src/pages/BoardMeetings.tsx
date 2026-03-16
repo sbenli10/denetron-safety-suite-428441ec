@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+﻿import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Users,
@@ -20,7 +20,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Select,
   SelectContent,
@@ -70,7 +70,7 @@ export default function BoardMeetings() {
 
   useEffect(() => {
     if (user) {
-      fetchMeetings();
+      void fetchMeetings();
     }
   }, [user]);
 
@@ -79,9 +79,8 @@ export default function BoardMeetings() {
 
     setLoading(true);
     try {
-      console.log("📊 Fetching board meetings...");
+      console.log("Board meetings loading...");
 
-      // Fetch meetings
       const { data: meetingsData, error: meetingsError } = await supabase
         .from("board_meetings")
         .select(`
@@ -93,16 +92,13 @@ export default function BoardMeetings() {
 
       if (meetingsError) throw meetingsError;
 
-      // Fetch counts for each meeting
       const meetingsWithCounts = await Promise.all(
         (meetingsData || []).map(async (meeting) => {
-          // Get attendee count
           const { count: attendeeCount } = await supabase
             .from("meeting_attendees")
             .select("*", { count: "exact", head: true })
             .eq("meeting_id", meeting.id);
 
-          // Get agenda count
           const { count: agendaCount } = await supabase
             .from("meeting_agenda")
             .select("*", { count: "exact", head: true })
@@ -116,29 +112,32 @@ export default function BoardMeetings() {
         })
       );
 
-      console.log("✅ Meetings fetched:", meetingsWithCounts);
+      console.log("Board meetings loaded:", meetingsWithCounts);
       setMeetings(meetingsWithCounts as BoardMeetingListItem[]);
     } catch (error: any) {
-      console.error("❌ Fetch meetings error:", error);
-      toast.error("Toplantılar yüklenemedi");
+      console.error("Board meetings load error:", error);
+      toast.error("Toplant\u0131lar y\u00fcklenemedi");
     } finally {
       setLoading(false);
     }
   };
 
   const handleDeleteMeeting = async (meetingId: string) => {
-    if (!confirm("Bu toplantıyı silmek istediğinize emin misiniz?")) return;
+    if (!confirm("Bu toplant\u0131y\u0131 silmek istedi\u011finize emin misiniz?")) return;
 
     try {
-      const { error } = await supabase.from("board_meetings").delete().eq("id", meetingId);
+      const { error } = await supabase
+        .from("board_meetings")
+        .delete()
+        .eq("id", meetingId);
 
       if (error) throw error;
 
-      setMeetings((prev) => prev.filter((m) => m.id !== meetingId));
-      toast.success("✅ Toplantı silindi");
+      setMeetings((prev) => prev.filter((meeting) => meeting.id !== meetingId));
+      toast.success("Toplant\u0131 silindi");
     } catch (error: any) {
       console.error("Delete meeting error:", error);
-      toast.error("Toplantı silinemedi");
+      toast.error("Toplant\u0131 silinemedi");
     }
   };
 
@@ -150,45 +149,74 @@ export default function BoardMeetings() {
         className: "bg-yellow-500/20 text-yellow-600 border-yellow-500/30",
       },
       completed: {
-        label: "Tamamlandı",
+        label: "Tamamland\u0131",
         icon: CheckCircle2,
         className: "bg-green-500/20 text-green-600 border-green-500/30",
       },
       cancelled: {
-        label: "İptal",
+        label: "\u0130ptal",
         icon: XCircle,
         className: "bg-red-500/20 text-red-600 border-red-500/30",
       },
-    };
+    } as const;
 
     const config = statusConfig[status];
     const Icon = config.icon;
 
     return (
       <Badge variant="outline" className={config.className}>
-        <Icon className="h-3 w-3 mr-1" />
+        <Icon className="mr-1 h-3 w-3" />
         {config.label}
       </Badge>
     );
   };
 
   const filteredMeetings = meetings.filter((meeting) => {
-    const matchesSearch =
-      meeting.company?.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      meeting.location?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      meeting.meeting_number?.toLowerCase().includes(searchTerm.toLowerCase());
+    const companyName = meeting.company?.name?.toLowerCase() || "";
+    const location = meeting.location?.toLowerCase() || "";
+    const meetingNumber = meeting.meeting_number?.toLowerCase() || "";
+    const search = searchTerm.toLowerCase();
 
-    const matchesStatus = filterStatus === "all" || meeting.status === filterStatus;
+    const matchesSearch =
+      companyName.includes(search) ||
+      location.includes(search) ||
+      meetingNumber.includes(search);
+
+    const matchesStatus =
+      filterStatus === "all" || meeting.status === filterStatus;
 
     return matchesSearch && matchesStatus;
   });
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <Users className="h-12 w-12 animate-spin text-blue-500 mx-auto mb-4" />
-          <p className="text-slate-400">Toplantılar yükleniyor...</p>
+      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 p-6 space-y-6">
+        <div className="flex items-center justify-between">
+          <div className="space-y-2">
+            <div className="h-8 w-72 animate-pulse rounded bg-slate-800" />
+            <div className="h-4 w-96 animate-pulse rounded bg-slate-900" />
+          </div>
+          <div className="h-10 w-36 animate-pulse rounded-lg bg-slate-900" />
+        </div>
+
+        <div className="h-12 animate-pulse rounded-xl bg-slate-900/70" />
+
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, index) => (
+            <div
+              key={index}
+              className="h-24 animate-pulse rounded-xl border border-slate-800 bg-slate-900/70"
+            />
+          ))}
+        </div>
+
+        <div className="space-y-4">
+          {Array.from({ length: 5 }).map((_, index) => (
+            <div
+              key={index}
+              className="h-28 animate-pulse rounded-xl border border-slate-800 bg-slate-900/70"
+            />
+          ))}
         </div>
       </div>
     );
@@ -196,14 +224,15 @@ export default function BoardMeetings() {
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 p-6 space-y-6">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-white flex items-center gap-3">
+          <h1 className="flex items-center gap-3 text-3xl font-bold text-white">
             <Users className="h-8 w-8 text-blue-500" />
-            İSG Kurul Toplantıları
+            {"\u0130SG Kurul Toplant\u0131lar\u0131"}
           </h1>
-          <p className="text-slate-400 mt-1">Toplantıları yönetin, gündem oluşturun ve tutanak çıkarın</p>
+          <p className="mt-1 text-slate-400">
+            {"Toplant\u0131lar\u0131 y\u00f6netin, g\u00fcndem olu\u015fturun ve tutanak \u00e7\u0131kar\u0131n"}
+          </p>
         </div>
 
         <Button
@@ -211,88 +240,91 @@ export default function BoardMeetings() {
           className="gap-2 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
         >
           <Plus className="h-4 w-4" />
-          Yeni Toplantı
+          {"Yeni Toplant\u0131"}
         </Button>
       </div>
 
       <div className="flex gap-2">
-        {/* ✅ YENİ: Rehber Butonu */}
         <Button
-        variant="outline"
-        onClick={() => navigate("/board-meetings/guide")}
-        className="gap-2 border-blue-500/30 text-blue-400 hover:bg-blue-500/10"
+          variant="outline"
+          onClick={() => navigate("/board-meetings/guide")}
+          className="gap-2 border-blue-500/30 text-blue-400 hover:bg-blue-500/10"
         >
-        <BookOpen className="h-4 w-4" />
-        Nasıl Kullanılır?
+          <BookOpen className="h-4 w-4" />
+          {"Nas\u0131l Kullan\u0131l\u0131r?"}
         </Button>
 
         <Button
-        onClick={() => navigate("/board-meetings/new")}
-        className="gap-2 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+          onClick={() => navigate("/board-meetings/new")}
+          className="gap-2 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
         >
-        <Plus className="h-4 w-4" />
-        Yeni Toplantı
+          <Plus className="h-4 w-4" />
+          {"Yeni Toplant\u0131"}
         </Button>
-    </div>
+      </div>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card className="bg-slate-900/50 border-slate-800">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+        <Card className="border-slate-800 bg-slate-900/50">
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-slate-400">Toplam Toplantı</p>
-                <p className="text-2xl font-bold text-white mt-1">{meetings.length}</p>
+                <p className="text-sm text-slate-400">{"Toplam Toplant\u0131"}</p>
+                <p className="mt-1 text-2xl font-bold text-white">{meetings.length}</p>
               </div>
-              <div className="h-12 w-12 rounded-full bg-blue-500/20 flex items-center justify-center">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-blue-500/20">
                 <Users className="h-6 w-6 text-blue-400" />
               </div>
             </div>
           </CardContent>
         </Card>
 
-        <Card className="bg-slate-900/50 border-slate-800">
+        <Card className="border-slate-800 bg-slate-900/50">
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-slate-400">Tamamlanan</p>
-                <p className="text-2xl font-bold text-white mt-1">
-                  {meetings.filter((m) => m.status === "completed").length}
+                <p className="mt-1 text-2xl font-bold text-white">
+                  {meetings.filter((meeting) => meeting.status === "completed").length}
                 </p>
               </div>
-              <div className="h-12 w-12 rounded-full bg-green-500/20 flex items-center justify-center">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-green-500/20">
                 <CheckCircle2 className="h-6 w-6 text-green-400" />
               </div>
             </div>
           </CardContent>
         </Card>
 
-        <Card className="bg-slate-900/50 border-slate-800">
+        <Card className="border-slate-800 bg-slate-900/50">
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-slate-400">Taslak</p>
-                <p className="text-2xl font-bold text-white mt-1">
-                  {meetings.filter((m) => m.status === "draft").length}
+                <p className="mt-1 text-2xl font-bold text-white">
+                  {meetings.filter((meeting) => meeting.status === "draft").length}
                 </p>
               </div>
-              <div className="h-12 w-12 rounded-full bg-yellow-500/20 flex items-center justify-center">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-yellow-500/20">
                 <Clock className="h-6 w-6 text-yellow-400" />
               </div>
             </div>
           </CardContent>
         </Card>
 
-        <Card className="bg-slate-900/50 border-slate-800">
+        <Card className="border-slate-800 bg-slate-900/50">
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm text-slate-400">Bu Ay</p>
-                <p className="text-2xl font-bold text-white mt-1">
-                  {meetings.filter((m) => new Date(m.meeting_date).getMonth() === new Date().getMonth()).length}
+                <p className="mt-1 text-2xl font-bold text-white">
+                  {
+                    meetings.filter(
+                      (meeting) =>
+                        new Date(meeting.meeting_date).getMonth() === new Date().getMonth()
+                    ).length
+                  }
                 </p>
               </div>
-              <div className="h-12 w-12 rounded-full bg-purple-500/20 flex items-center justify-center">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-purple-500/20">
                 <Calendar className="h-6 w-6 text-purple-400" />
               </div>
             </div>
@@ -300,67 +332,70 @@ export default function BoardMeetings() {
         </Card>
       </div>
 
-      {/* Filters */}
-      <Card className="bg-slate-900/50 border-slate-800">
+      <Card className="border-slate-800 bg-slate-900/50">
         <CardContent className="p-4">
-          <div className="flex flex-col md:flex-row gap-4">
+          <div className="flex flex-col gap-4 md:flex-row">
             <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <Input
-                placeholder="Firma, lokasyon veya toplantı no ile ara..."
+                placeholder={"Firma, lokasyon veya toplant\u0131 no ile ara..."}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10 bg-slate-800 border-slate-700 text-white"
+                className="border-slate-700 bg-slate-800 pl-10 text-white"
               />
             </div>
 
             <Select value={filterStatus} onValueChange={setFilterStatus}>
-              <SelectTrigger className="w-full md:w-48 bg-slate-800 border-slate-700 text-white">
-                <Filter className="h-4 w-4 mr-2" />
+              <SelectTrigger className="w-full border-slate-700 bg-slate-800 text-white md:w-48">
+                <Filter className="mr-2 h-4 w-4" />
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Tüm Durumlar</SelectItem>
+                <SelectItem value="all">{"T\u00fcm Durumlar"}</SelectItem>
                 <SelectItem value="draft">Taslak</SelectItem>
-                <SelectItem value="completed">Tamamlandı</SelectItem>
-                <SelectItem value="cancelled">İptal</SelectItem>
+                <SelectItem value="completed">{"Tamamland\u0131"}</SelectItem>
+                <SelectItem value="cancelled">{"\u0130ptal"}</SelectItem>
               </SelectContent>
             </Select>
           </div>
         </CardContent>
       </Card>
 
-      {/* Meetings List */}
       <div className="space-y-4">
         {filteredMeetings.length === 0 ? (
-          <Card className="bg-slate-900/50 border-slate-800">
+          <Card className="border-slate-800 bg-slate-900/50">
             <CardContent className="p-12 text-center">
-              <Users className="h-16 w-16 text-slate-600 mx-auto mb-4" />
-              <h3 className="text-lg font-semibold text-white mb-2">Henüz toplantı yok</h3>
-              <p className="text-slate-400 mb-6">
-                İlk İSG Kurul Toplantınızı oluşturmak için "Yeni Toplantı" butonuna tıklayın
+              <Users className="mx-auto mb-4 h-16 w-16 text-slate-600" />
+              <h3 className="mb-2 text-lg font-semibold text-white">{"Hen\u00fcz toplant\u0131 yok"}</h3>
+              <p className="mb-6 text-slate-400">
+                {'\u0130lk \u0130SG kurul toplant\u0131n\u0131z\u0131 olu\u015fturmak i\u00e7in "Yeni Toplant\u0131" butonuna t\u0131klay\u0131n.'}
               </p>
               <Button
                 onClick={() => navigate("/board-meetings/new")}
                 className="gap-2 bg-gradient-to-r from-blue-600 to-purple-600"
               >
                 <Plus className="h-4 w-4" />
-                Yeni Toplantı Oluştur
+                {"Yeni Toplant\u0131 Olu\u015ftur"}
               </Button>
             </CardContent>
           </Card>
         ) : (
           filteredMeetings.map((meeting) => (
-            <Card key={meeting.id} className="bg-slate-900/50 border-slate-800 hover:border-blue-500/30 transition-all">
+            <Card
+              key={meeting.id}
+              className="border-slate-800 bg-slate-900/50 transition-all hover:border-blue-500/30"
+            >
               <CardContent className="p-6">
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
-                    <div className="flex items-center gap-3 mb-3">
-                      <h3 className="text-lg font-bold text-white">{meeting.meeting_number || "Toplantı"}</h3>
+                    <div className="mb-3 flex items-center gap-3">
+                      <h3 className="text-lg font-bold text-white">
+                        {meeting.meeting_number || "Toplant\u0131"}
+                      </h3>
                       {getStatusBadge(meeting.status)}
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                    <div className="grid grid-cols-1 gap-3 text-sm md:grid-cols-2">
                       <div className="flex items-center gap-2 text-slate-400">
                         <Building2 className="h-4 w-4" />
                         <span>{meeting.company?.name}</span>
@@ -384,22 +419,24 @@ export default function BoardMeetings() {
                       <div className="flex items-center gap-2 text-slate-400">
                         <FileText className="h-4 w-4" />
                         <span>
-                          {meeting.attendee_count || 0} Katılımcı · {meeting.agenda_count || 0} Gündem
+                          {meeting.attendee_count || 0} {"Kat\u0131l\u0131mc\u0131"} · {meeting.agenda_count || 0} {"G\u00fcndem"}
                         </span>
                       </div>
                     </div>
 
                     {meeting.president_name && (
-                      <p className="text-sm text-slate-500 mt-2">Başkan: {meeting.president_name}</p>
+                      <p className="mt-2 text-sm text-slate-500">
+                        {"Ba\u015fkan:"} {meeting.president_name}
+                      </p>
                     )}
                   </div>
 
-                  <div className="flex items-center gap-2 ml-4">
+                  <div className="ml-4 flex items-center gap-2">
                     <Button
                       variant="ghost"
                       size="icon"
                       onClick={() => navigate(`/board-meetings/${meeting.id}`)}
-                      className="text-blue-400 hover:text-blue-300 hover:bg-blue-500/10"
+                      className="text-blue-400 hover:bg-blue-500/10 hover:text-blue-300"
                     >
                       <Eye className="h-4 w-4" />
                     </Button>
@@ -408,7 +445,7 @@ export default function BoardMeetings() {
                       variant="ghost"
                       size="icon"
                       onClick={() => navigate(`/board-meetings/${meeting.id}/edit`)}
-                      className="text-slate-400 hover:text-white hover:bg-slate-800"
+                      className="text-slate-400 hover:bg-slate-800 hover:text-white"
                     >
                       <Edit className="h-4 w-4" />
                     </Button>
@@ -417,8 +454,8 @@ export default function BoardMeetings() {
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={() => window.open(meeting.pdf_url!, "_blank")}
-                        className="text-green-400 hover:text-green-300 hover:bg-green-500/10"
+                        onClick={() => window.open(meeting.pdf_url, "_blank", "noopener,noreferrer")}
+                        className="text-green-400 hover:bg-green-500/10 hover:text-green-300"
                       >
                         <Download className="h-4 w-4" />
                       </Button>
@@ -428,7 +465,7 @@ export default function BoardMeetings() {
                       variant="ghost"
                       size="icon"
                       onClick={() => handleDeleteMeeting(meeting.id)}
-                      className="text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                      className="text-red-400 hover:bg-red-500/10 hover:text-red-300"
                     >
                       <Trash2 className="h-4 w-4" />
                     </Button>

@@ -154,7 +154,24 @@ export default function CertificatesHistory() {
   }, [rows, search, statusFilter, templateFilter, companyFilter, dateFrom, dateTo]);
 
   if (loading) {
-    return <div className="flex items-center justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
+    return (
+      <div className="space-y-6">
+        <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+          <div className="space-y-2">
+            <div className="h-8 w-56 animate-pulse rounded bg-slate-800" />
+            <div className="h-4 w-80 animate-pulse rounded bg-slate-900" />
+          </div>
+          <div className="h-10 w-28 animate-pulse rounded-lg bg-slate-900" />
+        </div>
+
+        <div className="h-28 animate-pulse rounded-xl border border-slate-800 bg-slate-900/70" />
+        <div className="space-y-3">
+          {Array.from({ length: 6 }).map((_, index) => (
+            <div key={index} className="h-24 animate-pulse rounded-xl border border-slate-800 bg-slate-900/70" />
+          ))}
+        </div>
+      </div>
+    );
   }
 
   return (

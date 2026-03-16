@@ -110,6 +110,37 @@ export default function Auth() {
     return password.length >= 8;
   };
 
+  const handleGoogleLogin = async () => {
+    setLoading(true);
+
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const isExtension = urlParams.get("ext") === "true";
+      const redirectTo = isExtension
+        ? `${window.location.origin}/auth/callback?ext=true`
+        : `${window.location.origin}/auth/callback`;
+
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo,
+          queryParams: {
+            access_type: "offline",
+            prompt: "select_account",
+          },
+        },
+      });
+
+      if (error) {
+        throw error;
+      }
+    } catch (error: any) {
+      console.error("Google login error:", error);
+      toast.error(`❌ ${error.message || "Google ile giriş başlatılamadı"}`);
+      setLoading(false);
+    }
+  };
+
  // ✅ LOGIN HANDLER
 const handleLogin = async (e: React.FormEvent) => {
   e.preventDefault();
@@ -536,6 +567,56 @@ const handleVerify2FA = async (e: React.FormEvent) => {
                     </>
                   ) : (
                     "Giriş Yap"
+                  )}
+                </Button>
+
+                <div className="relative py-1">
+                  <div className="absolute inset-0 flex items-center">
+                    <span className="w-full border-t border-slate-800" />
+                  </div>
+                  <div className="relative flex justify-center text-xs uppercase tracking-[0.18em] text-slate-500">
+                    <span className="bg-slate-900 px-3">veya</span>
+                  </div>
+                </div>
+
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={loading}
+                  onClick={() => void handleGoogleLogin()}
+                  className="h-11 w-full border-slate-700 bg-slate-950/70 text-white hover:bg-slate-800 hover:text-white"
+                >
+                  {loading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Yönlendiriliyor...
+                    </>
+                  ) : (
+                    <>
+                      <svg
+                        className="mr-2 h-4 w-4"
+                        viewBox="0 0 24 24"
+                        aria-hidden="true"
+                      >
+                        <path
+                          fill="#4285F4"
+                          d="M21.6 12.23c0-.68-.06-1.34-.18-1.97H12v3.73h5.39a4.6 4.6 0 0 1-2 3.02v2.5h3.23c1.9-1.75 2.98-4.34 2.98-7.28Z"
+                        />
+                        <path
+                          fill="#34A853"
+                          d="M12 22c2.7 0 4.96-.9 6.61-2.44l-3.23-2.5c-.9.6-2.05.96-3.38.96-2.6 0-4.8-1.76-5.59-4.12H3.08v2.58A9.98 9.98 0 0 0 12 22Z"
+                        />
+                        <path
+                          fill="#FBBC05"
+                          d="M6.41 13.9A5.98 5.98 0 0 1 6.1 12c0-.66.11-1.3.31-1.9V7.52H3.08A9.98 9.98 0 0 0 2 12c0 1.61.39 3.13 1.08 4.48l3.33-2.58Z"
+                        />
+                        <path
+                          fill="#EA4335"
+                          d="M12 5.98c1.47 0 2.8.5 3.84 1.5l2.88-2.88C16.95 2.98 14.69 2 12 2 8.09 2 4.73 4.24 3.08 7.52l3.33 2.58C7.2 7.74 9.4 5.98 12 5.98Z"
+                        />
+                      </svg>
+                      Google ile giriş yap
+                    </>
                   )}
                 </Button>
               </form>

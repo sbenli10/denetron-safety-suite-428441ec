@@ -350,14 +350,11 @@ export default function AssignmentLetters() {
             İSG profesyonelleri için resmi atama ve görevlendirme belgeleri oluşturun.
           </p>
         </div>
-
         <div className="flex flex-wrap gap-2">
           <Badge variant="secondary" className="px-3 py-1">PDF üretimi</Badge>
-          <Badge variant="secondary" className="px-3 py-1">Supabase kayıt</Badge>
           <Badge variant="secondary" className="px-3 py-1">Kurumsal belge akışı</Badge>
         </div>
       </section>
-
       <AssignmentTypeCards onCreate={openCreateModal} />
 
       <Card className="border-slate-700/70 bg-gradient-to-r from-slate-950/80 to-slate-900/60">

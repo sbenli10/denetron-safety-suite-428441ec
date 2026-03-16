@@ -43,8 +43,24 @@ export default function CompanyDetail() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="h-12 w-12 animate-spin text-primary" />
+      <div className="space-y-6">
+        <div className="flex items-center gap-4">
+          <div className="h-10 w-10 animate-pulse rounded-lg bg-slate-900" />
+          <div className="space-y-2">
+            <div className="h-8 w-64 animate-pulse rounded bg-slate-800" />
+            <div className="h-4 w-48 animate-pulse rounded bg-slate-900" />
+          </div>
+        </div>
+        <div className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
+          <div className="space-y-6">
+            <div className="h-56 animate-pulse rounded-xl border border-slate-800 bg-slate-900/70" />
+            <div className="h-72 animate-pulse rounded-xl border border-slate-800 bg-slate-900/70" />
+          </div>
+          <div className="space-y-6">
+            <div className="h-56 animate-pulse rounded-xl border border-slate-800 bg-slate-900/70" />
+            <div className="h-56 animate-pulse rounded-xl border border-slate-800 bg-slate-900/70" />
+          </div>
+        </div>
       </div>
     );
   }

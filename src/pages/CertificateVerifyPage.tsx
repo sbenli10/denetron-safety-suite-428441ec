@@ -29,7 +29,18 @@ export default function CertificateVerifyPage() {
   }, [code]);
 
   if (loading) {
-    return <div className="flex min-h-screen items-center justify-center bg-slate-950"><Loader2 className="h-8 w-8 animate-spin text-cyan-400" /></div>;
+    return (
+      <div className="min-h-screen bg-[radial-gradient(circle_at_top,#0f172a,#020617_65%)] px-4 py-10">
+        <div className="mx-auto max-w-4xl space-y-6">
+          <div className="space-y-3 text-center">
+            <div className="mx-auto h-4 w-40 animate-pulse rounded bg-slate-800" />
+            <div className="mx-auto h-10 w-72 animate-pulse rounded bg-slate-900" />
+            <div className="mx-auto h-4 w-96 animate-pulse rounded bg-slate-900" />
+          </div>
+          <div className="h-80 animate-pulse rounded-2xl border border-white/10 bg-white/5" />
+        </div>
+      </div>
+    );
   }
 
   return (

@@ -1681,8 +1681,13 @@ const handleSaveAndExport = async () => {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-12">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      <div className="space-y-8">
+        <div className="space-y-2">
+          <div className="h-8 w-56 animate-pulse rounded bg-slate-800" />
+          <div className="h-4 w-96 animate-pulse rounded bg-slate-900" />
+        </div>
+
+        <div className="h-[720px] animate-pulse rounded-xl border border-primary/20 bg-slate-900/60" />
       </div>
     );
   }

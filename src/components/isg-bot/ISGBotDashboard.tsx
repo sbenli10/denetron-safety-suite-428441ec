@@ -744,16 +744,28 @@ export default function ISGBotDashboard() {
 
   if (loading) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[600px] gap-4">
-        <div className="relative">
-          <Loader2 className="h-12 w-12 animate-spin text-primary" />
-          <div className="absolute inset-0 blur-xl bg-primary/20 animate-pulse" />
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div className="space-y-2">
+            <div className="h-8 w-64 animate-pulse rounded bg-slate-800" />
+            <div className="h-4 w-96 animate-pulse rounded bg-slate-900" />
+          </div>
+          <div className="h-10 w-36 animate-pulse rounded-lg bg-slate-900" />
         </div>
-        <div className="text-center">
-          <p className="text-lg font-semibold">Dashboard Yükleniyor</p>
-          <p className="text-sm text-muted-foreground">
-            Veriler hazırlanıyor...
-          </p>
+
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, index) => (
+            <div key={index} className="h-32 animate-pulse rounded-xl border border-slate-800 bg-slate-900/70" />
+          ))}
+        </div>
+
+        <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+          <div className="h-[360px] animate-pulse rounded-xl border border-slate-800 bg-slate-900/70" />
+          <div className="space-y-4">
+            {Array.from({ length: 3 }).map((_, index) => (
+              <div key={index} className="h-28 animate-pulse rounded-xl border border-slate-800 bg-slate-900/70" />
+            ))}
+          </div>
         </div>
       </div>
     );

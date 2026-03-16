@@ -175,8 +175,39 @@ export default function NaceSectorList() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      <div className="container mx-auto space-y-6 py-6">
+        <div className="space-y-2">
+          <div className="h-8 w-64 animate-pulse rounded bg-slate-800" />
+          <div className="h-4 w-80 animate-pulse rounded bg-slate-900" />
+        </div>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, index) => (
+            <Card key={index}>
+              <CardContent className="pt-6">
+                <div className="h-8 w-16 animate-pulse rounded bg-slate-800" />
+                <div className="mt-2 h-3 w-24 animate-pulse rounded bg-slate-900" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
+              {Array.from({ length: 4 }).map((_, index) => (
+                <div key={index} className="h-10 animate-pulse rounded bg-slate-900/70" />
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-6">
+            <div className="space-y-3">
+              {Array.from({ length: 8 }).map((_, index) => (
+                <div key={index} className="h-12 animate-pulse rounded-lg bg-slate-900/70" />
+              ))}
+            </div>
+          </CardContent>
+        </Card>
       </div>
     );
   }

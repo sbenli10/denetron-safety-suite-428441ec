@@ -1,4 +1,4 @@
-// src/pages/ADEPWizard.tsx
+﻿// src/pages/ADEPWizard.tsx
 
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -92,6 +92,16 @@ type ADEPPlanData = {
     aciklama: string;
     harita_url: string;
   };
+  export_preferences?: {
+    cover_style:
+      | "classic"
+      | "gold"
+      | "blueprint"
+      | "minimal"
+      | "nature"
+      | "official-red"
+      | "shadow";
+  };
 };
 
 type ADEPPlanRow = {
@@ -137,7 +147,55 @@ const DEFAULT_PLAN_DATA: ADEPPlanData = {
     aciklama: "",
     harita_url: "",
   },
+  export_preferences: {
+    cover_style: "shadow",
+  },
 };
+
+const ADEP_COVER_STYLES = [
+  {
+    value: "classic",
+    title: "Klasik",
+    description: "Sade ve resmi çerçeve düzeni",
+    accent: "border-slate-400",
+  },
+  {
+    value: "gold",
+    title: "Altın",
+    description: "Kurumsal ve prestijli altın çerçeve",
+    accent: "border-amber-400",
+  },
+  {
+    value: "blueprint",
+    title: "Mavi Zarif",
+    description: "Kurumsal mavi çizgiler ve net başlık hiyerarşisi",
+    accent: "border-blue-400",
+  },
+  {
+    value: "minimal",
+    title: "Minimalist",
+    description: "Düşük mürekkep ve temiz baskı görünümü",
+    accent: "border-slate-300",
+  },
+  {
+    value: "nature",
+    title: "Yeşil Doğa",
+    description: "Çevre ve saha operasyonlarına uyumlu görünüm",
+    accent: "border-emerald-400",
+  },
+  {
+    value: "official-red",
+    title: "Kırmızı Resmi",
+    description: "Mevzuat ve acil durum vurgusu yüksek kapak",
+    accent: "border-red-400",
+  },
+  {
+    value: "shadow",
+    title: "Gölgeli",
+    description: "3D gölge etkili güçlü kapak görünümü",
+    accent: "border-orange-400",
+  },
+] as const;
 
 // ✅ UPDATED: 13 Steps (6 basic + 7 AI modules)
 const STEPS = [
@@ -212,6 +270,10 @@ export default function ADEPWizard() {
       toplanma_yeri: {
         ...DEFAULT_PLAN_DATA.toplanma_yeri,
         ...(d.toplanma_yeri || {}),
+      },
+      export_preferences: {
+        ...DEFAULT_PLAN_DATA.export_preferences!,
+        ...(d.export_preferences || {}),
       },
     };
   };
@@ -577,6 +639,29 @@ export default function ADEPWizard() {
     }
   };
 
+  const exportPreferences =
+    planRow?.plan_data.export_preferences ||
+    DEFAULT_PLAN_DATA.export_preferences!;
+
+  const updateExportPreferences = (
+    patch: Partial<NonNullable<ADEPPlanData["export_preferences"]>>
+  ) => {
+    setPlanRow((prev) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        plan_data: {
+          ...prev.plan_data,
+          export_preferences: {
+            ...DEFAULT_PLAN_DATA.export_preferences!,
+            ...(prev.plan_data.export_preferences || {}),
+            ...patch,
+          },
+        },
+      };
+    });
+  };
+
   // ------------------------------------
   // Render step content
   // ------------------------------------
@@ -753,6 +838,59 @@ export default function ADEPWizard() {
               </CardContent>
             </Card>
 
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <FileText className="h-5 w-5 text-orange-500" />
+                  Kapak Çerçevesi
+                </CardTitle>
+                <CardDescription>
+                  Kurumsal PDF kapağında kullanılacak çerçeve stilini seçin.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  {ADEP_COVER_STYLES.map((style) => {
+                    const active = exportPreferences.cover_style === style.value;
+                    return (
+                      <button
+                        key={style.value}
+                        type="button"
+                        onClick={() => updateExportPreferences({ cover_style: style.value })}
+                        className={[
+                          "rounded-2xl border p-4 text-left transition-all",
+                          active
+                            ? `bg-orange-500/5 shadow-lg shadow-orange-500/10 ${style.accent}`
+                            : "border-border hover:border-orange-300/40 hover:bg-muted/40",
+                        ].join(" ")}
+                      >
+                        <div className="mb-4 flex h-28 items-center justify-center rounded-xl bg-gradient-to-b from-background to-muted/50">
+                          <div
+                            className={[
+                              "h-20 w-14 rounded-md border bg-white shadow-sm",
+                              style.accent,
+                            ].join(" ")}
+                          />
+                        </div>
+                        <div className="text-sm font-semibold">{style.title}</div>
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          {style.description}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  Seçilen stil:{" "}
+                  <span className="font-medium text-foreground">
+                    {ADEP_COVER_STYLES.find(
+                      (style) => style.value === exportPreferences.cover_style
+                    )?.title || "Gölgeli"}
+                  </span>
+                </div>
+              </CardContent>
+            </Card>
+
             {/* Actions */}
             <Card>
               <CardHeader>
@@ -768,7 +906,7 @@ export default function ADEPWizard() {
               <CardContent className="space-y-4">
                 {!planId && (
                   <div className="p-4 border border-destructive/50 bg-destructive/5 rounded-lg text-sm text-destructive">
-                    ⚠️ PDF için önce planın kaydedilmesi gerekir.
+                    PDF için önce planın kaydedilmesi gerekir.
                   </div>
                 )}
 
@@ -1212,3 +1350,6 @@ export default function ADEPWizard() {
     </div>
   );
 }
+
+
+

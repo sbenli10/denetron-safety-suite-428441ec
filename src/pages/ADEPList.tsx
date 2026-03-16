@@ -91,8 +91,20 @@ export default function ADEPList() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div className="space-y-2">
+            <div className="h-8 w-48 animate-pulse rounded bg-slate-800" />
+            <div className="h-4 w-72 animate-pulse rounded bg-slate-900" />
+          </div>
+          <div className="h-10 w-40 animate-pulse rounded-lg bg-slate-900" />
+        </div>
+
+        <div className="space-y-3">
+          {Array.from({ length: 5 }).map((_, index) => (
+            <div key={index} className="h-24 animate-pulse rounded-xl border border-slate-800 bg-slate-900/70" />
+          ))}
+        </div>
       </div>
     );
   }

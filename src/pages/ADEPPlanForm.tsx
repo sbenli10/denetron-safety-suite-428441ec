@@ -240,8 +240,19 @@ export default function ADEPPlanForm() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen">
-        <Loader2 className="h-8 w-8 animate-spin" />
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 animate-pulse rounded-lg bg-slate-900" />
+            <div className="space-y-2">
+              <div className="h-8 w-56 animate-pulse rounded bg-slate-800" />
+              <div className="h-4 w-72 animate-pulse rounded bg-slate-900" />
+            </div>
+          </div>
+          <div className="h-10 w-32 animate-pulse rounded-lg bg-slate-900" />
+        </div>
+
+        <div className="h-[720px] animate-pulse rounded-xl border border-slate-800 bg-slate-900/70" />
       </div>
     );
   }

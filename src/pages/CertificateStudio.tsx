@@ -37,7 +37,7 @@ function buildDefaultDesignConfig(): CertificateDesignConfig {
       { name: "İbrahim Yılmaz", title: "İSG Uzmanı" },
       { name: "Dr. Elif Kaya", title: "İşyeri Hekimi" },
       { name: "Ayşe Demir", title: "İşveren Vekili" },
-      { name: "Denetron OSGB", title: "Düzenleyen Birim" },
+      { name: "İSGVizyon OSGB", title: "Düzenleyen Birim" },
     ],
   };
 }
@@ -45,7 +45,7 @@ function buildDefaultDesignConfig(): CertificateDesignConfig {
 function buildDefaultForm(): CertificateFormValues {
   return {
     company_id: null,
-    company_name: "Denetron Teknoloji A.Ş.",
+    company_name: "İSGVizyon Teknoloji A.Ş.",
     company_address: "İstanbul Teknoloji Merkezi, Ataşehir / İstanbul",
     company_phone: "+90 216 555 00 00",
     training_name: "Temel İş Sağlığı ve Güvenliği Eğitimi",

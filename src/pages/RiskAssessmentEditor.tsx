@@ -2465,7 +2465,7 @@ useLayoutEffect(() => {
     doc.setPage(doc.internal.pages.length - 1);
     doc.setFontSize(7);
     doc.setFont("Inter", "normal"); 
-    doc.text(`Bu rapor Denetron İSG Yazılımı ile oluşturulmuştur.`, pageWidth / 2, pageHeight - 8, { align: 'center' });
+    doc.text(`Bu rapor İSGVizyon İSG Yazılımı ile oluşturulmuştur.`, pageWidth / 2, pageHeight - 8, { align: 'center' });
 
     doc.save(`Risk-Analiz-${assessment.id.substring(0, 8)}.pdf`);
     toast.success("✅ PDF rapor indirildi");
@@ -2619,7 +2619,7 @@ const exportToPDFAndShare = async () => {
     doc.setFontSize(7);
     doc.setFont("Inter", "normal");
     doc.text(
-      `Bu rapor Denetron İSG Yazılımı ile oluşturulmuştur.`,
+      `Bu rapor İSGVizyon İSG Yazılımı ile oluşturulmuştur.`,
       pageWidth / 2,
       pageHeight - 8,
       { align: "center" }

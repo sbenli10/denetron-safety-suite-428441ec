@@ -148,7 +148,7 @@ const addFooter = (doc: jsPDF, pageNumber: number, totalPages: number) => {
   doc.setFontSize(8);
   doc.setTextColor(COLORS.secondary[0], COLORS.secondary[1], COLORS.secondary[2]);
 
-  doc.text("Denetron İSG Yazılımı", 15, pageHeight - 10.5);
+  doc.text("İSGVizyon İSG Yazılımı", 15, pageHeight - 10.5);
 
   doc.text(
     `Sayfa ${pageNumber} / ${totalPages}`,
@@ -1952,7 +1952,7 @@ export const generateADEPPDF = async (planId: string) => {
       COLORS.secondary[2]
     );
     const disclaimerText =
-      "Bu Acil Durum Eylem Planı, 6331 sayılı İş Sağlığı ve Güvenliği Kanunu ve ilgili yönetmelikler çerçevesinde hazırlanmıştır. Plan AI destekli Denetron İSG Yazılımı ile oluşturulmuş olup, yılda en az bir kez gözden geçirilmeli ve güncellenmelidir. Tüm modüller veritabanından dinamik olarak üretilmiştir.";
+      "Bu Acil Durum Eylem Planı, 6331 sayılı İş Sağlığı ve Güvenliği Kanunu ve ilgili yönetmelikler çerçevesinde hazırlanmıştır. Plan AI destekli İSGVizyon İSG Yazılımı ile oluşturulmuş olup, yılda en az bir kez gözden geçirilmeli ve güncellenmelidir. Tüm modüller veritabanından dinamik olarak üretilmiştir.";
     const disclaimerLines = doc.splitTextToSize(disclaimerText, contentWidth);
     disclaimerLines.forEach((line: string) => {
       doc.text(line, pageWidth / 2, yPos, { align: "center" });

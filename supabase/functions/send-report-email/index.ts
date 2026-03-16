@@ -88,7 +88,7 @@ const emailBody = `
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>${reportTypeLabels?.[payload?.report_type] || "Rapor"} - ${payload?.company_name || "Denetron"}</title>
+<title>${reportTypeLabels?.[payload?.report_type] || "Rapor"} - ${payload?.company_name || "İSGVizyon"}</title>
 </head>
 
 <body style="margin:0;padding:0;background-color:#f4f7fb;">
@@ -101,7 +101,7 @@ style="background:#ffffff;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,0
 
 <tr>
 <td style="padding:32px 40px;background:linear-gradient(135deg,#2563eb,#1e3a8a);">
-<h1 style="margin:0;font-size:22px;letter-spacing:1.2px;color:#ffffff;">DENETRON</h1>
+<h1 style="margin:0;font-size:22px;letter-spacing:1.2px;color:#ffffff;">İSGVİZYON</h1>
 <p style="margin:6px 0 0;font-size:13px;color:#dbeafe;">Dijital İSG Yönetim Platformu</p>
 </td>
 </tr>
@@ -118,7 +118,7 @@ Merhaba <strong>${payload?.recipient_name || "Yetkili"}</strong>,
 </p>
 
 <p style="margin:0 0 14px;font-size:14px;line-height:1.7;color:#334155;">
-<strong>${payload?.sender_name || "Denetron Kullanıcısı"}</strong> tarafından hazırlanan
+<strong>${payload?.sender_name || "İSGVizyon Kullanıcısı"}</strong> tarafından hazırlanan
 <strong>${reportTypeLabels?.[payload?.report_type] || "rapor"}</strong> raporu sizinle paylaşılmıştır.
 </p>
 
@@ -149,7 +149,7 @@ Raporu Görüntüle
 
 <p style="margin:20px 0 0;font-size:13px;color:#64748b;">
 Daha güvenli bir çalışma ortamı dileğiyle,<br/>
-<strong>Denetron Ekibi</strong>
+<strong>İSGVizyon Ekibi</strong>
 </p>
 
 </td>
@@ -158,7 +158,7 @@ Daha güvenli bir çalışma ortamı dileğiyle,<br/>
 <tr>
 <td style="background:#f8fafc;padding:20px 40px;border-top:1px solid #e5e7eb;text-align:center;">
 <p style="margin:0;font-size:11px;color:#64748b;">
-© ${new Date().getFullYear()} Denetron<br/>
+© ${new Date().getFullYear()} İSGVizyon<br/>
 ISO 45001 • KVKK • AES-256
 </p>
 </td>
@@ -174,7 +174,7 @@ ISO 45001 • KVKK • AES-256
 `;
 
     log("4) Resend isteği hazırlanıyor", {
-      from: `Denetron İSG <${VERIFIED_FROM_EMAIL}>`,
+      from: `İSGVizyon İSG <${VERIFIED_FROM_EMAIL}>`,
       to: payload.recipient_email,
       subject: emailSubject,
       has_reply_to: !!payload.sender_email,
@@ -187,7 +187,7 @@ ISO 45001 • KVKK • AES-256
         Authorization: `Bearer ${RESEND_API_KEY}`,
       },
       body: JSON.stringify({
-        from: `Denetron İSG <${VERIFIED_FROM_EMAIL}>`,
+        from: `İSGVizyon İSG <${VERIFIED_FROM_EMAIL}>`,
         to: [payload.recipient_email],
         subject: emailSubject,
         html: emailBody,

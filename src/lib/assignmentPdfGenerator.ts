@@ -180,7 +180,7 @@ export async function generateAssignmentPDF(data: AssignmentPDFData) {
   doc.setFont("Inter", "normal");
   doc.setFontSize(8);
   doc.setTextColor(100, 116, 139);
-  doc.text("Denetron İSG Yönetim Platformu", pageWidth / 2, 280, { align: "center" });
+  doc.text("İSGVizyon İSG Yönetim Platformu", pageWidth / 2, 280, { align: "center" });
 
   const fileName = `Atama-Yazisi-${data.employeeName.replace(/\s+/g, "-")}.pdf`;
   doc.save(fileName);

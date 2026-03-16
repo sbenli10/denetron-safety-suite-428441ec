@@ -489,7 +489,7 @@ const handleVerify2FA = async (e: React.FormEvent) => {
             <Shield className="h-8 w-8 text-white" />
           </div>
           <div>
-            <h1 className="text-3xl font-bold text-white">DENETRON</h1>
+            <h1 className="text-3xl font-bold text-white">İSGVİZYON</h1>
             <p className="text-sm text-slate-400 mt-1">AI Destekli İSG Yönetim Sistemi</p>
           </div>
         </div>
@@ -692,7 +692,7 @@ const handleVerify2FA = async (e: React.FormEvent) => {
                     name="orgName"
                     value={formData.orgName}
                     onChange={handleInputChange}
-                    placeholder="Örn: Denetron OSGB"
+                    placeholder="Örn: İSGVizyon OSGB"
                     className="bg-slate-800/70 border-slate-700 text-white"
                     disabled={loading}
                     required
@@ -901,7 +901,7 @@ const handleVerify2FA = async (e: React.FormEvent) => {
 
         {/* Footer */}
         <p className="text-center text-xs text-slate-500">
-          Â© 2026 Denetron. Tüm hakları saklıdır.
+          © 2026 İSGVizyon. Tüm hakları saklıdır.
         </p>
       </div>
     </div>

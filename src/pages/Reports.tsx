@@ -468,7 +468,7 @@ export default function Reports() {
   doc.setFont("Inter", "bold");
   doc.setFontSize(20);
   doc.setTextColor(30, 41, 59); // Slate-800
-  doc.text("Denetron İSG Yönetim Sistemi", margin, 25);
+  doc.text("İSGVizyon İSG Yönetim Sistemi", margin, 25);
   
   doc.setFontSize(14);
   doc.setTextColor(71, 85, 105); // Slate-600
@@ -658,7 +658,7 @@ export default function Reports() {
     doc.setFontSize(8);
     doc.setTextColor(148, 163, 184);
     doc.text(
-      `Sayfa ${i} / ${pageCount} | Denetron İSG © ${new Date().getFullYear()}`, 
+      `Sayfa ${i} / ${pageCount} | İSGVizyon İSG © ${new Date().getFullYear()}`, 
       pageWidth / 2, 
       285, 
       { align: 'center' }

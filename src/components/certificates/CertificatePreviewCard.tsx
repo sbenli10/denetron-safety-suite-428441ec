@@ -270,7 +270,7 @@ export function CertificatePreviewCard({ form, participant, className }: Props) 
           {theme.bottomBand ? <div className={cn("absolute inset-x-0 bottom-0 h-12", theme.bottomBand)} /> : null}
           {theme.showWatermark ? (
             <div className={cn("pointer-events-none absolute left-6 top-4 select-none uppercase", theme.watermarkClass)}>
-              {form.company_name || "Denetron"}
+              {form.company_name || "İSGVizyon"}
             </div>
           ) : null}
 

@@ -338,7 +338,7 @@ export function AppSidebar() {
           {!collapsed && (
             <div className="flex flex-col min-w-0">
               <span className="text-base font-black tracking-tight text-white bg-clip-text">
-                DENETRON
+                İSGVİZYON
               </span>
               <span className="text-[9px] font-bold uppercase tracking-[0.18em] text-cyan-100/45 truncate">
                 Entegre İSG Operasyon Platformu

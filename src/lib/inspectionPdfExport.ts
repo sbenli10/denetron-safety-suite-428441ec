@@ -36,7 +36,7 @@ export async function generateInspectionsPDF(inspections: InspectionData[]) {
 
   doc.setFontSize(18);
   doc.setFont("helvetica", "bold");
-  doc.text("Denetron Güvenlik Sistemi", 20, 20);
+  doc.text("İSGVizyon Güvenlik Sistemi", 20, 20);
 
   doc.setFontSize(14);
   doc.text("Denetim Raporu", 20, 30);

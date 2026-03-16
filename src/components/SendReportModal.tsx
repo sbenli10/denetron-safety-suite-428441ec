@@ -57,7 +57,7 @@ export function SendReportModal({
     setSending(true);
 
     try {
-      let senderName = "Denetron Kullanıcısı";
+      let senderName = "İSGVizyon Kullanıcısı";
       let organizationId: string | null = null;
 
       if (user?.id) {

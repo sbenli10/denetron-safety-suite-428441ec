@@ -32,7 +32,7 @@ export default function ISGBotSetup() {
         </div>
         <h1 className="text-4xl font-bold">İSG Bot Kurulumu</h1>
         <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-          İSG-KATİP verilerinizi otomatik olarak Denetron'a aktarın.
+          İSG-KATİP verilerinizi otomatik olarak İSGVizyon'a aktarın.
           <br />
           <strong>3 adımda</strong> kurulum tamamlanır.
         </p>
@@ -100,7 +100,7 @@ export default function ISGBotSetup() {
           <Alert>
             <CheckCircle2 className="h-4 w-4 text-green-500" />
             <AlertDescription>
-              Extension yüklendikten sonra <strong>otomatik olarak</strong> Denetron
+              Extension yüklendikten sonra <strong>otomatik olarak</strong> İSGVizyon
               hesabınıza bağlanır. Hiçbir ayar yapmanıza gerek yok.
             </AlertDescription>
           </Alert>
@@ -115,13 +115,13 @@ export default function ISGBotSetup() {
               <li className="flex items-start gap-2">
                 <CheckCircle2 className="h-4 w-4 text-green-500 mt-0.5 shrink-0" />
                 <span>
-                  Chrome toolbar'a <strong>Denetron İSG Bot</strong> ikonu eklenir
+                  Chrome toolbar'a <strong>İSGVizyon İSG Bot</strong> ikonu eklenir
                 </span>
               </li>
               <li className="flex items-start gap-2">
                 <CheckCircle2 className="h-4 w-4 text-green-500 mt-0.5 shrink-0" />
                 <span>
-                  Otomatik olarak Denetron hesabınıza <strong>bağlanır</strong>
+                  Otomatik olarak İSGVizyon hesabınıza <strong>bağlanır</strong>
                 </span>
               </li>
               <li className="flex items-start gap-2">
@@ -331,7 +331,7 @@ export default function ISGBotSetup() {
                       12 işyeri başarıyla senkronize edildi!
                     </p>
                     <p className="text-sm text-blue-700 mt-1">
-                      Denetron Dashboard'da görüntüleyebilirsiniz.
+                      İSGVizyon Dashboard'da görüntüleyebilirsiniz.
                     </p>
                   </div>
                 </div>
@@ -344,9 +344,9 @@ export default function ISGBotSetup() {
                 4
               </div>
               <div className="flex-1">
-                <p className="font-semibold text-lg">Denetron'da Görüntüle</p>
+                <p className="font-semibold text-lg">İSGVizyon'da Görüntüle</p>
                 <p className="text-muted-foreground mb-3">
-                  Firmalarınız Denetron Dashboard'da hazır!
+                  Firmalarınız İSGVizyon Dashboard'da hazır!
                 </p>
                 <Button size="lg" asChild>
                   <a href="/isg-bot">
@@ -389,7 +389,7 @@ export default function ISGBotSetup() {
               Extension ücretsiz mi?
             </summary>
             <p className="mt-2 text-sm text-muted-foreground">
-              Evet, extension tamamen <strong>ücretsizdir</strong>. Denetron
+              Evet, extension tamamen <strong>ücretsizdir</strong>. İSGVizyon
               aboneliğinize dahildir.
             </p>
           </details>
@@ -432,7 +432,7 @@ export default function ISGBotSetup() {
           <h2 className="text-2xl font-bold">Kuruluma Başlayın! 🚀</h2>
           <p className="text-primary-foreground/90 max-w-2xl mx-auto">
             Extension'ı yükleyin, İSG-KATİP'e giriş yapın ve firmalarınız otomatik
-            olarak Denetron'a aktarılsın.
+            olarak İSGVizyon'a aktarılsın.
           </p>
           <div className="flex justify-center gap-3 pt-4">
             <Button size="lg" variant="secondary" asChild>

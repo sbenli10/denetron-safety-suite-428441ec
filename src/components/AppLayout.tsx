@@ -45,7 +45,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                   <span className="text-primary-foreground font-bold text-sm">D</span>
                 </div>
                 <span className="text-sm font-semibold text-foreground hidden sm:inline">
-                  DENETRON
+                  İSGVİZYON
                 </span>
               </div>
             </div>

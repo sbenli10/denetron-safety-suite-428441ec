@@ -99,7 +99,7 @@ export default function AuthCallback() {
           )}
         </div>
 
-        <h1 className="mb-2 text-xl font-semibold">Denetron Oturum Doğrulama</h1>
+        <h1 className="mb-2 text-xl font-semibold">İSGVizyon Oturum Doğrulama</h1>
         <p className="text-sm text-slate-300">{status}</p>
 
         {errorMessage && (

@@ -582,7 +582,7 @@ export default function BlueprintAnalyzer() {
     // Metadata
     doc.setFontSize(9);
     doc.text(`Rapor Tarihi: ${format(new Date(), 'dd.MM.yyyy HH:mm')}`, pageWidth / 2, 190, { align: 'center' });
-    doc.text(`Hazırlayan: ${user?.email || "Denetron AI"}`, pageWidth / 2, 197, { align: 'center' });
+    doc.text(`Hazırlayan: ${user?.email || "İSGVizyon AI"}`, pageWidth / 2, 197, { align: 'center' });
 
     // ✅ PAGE 2: BUILDING INFO
     doc.addPage();
@@ -828,14 +828,14 @@ export default function BlueprintAnalyzer() {
       doc.setFontSize(8);
       doc.setTextColor(148, 163, 184);
       doc.text(
-        `Sayfa ${i} / ${totalPages} | Denetron AI Kroki Analizi © ${new Date().getFullYear()}`,
+        `Sayfa ${i} / ${totalPages} | İSGVizyon AI Kroki Analizi © ${new Date().getFullYear()}`,
         pageWidth / 2,
         pageHeight - 10,
         { align: 'center' }
       );
     }
 
-    doc.save(`Denetron-Kroki-Analiz-${format(new Date(), 'yyyyMMdd-HHmmss')}.pdf`);
+    doc.save(`İSGVizyon-Kroki-Analiz-${format(new Date(), 'yyyyMMdd-HHmmss')}.pdf`);
     toast.success("✅ Profesyonel rapor indirildi!");
   };
 

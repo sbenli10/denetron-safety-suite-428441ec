@@ -445,7 +445,7 @@ export default function ISGBotDashboard() {
       if (existingError) throw existingError;
 
       if (existing && existing.length > 0) {
-        toast.info("Firma zaten Denetron firmalarında mevcut", {
+        toast.info("Firma zaten İSGVizyon firmalarında mevcut", {
           description: company.company_name,
         });
         return;
@@ -462,11 +462,11 @@ export default function ISGBotDashboard() {
 
       if (insertError) throw insertError;
 
-      toast.success("Firma Denetron firmalarına eklendi", {
+      toast.success("Firma İSGVizyon firmalarına eklendi", {
         description: company.company_name,
       });
     } catch (error: any) {
-      console.error("Denetron company add error:", error);
+      console.error("İSGVizyon company add error:", error);
       toast.error("Firma eklenemedi", {
         description: error.message,
       });
@@ -1469,7 +1469,7 @@ return (
                                 onClick={() => handleAddToDenetronCompanies(company)}
                               >
                                 <Building2 className="h-4 w-4 mr-2" />
-                                Denetron Firmalarına Ekle
+                                İSGVizyon Firmalarına Ekle
                               </DropdownMenuItem>
                               <DropdownMenuSeparator />
                               <DropdownMenuItem

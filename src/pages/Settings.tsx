@@ -525,7 +525,7 @@ const handleToggle2FA = async (enabled: boolean) => {
       console.log('➕ Creating new TOTP factor...');
       
       // Unique friendly name (timestamp + random)
-      const uniqueFriendlyName = `DENETRON-${user.email?.split('@')[0] || 'User'}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+      const uniqueFriendlyName = `ISGVIZYON-${user.email?.split('@')[0] || 'User'}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
       
       console.log('📝 Friendly name:', uniqueFriendlyName);
 

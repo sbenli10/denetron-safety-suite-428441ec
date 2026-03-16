@@ -165,7 +165,7 @@ function getInitials(name: string): string {
 function createDenetronAvatarDataUrl(seed: string, fullName: string): string {
   const hashed = hashSeed(seed || fullName || "denetron");
   const gradient = avatarGradients[hashed % avatarGradients.length];
-  const initials = getInitials(fullName || "Denetron");
+  const initials = getInitials(fullName || "İSGVizyon");
   const shapeA = (hashed % 40) + 20;
   const shapeB = (hashed % 30) + 35;
 
@@ -182,7 +182,7 @@ function createDenetronAvatarDataUrl(seed: string, fullName: string): string {
   <circle cx="198" cy="${shapeB}" r="12" fill="white" fill-opacity="0.18"/>
   <path d="M28 176C62 144 84 158 114 132C146 104 172 108 212 74" stroke="white" stroke-opacity="0.22" stroke-width="9" stroke-linecap="round"/>
   <text x="120" y="138" text-anchor="middle" font-size="78" font-weight="700" font-family="Segoe UI, Arial, sans-serif" fill="white">${initials}</text>
-  <text x="120" y="204" text-anchor="middle" font-size="18" font-weight="600" font-family="Segoe UI, Arial, sans-serif" fill="white" fill-opacity="0.9">DENETRON</text>
+  <text x="120" y="204" text-anchor="middle" font-size="18" font-weight="600" font-family="Segoe UI, Arial, sans-serif" fill="white" fill-opacity="0.9">İSGVİZYON</text>
 </svg>`;
 
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
@@ -503,7 +503,7 @@ export default function Profile() {
   const handleGenerateDenetronAvatar = async () => {
     if (!user || !profile) return;
 
-    const dataUrl = createDenetronAvatarDataUrl(user.id, profile.full_name || "Denetron");
+    const dataUrl = createDenetronAvatarDataUrl(user.id, profile.full_name || "İSGVizyon");
 
     try {
       const { error } = await supabase
@@ -514,7 +514,7 @@ export default function Profile() {
       if (error) throw error;
 
       setProfile((prev) => (prev ? { ...prev, avatar_url: dataUrl } : null));
-      toast.success("Denetron avatarı oluşturuldu");
+      toast.success("İSGVizyon avatarı oluşturuldu");
     } catch (err: any) {
       toast.error("Avatar kaydedilemedi", {
         description: err.message,
@@ -744,7 +744,7 @@ export default function Profile() {
         <TabsList className="grid grid-cols-4 w-full max-w-2xl">
           <TabsTrigger value="profile">Profil</TabsTrigger>
           <TabsTrigger value="workspace">Çalışma Alanı</TabsTrigger>
-          <TabsTrigger value="avatar">Denetron Avatar</TabsTrigger>
+          <TabsTrigger value="avatar">İSGVizyon Avatar</TabsTrigger>
           <TabsTrigger value="notebook">Not Defteri</TabsTrigger>
         </TabsList>
 
@@ -913,10 +913,10 @@ export default function Profile() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Sparkles className="h-5 w-5 text-primary" />
-                Denetron Avatar Stüdyosu
+                İSGVizyon Avatar Stüdyosu
               </CardTitle>
               <CardDescription>
-                Yüklediğiniz fotoğrafı kullanabilir veya tek tıkla size özel Denetron avatarı üretebilirsiniz.
+                Yüklediğiniz fotoğrafı kullanabilir veya tek tıkla size özel İSGVizyon avatarı üretebilirsiniz.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">
@@ -938,7 +938,7 @@ export default function Profile() {
                   </Button>
                   <Button variant="outline" onClick={handleGenerateDenetronAvatar}>
                     <Wand2 className="h-4 w-4 mr-2" />
-                    Denetron Avatar Üret
+                    İSGVizyon Avatar Üret
                   </Button>
                 </div>
               </div>

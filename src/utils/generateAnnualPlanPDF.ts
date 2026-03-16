@@ -112,7 +112,7 @@ export async function generateWorkPlanPDF(
   doc.setFontSize(8);
   doc.setTextColor(148, 163, 184);
   doc.text(
-    `Oluşturulma Tarihi: ${new Date().toLocaleDateString('tr-TR')} | Denetron İSG`,
+    `Oluşturulma Tarihi: ${new Date().toLocaleDateString('tr-TR')} | İSGVizyon İSG`,
     pageWidth / 2,
     doc.internal.pageSize.getHeight() - 10,
     { align: 'center' }
@@ -207,7 +207,7 @@ export async function generateTrainingPlanPDF(
   doc.setFontSize(8);
   doc.setTextColor(148, 163, 184);
   doc.text(
-    `Oluşturulma Tarihi: ${new Date().toLocaleDateString('tr-TR')} | Denetron İSG`,
+    `Oluşturulma Tarihi: ${new Date().toLocaleDateString('tr-TR')} | İSGVizyon İSG`,
     pageWidth / 2,
     doc.internal.pageSize.getHeight() - 10,
     { align: 'center' }
@@ -282,7 +282,7 @@ export async function generateEvaluationReportPDF(
   for (let i = 1; i <= totalPages; i++) {
     doc.setPage(i);
     doc.text(
-      `Sayfa ${i}/${totalPages} | Denetron İSG © ${new Date().getFullYear()}`,
+      `Sayfa ${i}/${totalPages} | İSGVizyon İSG © ${new Date().getFullYear()}`,
       pageWidth / 2,
       doc.internal.pageSize.getHeight() - 10,
       { align: 'center' }

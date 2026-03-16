@@ -38,7 +38,7 @@ export async function generateADEPPDF(data: ADEPData): Promise<Blob> {
       { align: 'right' }
     );
     doc.text(
-      `DENETRON İSG © ${new Date().getFullYear()}`,
+      `İSGVİZYON İSG © ${new Date().getFullYear()}`,
       margin,
       pageHeight - 10
     );

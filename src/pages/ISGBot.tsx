@@ -1,9 +1,8 @@
-// ====================================================
-// İSG BOT ANA SAYFA - TAB YÖNETİMİ
-// ====================================================
-
+﻿import { useMemo } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import ISGBotDashboard from "@/components/isg-bot/ISGBotDashboard";
+import ISGBotCommandCenter from "@/components/isg-bot/ISGBotCommandCenter";
 import AuditReadiness from "@/components/isg-bot/AuditReadiness";
 import ComplianceReport from "@/components/isg-bot/ComplianceReport";
 import RiskAnalyzer from "@/components/isg-bot/RiskAnalyzer";
@@ -22,72 +21,85 @@ import {
   Bot,
   Zap,
   Chrome,
-  Download,
   ExternalLink,
+  Layers3,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
+const allowedTabs = new Set(["dashboard", "audit", "compliance", "risk"]);
+
 export default function ISGBot() {
+  const [searchParams, setSearchParams] = useSearchParams();
+
+  const activeTab = useMemo(() => {
+    const tab = searchParams.get("tab") ?? "dashboard";
+    return allowedTabs.has(tab) ? tab : "dashboard";
+  }, [searchParams]);
+
   const handleDownloadExtension = () => {
-    // Chrome extension download link
     window.open("/chrome-extension.zip", "_blank");
   };
 
   const handleOpenExtensionGuide = () => {
-    // Extension setup guide
     window.open("/docs/isg-bot-setup", "_blank");
   };
 
+  const handleTabChange = (value: string) => {
+    const next = new URLSearchParams(searchParams);
+    if (value === "dashboard") {
+      next.delete("tab");
+    } else {
+      next.set("tab", value);
+    }
+    setSearchParams(next, { replace: true });
+  };
+
   return (
-    <div className="container mx-auto py-6 space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="space-y-1">
-          <h1 className="text-3xl font-bold flex items-center gap-3">
+    <div className="container mx-auto space-y-6 py-6">
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+        <div className="space-y-2">
+          <h1 className="flex items-center gap-3 text-3xl font-bold">
             <Bot className="h-8 w-8 text-primary" />
             Akıllı İSG Operasyon Botu
           </h1>
-          <p className="text-muted-foreground">
-            İSG-KATİP entegrasyonu, compliance kontrolü ve risk analizi
+          <p className="max-w-3xl text-muted-foreground">
+            Uzmanlar için operasyon, firmalar için karar desteği, OSGB için portföy görünümü.
+            İSG-KATİP verilerini aksiyona, mevzuat takibine ve görev üretimine çevirir.
           </p>
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Button onClick={handleOpenExtensionGuide} variant="outline">
-            <ExternalLink className="h-4 w-4 mr-2" />
+            <ExternalLink className="mr-2 h-4 w-4" />
             Kurulum Rehberi
           </Button>
           <Button onClick={handleDownloadExtension}>
-            <Chrome className="h-4 w-4 mr-2" />
+            <Chrome className="mr-2 h-4 w-4" />
             Chrome Extension İndir
           </Button>
         </div>
       </div>
 
-      {/* Info Card */}
       <Alert>
         <Zap className="h-4 w-4" />
         <AlertDescription>
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div>
-              <strong>Chrome Extension kurulumu gerekli:</strong> İSG-KATİP ile
-              entegrasyon için Chrome uzantısını yükleyin ve ayarları yapın.
+              <strong>Chrome Extension kurulumu gerekli:</strong> İSG-KATİP entegrasyonu için uzantıyı yükleyin,
+              ardından bot verileri otomatik olarak bu alana taşır.
             </div>
-            <Button
-              variant="link"
-              size="sm"
-              onClick={handleOpenExtensionGuide}
-            >
-              Nasıl Kurulur? →
+            <Button variant="link" size="sm" onClick={handleOpenExtensionGuide}>
+              Nasıl kurulur?
             </Button>
           </div>
         </AlertDescription>
       </Alert>
 
-      {/* Features Overview */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <ISGBotCommandCenter />
+
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-4">
         <Card>
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
@@ -96,10 +108,8 @@ export default function ISGBot() {
             </div>
           </CardHeader>
           <CardContent>
-            <h3 className="font-semibold">Dashboard</h3>
-            <p className="text-sm text-muted-foreground">
-              Firma durumları ve istatistikler
-            </p>
+            <h3 className="font-semibold">Operasyon dashboard</h3>
+            <p className="text-sm text-muted-foreground">Firma durumu, senkron verisi ve genel görünüm.</p>
           </CardContent>
         </Card>
 
@@ -107,14 +117,12 @@ export default function ISGBot() {
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
               <Shield className="h-8 w-8 text-green-500 opacity-20" />
-              <Badge variant="outline">AI</Badge>
+              <Badge variant="outline">Uzman</Badge>
             </div>
           </CardHeader>
           <CardContent>
-            <h3 className="font-semibold">Denetime Hazır mıyım?</h3>
-            <p className="text-sm text-muted-foreground">
-              Otomatik denetim hazırlık kontrolü
-            </p>
+            <h3 className="font-semibold">Denetim hazırlığı</h3>
+            <p className="text-sm text-muted-foreground">Hazırlık skoru, eksik sözleşme ve kurul kontrolü.</p>
           </CardContent>
         </Card>
 
@@ -122,73 +130,72 @@ export default function ISGBot() {
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
               <FileCheck className="h-8 w-8 text-blue-500 opacity-20" />
-              <Badge variant="secondary">Detaylı</Badge>
+              <Badge variant="secondary">Mevzuat</Badge>
             </div>
           </CardHeader>
           <CardContent>
-            <h3 className="font-semibold">Compliance Raporu</h3>
-            <p className="text-sm text-muted-foreground">
-              Flag yönetimi ve çözüm takibi
-            </p>
+            <h3 className="font-semibold">Compliance raporu</h3>
+            <p className="text-sm text-muted-foreground">Uyumsuzluk bayrakları, çözüm notları ve takip.</p>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
-              <TrendingUp className="h-8 w-8 text-orange-500 opacity-20" />
-              <Badge variant="destructive">Predictive</Badge>
+              <Layers3 className="h-8 w-8 text-orange-500 opacity-20" />
+              <Badge variant="destructive">OSGB</Badge>
             </div>
           </CardHeader>
           <CardContent>
-            <h3 className="font-semibold">Risk Analizi</h3>
-            <p className="text-sm text-muted-foreground">
-              Tahminleme ve kapasite planlama
-            </p>
+            <h3 className="font-semibold">Portföy görünümü</h3>
+            <p className="text-sm text-muted-foreground">Riskli firmalar, uzman yoğunluğu ve açık dağılımı.</p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Main Tabs */}
-      <Tabs defaultValue="dashboard" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-4 lg:w-auto lg:inline-grid">
-          <TabsTrigger value="dashboard" className="gap-2">
-            <BarChart3 className="h-4 w-4" />
-            <span className="hidden sm:inline">Dashboard</span>
-          </TabsTrigger>
+      <Card>
+        <CardHeader>
+          <CardTitle>Araç seti</CardTitle>
+          <CardDescription>
+            Komuta merkezindeki özetlerin arkasındaki operasyon ekranları burada yer alır.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Tabs value={activeTab} onValueChange={handleTabChange} className="space-y-6">
+            <TabsList className="grid w-full grid-cols-4 lg:w-auto lg:inline-grid">
+              <TabsTrigger value="dashboard" className="gap-2">
+                <BarChart3 className="h-4 w-4" />
+                <span className="hidden sm:inline">Dashboard</span>
+              </TabsTrigger>
+              <TabsTrigger value="audit" className="gap-2">
+                <Shield className="h-4 w-4" />
+                <span className="hidden sm:inline">Denetime Hazır mıyım?</span>
+              </TabsTrigger>
+              <TabsTrigger value="compliance" className="gap-2">
+                <FileCheck className="h-4 w-4" />
+                <span className="hidden sm:inline">Compliance</span>
+              </TabsTrigger>
+              <TabsTrigger value="risk" className="gap-2">
+                <TrendingUp className="h-4 w-4" />
+                <span className="hidden sm:inline">Risk Analizi</span>
+              </TabsTrigger>
+            </TabsList>
 
-          <TabsTrigger value="audit" className="gap-2">
-            <Shield className="h-4 w-4" />
-            <span className="hidden sm:inline">Denetime Hazır mıyım?</span>
-          </TabsTrigger>
-
-          <TabsTrigger value="compliance" className="gap-2">
-            <FileCheck className="h-4 w-4" />
-            <span className="hidden sm:inline">Compliance</span>
-          </TabsTrigger>
-
-          <TabsTrigger value="risk" className="gap-2">
-            <TrendingUp className="h-4 w-4" />
-            <span className="hidden sm:inline">Risk Analizi</span>
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="dashboard" className="space-y-4">
-          <ISGBotDashboard />
-        </TabsContent>
-
-        <TabsContent value="audit" className="space-y-4">
-          <AuditReadiness />
-        </TabsContent>
-
-        <TabsContent value="compliance" className="space-y-4">
-          <ComplianceReport />
-        </TabsContent>
-
-        <TabsContent value="risk" className="space-y-4">
-          <RiskAnalyzer />
-        </TabsContent>
-      </Tabs>
+            <TabsContent value="dashboard" className="space-y-4">
+              <ISGBotDashboard />
+            </TabsContent>
+            <TabsContent value="audit" className="space-y-4">
+              <AuditReadiness />
+            </TabsContent>
+            <TabsContent value="compliance" className="space-y-4">
+              <ComplianceReport />
+            </TabsContent>
+            <TabsContent value="risk" className="space-y-4">
+              <RiskAnalyzer />
+            </TabsContent>
+          </Tabs>
+        </CardContent>
+      </Card>
     </div>
   );
 }

@@ -428,7 +428,7 @@ export default function ISGBotDashboard() {
   };
 
 
-   const handleAddToDenetronCompanies = async (company: Company) => {
+   const handleAddToISGVizyonCompanies = async (company: Company) => {
     if (!user) {
       toast.error("Kullanıcı oturumu bulunamadı");
       return;
@@ -1466,7 +1466,7 @@ return (
                                 Rapor Oluştur
                               </DropdownMenuItem>
                               <DropdownMenuItem
-                                onClick={() => handleAddToDenetronCompanies(company)}
+                                onClick={() => handleAddToISGVizyonCompanies(company)}
                               >
                                 <Building2 className="h-4 w-4 mr-2" />
                                 İSGVizyon Firmalarına Ekle

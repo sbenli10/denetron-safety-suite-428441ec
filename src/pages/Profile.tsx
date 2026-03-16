@@ -162,7 +162,7 @@ function getInitials(name: string): string {
     .slice(0, 2);
 }
 
-function createDenetronAvatarDataUrl(seed: string, fullName: string): string {
+function createISGVizyonAvatarDataUrl(seed: string, fullName: string): string {
   const hashed = hashSeed(seed || fullName || "denetron");
   const gradient = avatarGradients[hashed % avatarGradients.length];
   const initials = getInitials(fullName || "İSGVizyon");
@@ -500,10 +500,10 @@ export default function Profile() {
     }
   };
 
-  const handleGenerateDenetronAvatar = async () => {
+  const handleGenerateISGVizyonAvatar = async () => {
     if (!user || !profile) return;
 
-    const dataUrl = createDenetronAvatarDataUrl(user.id, profile.full_name || "İSGVizyon");
+    const dataUrl = createISGVizyonAvatarDataUrl(user.id, profile.full_name || "İSGVizyon");
 
     try {
       const { error } = await supabase
@@ -936,7 +936,7 @@ export default function Profile() {
                     {uploading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Camera className="h-4 w-4 mr-2" />}
                     Fotoğraf Yükle
                   </Button>
-                  <Button variant="outline" onClick={handleGenerateDenetronAvatar}>
+                  <Button variant="outline" onClick={handleGenerateISGVizyonAvatar}>
                     <Wand2 className="h-4 w-4 mr-2" />
                     İSGVizyon Avatar Üret
                   </Button>

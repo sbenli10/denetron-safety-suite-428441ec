@@ -337,9 +337,9 @@ class PopupController {
           chrome.notifications.create({
             type: "basic",
             iconUrl: "/icons/icon128.png",
-            title: "Denetron İSG Bot",
+            title: "İSGVizyon İSG Bot",
             message:
-              'Sağ alt köşedeki "Verileri Denetron\'a Aktar" butonuna tıklayın.',
+              'Sağ alt köşedeki "Verileri İSGVizyon\'a Aktar" butonuna tıklayın.',
             priority: 1,
           });
         }
@@ -353,7 +353,7 @@ class PopupController {
           iconUrl: "/icons/icon128.png",
           title: "İSG-KATİP",
           message:
-            'Giriş yapın. Sağ altta "Verileri Denetron\'a Aktar" butonu görünecek.',
+            'Giriş yapın. Sağ altta "Verileri İSGVizyon\'a Aktar" butonu görünecek.',
           priority: 2,
         });
 

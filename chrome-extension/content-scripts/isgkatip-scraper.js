@@ -258,7 +258,7 @@ function showTransferButton() {
       <polyline points="7 10 12 15 17 10"/>
       <line x1="12" y1="15" x2="12" y2="3"/>
     </svg>
-    <span>Verileri Denetron'a Aktar</span>
+    <span>Verileri İSGVizyon'a Aktar</span>
   `;
   
   button.style.cssText = `
@@ -333,7 +333,7 @@ async function handleTransfer(button) {
     
     console.log(`📦 ${companies.length} işyeri bulundu, gönderiliyor...`);
     
-    showNotification(`${companies.length} işyeri bulundu, Denetron'a aktarılıyor...`, 'info');
+    showNotification(`${companies.length} işyeri bulundu, İSGVizyon'a aktarılıyor...`, 'info');
     
     // Service worker'a gönder
     chrome.runtime.sendMessage({
@@ -549,7 +549,7 @@ function showNotification(message, type = 'info') {
     max-width: 400px;
     animation: slideIn 0.3s ease-out;
   `;
-  notification.textContent = `Denetron: ${message}`;
+  notification.textContent = `İSGVizyon: ${message}`;
   
   document.body.appendChild(notification);
   

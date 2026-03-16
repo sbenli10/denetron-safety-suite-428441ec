@@ -21,6 +21,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { supabase } from "@/integrations/supabase/client";
+import { fetchDashboardSnapshot, writeDashboardSnapshot } from "@/lib/dashboardCache";
 import { toast } from "sonner";
 import { isDeviceTrusted, trustCurrentDevice } from "@/utils/deviceFingerprint";
 
@@ -108,6 +109,15 @@ export default function Auth() {
 
   const validatePassword = (password: string): boolean => {
     return password.length >= 8;
+  };
+
+  const prefetchInitialData = async (userId: string) => {
+    try {
+      const snapshot = await fetchDashboardSnapshot(userId);
+      writeDashboardSnapshot(userId, snapshot);
+    } catch (error) {
+      console.warn("Initial dashboard prefetch skipped:", error);
+    }
   };
 
   const handleGoogleLogin = async () => {
@@ -210,6 +220,8 @@ const handleLogin = async (e: React.FormEvent) => {
           .update({ last_login_at: new Date().toISOString() })
           .eq("id", authData.user.id);
 
+        await prefetchInitialData(authData.user.id);
+
         // ✅ Check extension redirect
         if (isExtension) {
           navigate('/auth/callback?ext=true');
@@ -246,6 +258,8 @@ const handleLogin = async (e: React.FormEvent) => {
         .from("profiles")
         .update({ last_login_at: new Date().toISOString() })
         .eq("id", authData.user.id);
+
+      await prefetchInitialData(authData.user.id);
 
       toast.success("✅ Giriş başarılı!");
       
@@ -311,6 +325,8 @@ const handleVerify2FA = async (e: React.FormEvent) => {
         .from("profiles")
         .update({ last_login_at: new Date().toISOString() })
         .eq("id", data.user.id);
+
+      await prefetchInitialData(data.user.id);
     }
 
     toast.success("✅ Giriş başarılı!");

@@ -1,8 +1,7 @@
-﻿import { useState, useEffect,useCallback,useRef } from "react";
+﻿import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Activity,
   AlertTriangle,
-  CheckCircle2,
   Clock,
   TrendingUp,
   AlertCircle,
@@ -12,10 +11,8 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import NotificationWidget from "@/components/NotificationWidget";
-
 import { toast } from "sonner";
 import {
   PieChart,
@@ -29,26 +26,20 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
+import {
+  DASHBOARD_CACHE_TTL,
+  fetchDashboardSnapshot,
+  readDashboardSnapshot,
+  writeDashboardSnapshot,
+  type DashboardInspection,
+  type DashboardInspectionStatus,
+  type DashboardRiskLevel,
+  type DashboardSnapshot,
+} from "@/lib/dashboardCache";
 
-type RiskLevel = "low" | "medium" | "high" | "critical";
-type InspectionStatus = "completed" | "draft" | "in_progress" | "cancelled";
-
-interface Inspection {
-  id: string;
-  location_name: string;
-  risk_level: RiskLevel;
-  status: InspectionStatus;
-  created_at: string;
-  org_id: string;
-}
-
-interface Finding {
-  id: string;
-  description: string;
-  due_date: string;
-  is_resolved: boolean;
-  inspection_id: string;
-}
+type RiskLevel = DashboardRiskLevel;
+type InspectionStatus = DashboardInspectionStatus;
+type Inspection = DashboardInspection;
 
 interface MetricCard {
   title: string;
@@ -62,314 +53,123 @@ export default function Dashboard() {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [orgId, setOrgId] = useState<string | null>(null);
+  const [, setOrgId] = useState<string | null>(null);
 
-  // Metrikler
   const [activeInspections, setActiveInspections] = useState(0);
   const [openFindings, setOpenFindings] = useState(0);
   const [criticalRiskPercent, setCriticalRiskPercent] = useState(0);
   const [overdueActions, setOverdueActions] = useState(0);
 
-  // Grafikler
   const [riskDistribution, setRiskDistribution] = useState<
     Array<{ name: string; value: number; color: string }>
   >([]);
   const [monthlyTrend, setMonthlyTrend] = useState<
     Array<{ month: string; denetimler: number }>
   >([]);
-
-  // Son faaliyetler
   const [recentInspections, setRecentInspections] = useState<Inspection[]>([]);
-  
-   // ✅ Duplicate fetch guards
-  const hasFetched = useRef(false);
+
+  const hasHydratedFromCache = useRef(false);
   const isFetching = useRef(false);
 
-  
-  // ✅ Initial load
-  useEffect(() => {
-    if (user) {
-      fetchDashboardData();
-    }
-  }, [user]);
+  const applySnapshot = useCallback((snapshot: DashboardSnapshot) => {
+    setOrgId(snapshot.orgId);
+    setActiveInspections(snapshot.activeInspections);
+    setOpenFindings(snapshot.openFindings);
+    setCriticalRiskPercent(snapshot.criticalRiskPercent);
+    setOverdueActions(snapshot.overdueActions);
+    setRiskDistribution(snapshot.riskDistribution);
+    setMonthlyTrend(snapshot.monthlyTrend);
+    setRecentInspections(snapshot.recentInspections);
+  }, []);
 
-  const fetchDashboardData = useCallback(async (isRefresh = false) => {
-    if (!user) {
-      console.warn("⚠️ User not authenticated, skipping fetch");
-      return;
-  }
-
-  // ✅ Duplicate fetch guard
-  if (isFetching.current) {
-    console.warn("⚠️ Fetch already in progress, skipping");
-    return;
-  }
-
-  isFetching.current = true;
-
-  if (isRefresh) {
-    setRefreshing(true);
-  } else {
-    setLoading(true);
-  }
-
-  try {
-    console.log("📊 Fetching dashboard data for user:", user.id);
-
-    // 1️⃣ Organization ID'sini al
-    const { data: profile, error: profileError } = await supabase
-      .from("profiles")
-      .select("organization_id")
-      .eq("id", user.id)
-      .single();
-
-    if (profileError) {
-      console.error("❌ Profile fetch error:", profileError);
-      throw new Error("Profil bilgisi alınamadı: " + profileError.message);
-    }
-
-    if (!profile?.organization_id) {
-      console.error("❌ No organization_id in profile");
-      throw new Error("Kuruluş bilgisi bulunamadı. Lütfen sistem yöneticisi ile iletişime geçin.");
-    }
-
-    console.log("✅ Organization ID:", profile.organization_id);
-    setOrgId(profile.organization_id);
-
-    // 2️⃣ Denetim verilerini çek
-    const { data: inspections, error: inspError } = await supabase
-      .from("inspections")
-      .select("*")
-      .eq("org_id", profile.organization_id)
-      .order("created_at", { ascending: false });
-
-    if (inspError) {
-      console.error("❌ Inspections fetch error:", inspError);
-      throw new Error("Denetim verileri alınamadı: " + inspError.message);
-    }
-
-    const inspectionList = (inspections || []) as Inspection[];
-    console.log(`✅ Fetched ${inspectionList.length} inspections`);
-
-    // 3️⃣ Açık bulguları çek (✅ Organization filter ile)
-    let findingsList: Finding[] = [];
-
-    if (inspectionList.length > 0) {
-      const inspectionIds = inspectionList.map((i) => i.id);
-
-      console.log(`🔍 Fetching findings for ${inspectionIds.length} inspections...`);
-
-      const { data: findings, error: findError } = await supabase
-        .from("findings")
-        .select("*")
-        .in("inspection_id", inspectionIds); // ✅ Sadece bu org'un inspectionları
-
-      if (findError) {
-        console.error("⚠️ Findings fetch error:", findError);
-        console.warn("⚠️ Continuing without findings data (non-critical)");
-        // Non-critical error, continue with empty findings
-      } else {
-        findingsList = (findings || []) as Finding[];
-        console.log(`✅ Fetched ${findingsList.length} findings`);
+  const fetchDashboardData = useCallback(
+    async (isRefresh = false, force = false) => {
+      if (!user || isFetching.current) {
+        return;
       }
-    } else {
-      console.log("ℹ️ No inspections found, skipping findings fetch");
-    }
 
-    // 📊 METRIK HESAPLAMALARI
-    console.log("📊 Calculating metrics...");
-    calculateMetrics(inspectionList, findingsList);
-
-    // 📈 GRAFİK VERİLERİ
-    console.log("📈 Generating charts...");
-    calculateRiskDistribution(inspectionList);
-    calculateMonthlyTrend(inspectionList);
-
-    // 📋 SON FAALİYETLER
-    const recent = inspectionList.slice(0, 5);
-    setRecentInspections(recent);
-
-    console.log("✅ Dashboard data loaded successfully");
-    
-    if (isRefresh) {
-      toast.success("Dashboard güncellendi", {
-        description: `${inspectionList.length} denetim, ${findingsList.length} bulgu`
-      });
-    }
-
-  } catch (error: any) {
-    console.error("💥 Dashboard fetch error:", error);
-    console.error("📄 Error details:", {
-      name: error.name,
-      message: error.message,
-      code: error.code
-    });
-    
-    let errorMessage = "Dashboard yüklenemedi";
-    let errorDescription = error.message || "Bilinmeyen hata";
-
-    // ✅ User-friendly error messages
-    if (error.message?.includes("Profil bilgisi")) {
-      errorMessage = "Profil Hatası";
-      errorDescription = "Kullanıcı profili bulunamadı";
-    } else if (error.message?.includes("Kuruluş bilgisi")) {
-      errorMessage = "Kuruluş Hatası";
-      errorDescription = "Lütfen sistem yöneticisi ile iletişime geçin";
-    } else if (error.message?.includes("Denetim verileri")) {
-      errorMessage = "Veri Hatası";
-      errorDescription = "Denetim verileri yüklenemedi";
-    } else if (error.code === "PGRST116") {
-      errorMessage = "Yetki Hatası";
-      errorDescription = "Bu verilere erişim yetkiniz yok";
-    } else if (error.message?.includes("network") || error.message?.includes("fetch")) {
-      errorMessage = "Bağlantı Hatası";
-      errorDescription = "İnternet bağlantınızı kontrol edin";
-    }
-
-    toast.error(errorMessage, {
-      description: errorDescription,
-      duration: 8000,
-      action: {
-        label: "Tekrar Dene",
-        onClick: () => {
-          hasFetched.current = false;
-          fetchDashboardData(true);
-        }
+      if (!force && !isRefresh && hasHydratedFromCache.current) {
+        return;
       }
-    });
-  } finally {
-    setLoading(false);
-    setRefreshing(false);
-    isFetching.current = false; // ✅ Guard reset
-  }
-}, [user]); // ✅ Sadece user değiştiğinde yeniden oluştur
 
-  // ✅ Refresh handler
-  const handleRefresh = () => {
-    hasFetched.current = false; // Reset flag
-    fetchDashboardData(true);
-  };
-  // ✅ Metrikleri hesapla
-  const calculateMetrics = (
-    inspections: Inspection[],
-    findings: Finding[]
-  ) => {
-    console.log("📊 Calculating metrics...");
+      isFetching.current = true;
 
-    // Aktif denetimler
-    const active = inspections.filter((i) => i.status === "in_progress").length;
-    setActiveInspections(active);
-
-    // Açık DÖF
-    const open = findings.filter((f) => !f.is_resolved).length;
-    setOpenFindings(open);
-
-    // Kritik risk oranı
-    const critical = inspections.filter((i) => i.risk_level === "critical").length;
-    const criticalPercent =
-      inspections.length > 0
-        ? Math.round((critical / inspections.length) * 100)
-        : 0;
-    setCriticalRiskPercent(criticalPercent);
-
-    // Geciken faaliyetler
-    const today = new Date();
-    const overdue = findings.filter(
-      (f) => !f.is_resolved && f.due_date && new Date(f.due_date) < today
-    ).length;
-    setOverdueActions(overdue);
-
-    console.log("✅ Metrics calculated:", {
-      active,
-      open,
-      criticalPercent,
-      overdue,
-    });
-  };
-
-  // ✅ Risk dağılımı
-  const calculateRiskDistribution = (inspections: Inspection[]) => {
-    const dist: Record<RiskLevel, number> = {
-      low: 0,
-      medium: 0,
-      high: 0,
-      critical: 0,
-    };
-
-    inspections.forEach((i) => {
-      if (i.risk_level in dist) {
-        dist[i.risk_level]++;
+      if (isRefresh) {
+        setRefreshing(true);
+      } else if (!hasHydratedFromCache.current) {
+        setLoading(true);
       }
-    });
 
-    const colors: Record<RiskLevel, string> = {
-      low: "#10b981",
-      medium: "#f59e0b",
-      high: "#f97316",
-      critical: "#ef4444",
-    };
-
-    const labels: Record<RiskLevel, string> = {
-      low: "Düşük",
-      medium: "Orta",
-      high: "Yüksek",
-      critical: "Kritik",
-    };
-
-    const data = (Object.keys(dist) as RiskLevel[])
-      .map((level) => ({
-        name: labels[level],
-        value: dist[level],
-        color: colors[level],
-      }))
-      .filter((d) => d.value > 0);
-
-    setRiskDistribution(data);
-    console.log("✅ Risk distribution calculated:", data);
-  };
-
-  // ✅ Aylık trend
-  const calculateMonthlyTrend = (inspections: Inspection[]) => {
-    const today = new Date();
-    const months: Record<string, number> = {};
-
-    // Son 6 ay
-    for (let i = 5; i >= 0; i--) {
-      const date = new Date(today);
-      date.setMonth(date.getMonth() - i);
-      const monthKey = date.toLocaleString("tr-TR", {
-        month: "short",
-        year: "2-digit",
-      });
-      months[monthKey] = 0;
-    }
-
-    // Denetimleri say
-    inspections.forEach((i) => {
       try {
-        const date = new Date(i.created_at);
-        const monthKey = date.toLocaleString("tr-TR", {
-          month: "short",
-          year: "2-digit",
-        });
-        if (monthKey in months) {
-          months[monthKey]++;
+        const snapshot = await fetchDashboardSnapshot(user.id);
+        applySnapshot(snapshot);
+        writeDashboardSnapshot(user.id, snapshot);
+        hasHydratedFromCache.current = true;
+
+        if (isRefresh) {
+          toast.success("Dashboard güncellendi", {
+            description: `${snapshot.openFindings} açık bulgu, ${snapshot.activeInspections} aktif denetim`,
+          });
         }
-      } catch (error) {
-        console.warn("Date parse error for inspection:", i.id);
+      } catch (error: any) {
+        console.error("Dashboard fetch error:", error);
+
+        let errorMessage = "Dashboard yüklenemedi";
+        let errorDescription = error?.message || "Bilinmeyen hata";
+
+        if (error?.message?.includes("Profil bilgisi")) {
+          errorMessage = "Profil hatası";
+          errorDescription = "Kullanıcı profili bulunamadı";
+        } else if (error?.message?.includes("Kuruluş bilgisi")) {
+          errorMessage = "Kuruluş hatası";
+          errorDescription = "Kuruluş bilgisi eksik";
+        } else if (error?.message?.includes("Denetim verileri")) {
+          errorMessage = "Veri hatası";
+          errorDescription = "Denetim verileri alınamadı";
+        }
+
+        toast.error(errorMessage, {
+          description: errorDescription,
+          duration: 8000,
+          action: {
+            label: "Tekrar Dene",
+            onClick: () => {
+              hasHydratedFromCache.current = false;
+              void fetchDashboardData(true, true);
+            },
+          },
+        });
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+        isFetching.current = false;
       }
-    });
+    },
+    [applySnapshot, user]
+  );
 
-    const data = Object.entries(months).map(([month, count]) => ({
-      month,
-      denetimler: count,
-    }));
+  useEffect(() => {
+    if (!user) {
+      return;
+    }
 
-    setMonthlyTrend(data);
-    console.log("✅ Monthly trend calculated:", data);
+    const cachedSnapshot = readDashboardSnapshot(user.id);
+    const isCacheFresh =
+      cachedSnapshot && Date.now() - cachedSnapshot.timestamp < DASHBOARD_CACHE_TTL;
+
+    if (cachedSnapshot) {
+      applySnapshot(cachedSnapshot);
+      hasHydratedFromCache.current = true;
+      setLoading(false);
+    }
+
+    void fetchDashboardData(false, !isCacheFresh);
+  }, [applySnapshot, fetchDashboardData, user]);
+
+  const handleRefresh = () => {
+    void fetchDashboardData(true, true);
   };
 
-  // 🎨 Risk Level Helpers
   const getRiskColor = (level: RiskLevel) => {
     const colors: Record<RiskLevel, string> = {
       low: "bg-success/10 text-success border-success/30",
@@ -421,21 +221,26 @@ export default function Dashboard() {
     {
       title: "Açık DÖF",
       value: openFindings,
-      change: openFindings > 0 ? `-1 geçen haftaya göre` : "✅ Yok",
+      change: openFindings > 0 ? "-1 geçen haftaya göre" : "Yok",
       icon: <AlertTriangle className="h-5 w-5" />,
       color: "from-orange-500 to-orange-600",
     },
     {
       title: "Kritik Risk %",
       value: criticalRiskPercent,
-      change: `${criticalRiskPercent > 20 ? "📈 Yüksek" : criticalRiskPercent > 0 ? "📊 Normal" : "✅ Yok"}`,
+      change:
+        criticalRiskPercent > 20
+          ? "Yüksek"
+          : criticalRiskPercent > 0
+            ? "Normal"
+            : "Yok",
       icon: <AlertCircle className="h-5 w-5" />,
       color: "from-red-500 to-red-600",
     },
     {
       title: "Geciken İşlemler",
       value: overdueActions,
-      change: overdueActions > 0 ? "⚠️ Hemen tamamla!" : "✅ Yok",
+      change: overdueActions > 0 ? "Aksiyon gerekli" : "Yok",
       icon: <Clock className="h-5 w-5" />,
       color: "from-purple-500 to-purple-600",
     },
@@ -443,19 +248,16 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-8">
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-foreground">
-            İSG Yönetim Paneli
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Gerçek zamanlı denetim ve risk analizi           
+          <h1 className="text-3xl font-bold text-foreground">İSG Yönetim Paneli</h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Gerçek zamanlı denetim ve risk analizi
           </p>
         </div>
         <Button
           onClick={handleRefresh}
-          disabled={refreshing || loading}
+          disabled={refreshing}
           variant="outline"
           size="sm"
           className="gap-2"
@@ -465,8 +267,7 @@ export default function Dashboard() {
         </Button>
       </div>
 
-      {/* 📊 KPI Kartları */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {loading ? (
           Array.from({ length: 4 }).map((_, idx) => (
             <div
@@ -487,44 +288,28 @@ export default function Dashboard() {
           metrics.map((metric, idx) => (
             <div
               key={idx}
-              className="glass-card p-5 border border-primary/20 space-y-3 hover:border-primary/40 transition-all"
+              className="glass-card space-y-3 border border-primary/20 p-5 transition-all hover:border-primary/40"
             >
               <div className="flex items-center justify-between">
                 <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
                   {metric.title}
                 </h3>
-                <div
-                  className={`p-2.5 rounded-lg bg-gradient-to-br ${metric.color} text-white`}
-                >
+                <div className={`rounded-lg bg-gradient-to-br p-2.5 text-white ${metric.color}`}>
                   {metric.icon}
                 </div>
               </div>
               <div className="space-y-1">
-                <p className="text-3xl font-bold text-foreground">
-                  {metric.value}
-                </p>
-                <p
-                  className={`text-xs font-medium ${
-                    metric.change.includes("📈") || metric.change.includes("⚠️")
-                      ? "text-orange-500"
-                      : metric.change.includes("✅")
-                      ? "text-success"
-                      : "text-muted-foreground"
-                  }`}
-                >
-                  {metric.change}
-                </p>
+                <p className="text-3xl font-bold text-foreground">{metric.value}</p>
+                <p className="text-xs font-medium text-muted-foreground">{metric.change}</p>
               </div>
             </div>
           ))
         )}
       </div>
 
-      {/* 📈 Grafikler */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Risk Dağılımı */}
-        <div className="glass-card p-6 border border-primary/20">
-          <h3 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <div className="glass-card border border-primary/20 p-6">
+          <h3 className="mb-4 flex items-center gap-2 text-sm font-semibold text-foreground">
             <PieChartIcon className="h-4 w-4 text-primary" />
             Risk Dağılımı Analizi
           </h3>
@@ -551,17 +336,16 @@ export default function Dashboard() {
               </PieChart>
             </ResponsiveContainer>
           ) : (
-            <div className="h-[280px] flex flex-col items-center justify-center text-muted-foreground">
-              <AlertCircle className="h-12 w-12 mb-3 opacity-30" />
+            <div className="flex h-[280px] flex-col items-center justify-center text-muted-foreground">
+              <AlertCircle className="mb-3 h-12 w-12 opacity-30" />
               <p className="text-sm">Henüz denetim verisi yok</p>
-              <p className="text-xs mt-1">İlk denetiminizi oluşturun</p>
+              <p className="mt-1 text-xs">İlk denetiminizi oluşturun</p>
             </div>
           )}
         </div>
 
-        {/* Aylık Trend */}
-        <div className="glass-card p-6 border border-primary/20">
-          <h3 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2">
+        <div className="glass-card border border-primary/20 p-6">
+          <h3 className="mb-4 flex items-center gap-2 text-sm font-semibold text-foreground">
             <BarChart3 className="h-4 w-4 text-primary" />
             Aylık Denetim Trendi (Son 6 Ay)
           </h3>
@@ -577,16 +361,8 @@ export default function Dashboard() {
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                <XAxis 
-                  dataKey="month" 
-                  stroke="#9ca3af" 
-                  tick={{ fontSize: 11 }}
-                />
-                <YAxis 
-                  stroke="#9ca3af" 
-                  tick={{ fontSize: 11 }}
-                  allowDecimals={false}
-                />
+                <XAxis dataKey="month" stroke="#9ca3af" tick={{ fontSize: 11 }} />
+                <YAxis stroke="#9ca3af" tick={{ fontSize: 11 }} allowDecimals={false} />
                 <Tooltip
                   contentStyle={{
                     backgroundColor: "#1f2937",
@@ -606,21 +382,21 @@ export default function Dashboard() {
               </AreaChart>
             </ResponsiveContainer>
           ) : (
-            <div className="h-[280px] flex flex-col items-center justify-center text-muted-foreground">
-              <TrendingUp className="h-12 w-12 mb-3 opacity-30" />
+            <div className="flex h-[280px] flex-col items-center justify-center text-muted-foreground">
+              <TrendingUp className="mb-3 h-12 w-12 opacity-30" />
               <p className="text-sm">Henüz trend verisi yok</p>
-              <p className="text-xs mt-1">Denetimler eklendikçe grafik oluşacak</p>
+              <p className="mt-1 text-xs">Denetimler eklendikçe grafik oluşacak</p>
             </div>
           )}
         </div>
+
         <div>
-          <NotificationWidget /> {/* ✅ Widget */}
+          <NotificationWidget />
         </div>
       </div>
 
-      {/* 📋 Son Faaliyetler */}
-      <div className="glass-card p-6 border border-primary/20">
-        <h3 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2">
+      <div className="glass-card border border-primary/20 p-6">
+        <h3 className="mb-4 flex items-center gap-2 text-sm font-semibold text-foreground">
           <Activity className="h-4 w-4 text-primary" />
           Son Denetimler
         </h3>
@@ -639,13 +415,13 @@ export default function Dashboard() {
             recentInspections.map((inspection) => (
               <div
                 key={inspection.id}
-                className="flex items-center justify-between p-4 bg-secondary/50 rounded-lg border border-border/50 hover:border-primary/30 transition-all cursor-pointer"
+                className="flex cursor-pointer items-center justify-between rounded-lg border border-border/50 bg-secondary/50 p-4 transition-all hover:border-primary/30"
               >
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-foreground truncate">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-foreground">
                     {inspection.location_name || "İsimsiz Lokasyon"}
                   </p>
-                  <p className="text-xs text-muted-foreground mt-1">
+                  <p className="mt-1 text-xs text-muted-foreground">
                     {new Date(inspection.created_at).toLocaleDateString("tr-TR", {
                       day: "numeric",
                       month: "long",
@@ -655,7 +431,7 @@ export default function Dashboard() {
                     })}
                   </p>
                 </div>
-                <div className="flex items-center gap-2 shrink-0 ml-4">
+                <div className="ml-4 flex shrink-0 items-center gap-2">
                   <Badge
                     variant="outline"
                     className={`text-[10px] ${getRiskColor(inspection.risk_level)}`}
@@ -672,12 +448,10 @@ export default function Dashboard() {
               </div>
             ))
           ) : (
-            <div className="text-center py-12">
-              <AlertCircle className="h-12 w-12 mx-auto mb-3 opacity-30 text-muted-foreground" />
-              <p className="text-sm font-medium text-foreground">
-                Henüz denetim bulunmuyor
-              </p>
-              <p className="text-xs text-muted-foreground mt-1">
+            <div className="py-12 text-center">
+              <AlertCircle className="mx-auto mb-3 h-12 w-12 text-muted-foreground opacity-30" />
+              <p className="text-sm font-medium text-foreground">Henüz denetim bulunmuyor</p>
+              <p className="mt-1 text-xs text-muted-foreground">
                 İlk denetiminizi oluşturmak için "Denetimler" sayfasını ziyaret edin
               </p>
             </div>

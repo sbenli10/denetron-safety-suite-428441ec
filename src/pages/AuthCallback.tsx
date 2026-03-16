@@ -1,7 +1,11 @@
-import { useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Loader2, CheckCircle2, AlertTriangle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import {
+  fetchDashboardSnapshot,
+  writeDashboardSnapshot,
+} from "@/lib/dashboardCache";
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -23,9 +27,18 @@ export default function AuthCallback() {
       if (code) {
         setStatus("Oturum doğrulanıyor...");
 
-        const { error } = await supabase.auth.exchangeCodeForSession(code);
+        const { data, error } = await supabase.auth.exchangeCodeForSession(code);
         if (error) {
           throw error;
+        }
+
+        if (!isExtension && data.session?.user?.id) {
+          try {
+            const snapshot = await fetchDashboardSnapshot(data.session.user.id);
+            writeDashboardSnapshot(data.session.user.id, snapshot);
+          } catch (prefetchError) {
+            console.warn("Dashboard prefetch skipped:", prefetchError);
+          }
         }
       }
 

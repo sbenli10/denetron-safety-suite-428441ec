@@ -1,5 +1,5 @@
 ﻿//src\pages\Inspections.tsx
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   Search,
   Plus,
@@ -78,8 +78,42 @@ interface StatCard {
   trend?: string;
 }
 
+const INSPECTIONS_CACHE_TTL = 10 * 60 * 1000;
+
 const getInspectionsCacheKey = (userId: string) =>
-  `denetron:inspections:${userId}`;
+  `denetron:inspections:${userId}:v2`;
+
+const readCachedInspections = (userId: string): Inspection[] | null => {
+  const raw = localStorage.getItem(getInspectionsCacheKey(userId));
+  if (!raw) return null;
+
+  try {
+    const parsed = JSON.parse(raw) as {
+      data: Inspection[];
+      timestamp: number;
+    };
+
+    if (Date.now() - parsed.timestamp > INSPECTIONS_CACHE_TTL) {
+      localStorage.removeItem(getInspectionsCacheKey(userId));
+      return null;
+    }
+
+    return parsed.data ?? null;
+  } catch {
+    localStorage.removeItem(getInspectionsCacheKey(userId));
+    return null;
+  }
+};
+
+const writeCachedInspections = (userId: string, data: Inspection[]) => {
+  localStorage.setItem(
+    getInspectionsCacheKey(userId),
+    JSON.stringify({
+      data,
+      timestamp: Date.now(),
+    })
+  );
+};
 
 const statusFilters = ["all", "completed", "in_progress", "draft", "cancelled"] as const;
 
@@ -99,6 +133,7 @@ const riskConfig = {
 
 export default function Inspections() {
   const { user } = useAuth();
+  const activeUserId = user?.id ?? null;
   const [search, setSearch] = useState("");
   const [activeFilter, setActiveFilter] = useState<string>("all");
   const [inspections, setInspections] = useState<Inspection[]>([]);
@@ -122,6 +157,8 @@ export default function Inspections() {
   const [exporting, setExporting] = useState(false);
   const [aiAnalyzing, setAiAnalyzing] = useState(false);
   const location = useLocation();
+  const isFetchingRef = useRef(false);
+  const lastFetchedAtRef = useRef<number>(0);
 
   useEffect(() => {
     if (location.state?.prefilledNotes) {
@@ -130,21 +167,27 @@ export default function Inspections() {
   }, [location.state]);
 
   useEffect(() => {
-    if (!user) return;
-    const cached = sessionStorage.getItem(getInspectionsCacheKey(user.id));
-    if (cached) {
-      try {
-        setInspections(JSON.parse(cached) as Inspection[]);
-        setLoading(false);
-      } catch {
-        sessionStorage.removeItem(getInspectionsCacheKey(user.id));
-      }
-    }
-    void fetchInspections(Boolean(cached));
-  }, [user]);
+    if (!activeUserId) return;
 
-  const fetchInspections = async (silent = false) => {
-    if (!user) return;
+    const cached = readCachedInspections(activeUserId);
+    if (cached) {
+      setInspections(cached);
+      setLoading(false);
+      return;
+    }
+
+    void fetchInspections();
+  }, [activeUserId]);
+
+  const fetchInspections = async (silent = false, force = false) => {
+    if (!activeUserId || isFetchingRef.current) return;
+
+    const now = Date.now();
+    if (!force && now - lastFetchedAtRef.current < 60_000) {
+      return;
+    }
+
+    isFetchingRef.current = true;
     if (!silent) {
       setLoading(true);
     }
@@ -152,19 +195,19 @@ export default function Inspections() {
       const { data, error } = await supabase
         .from("inspections")
         .select("*")
-        .eq("user_id", user.id)
+        .eq("user_id", activeUserId)
         .order("created_at", { ascending: false });
 
       if (error) throw error;
-      setInspections((data as Inspection[]) || []);
-      sessionStorage.setItem(
-        getInspectionsCacheKey(user.id),
-        JSON.stringify((data as Inspection[]) || [])
-      );
+      const nextInspections = (data as Inspection[]) || [];
+      setInspections(nextInspections);
+      writeCachedInspections(activeUserId, nextInspections);
+      lastFetchedAtRef.current = Date.now();
     } catch (error: any) {
       toast.error("Denetimler yüklenirken hata oluştu");
       console.error(error);
     } finally {
+      isFetchingRef.current = false;
       setLoading(false);
     }
   };
@@ -244,7 +287,9 @@ export default function Inspections() {
 
       if (insertError) throw insertError;
 
-      setInspections([newInspection as Inspection, ...inspections]);
+      const nextInspections = [newInspection as Inspection, ...inspections];
+      setInspections(nextInspections);
+      writeCachedInspections(user.id, nextInspections);
       toast.success("✅ Denetim başarıyla oluşturuldu");
 
       setLocationName("");
@@ -272,7 +317,11 @@ export default function Inspections() {
 
       if (error) throw error;
       
-      setInspections(inspections.filter(i => i.id !== id));
+      const nextInspections = inspections.filter(i => i.id !== id);
+      setInspections(nextInspections);
+      if (user?.id) {
+        writeCachedInspections(user.id, nextInspections);
+      }
       setDetailsOpen(false);
       setSelectedInspection(null);
       toast.success("✅ Denetim silindi");

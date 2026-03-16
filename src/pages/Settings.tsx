@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+﻿import { useState, useEffect } from "react";
 import {
   Settings as SettingsIcon,
   Shield,
@@ -63,6 +63,8 @@ interface OrganizationData {
   website: string;
 }
 
+const getSettingsCacheKey = (userId: string) => `denetron:settings:${userId}`;
+
 export default function Settings() {
   const { signOut, user } = useAuth();
   const navigate = useNavigate();
@@ -78,7 +80,7 @@ export default function Settings() {
   const [currentFactorId, setCurrentFactorId] = useState<string | null>(null);
   const [trustedDevices, setTrustedDevices] = useState<any[]>([]);
 
-  // âœ… State tanÄ±mlamalarÄ± (en Ã¼stte)
+  // ✅ State tanımlamaları (en üstte)
   const [show2FASetupModal, setShow2FASetupModal] = useState(false);
   const [qrCodeData, setQRCodeData] = useState<{
     qr_code: string;
@@ -120,9 +122,51 @@ export default function Settings() {
 
 useEffect(() => {
   if (user) {
-    fetchSettingsData();
+    const cached = sessionStorage.getItem(getSettingsCacheKey(user.id));
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        setProfileData(parsed.profileData ?? null);
+        setOrganizationData(parsed.organizationData ?? null);
+        setFormData(
+          parsed.formData ?? {
+            fullName: "",
+            phone: "",
+            position: "",
+            department: "",
+          }
+        );
+        setOrgFormData(
+          parsed.orgFormData ?? {
+            name: "",
+            industry: "",
+            city: "",
+            phone: "",
+            website: "",
+          }
+        );
+        setNotifications(
+          parsed.notifications ?? {
+            emailNotifications: true,
+            capaAlerts: true,
+            riskAlerts: true,
+            weeklyReport: true,
+            systemUpdates: false,
+          }
+        );
+        setSessions(parsed.sessions ?? []);
+        setBillingHistory(parsed.billingHistory ?? []);
+        setTwoFactorEnabled(parsed.twoFactorEnabled ?? false);
+        setTrustedDevices(parsed.trustedDevices ?? []);
+        setLoading(false);
+      } catch {
+        sessionStorage.removeItem(getSettingsCacheKey(user.id));
+      }
+    }
+
+    void fetchSettingsData(Boolean(cached));
     
-    // âœ… Session'Ä± sadece ilk render'da kaydet
+    // ✅ Session'ı sadece ilk render'da kaydet
     const sessionRecorded = sessionStorage.getItem('session_recorded');
     if (!sessionRecorded) {
       recordSession(user.id);
@@ -132,14 +176,19 @@ useEffect(() => {
 }, [user]);
   
 
-  const fetchSettingsData = async () => {
+  const fetchSettingsData = async (silent = false) => {
     if (!user) return;
 
-    setLoading(true);
+    if (!silent) {
+      setLoading(true);
+    }
     try {
-      console.log("ðŸ“Š Fetching settings data...");
+      console.log("📊 Fetching settings data...");
+      let loadedOrganizationData: OrganizationData | null = null;
+      let typedSessions: UserSession[] = [];
+      let typedBilling: BillingHistory[] = [];
 
-      // âœ… FETCH PROFILE
+      // ✅ FETCH PROFILE
       const { data: profileData, error: profileError } = await supabase
         .from("profiles")
         .select("*")
@@ -168,7 +217,7 @@ useEffect(() => {
         department: profileData.department || "",
       });
 
-      // âœ… FETCH ORGANIZATION
+      // ✅ FETCH ORGANIZATION
       if (profileData.organization_id) {
         const { data: orgData, error: orgError } = await supabase
           .from("organizations")
@@ -177,6 +226,7 @@ useEffect(() => {
           .single();
 
         if (!orgError && orgData) {
+          loadedOrganizationData = orgData as OrganizationData;
           setOrganizationData(orgData as OrganizationData);
           setOrgFormData({
             name: orgData.name || "",
@@ -188,7 +238,7 @@ useEffect(() => {
         }
       }
 
-      // âœ… FETCH SESSIONS (with type casting)
+      // ✅ FETCH SESSIONS (with type casting)
       const { data: sessionsData, error: sessionsError } = await supabase
         .from("user_sessions")
         .select("*")
@@ -198,7 +248,7 @@ useEffect(() => {
 
       if (!sessionsError && sessionsData) {
         // Type cast to UserSession[]
-        const typedSessions: UserSession[] = sessionsData.map((session) => ({
+        typedSessions = sessionsData.map((session) => ({
           id: session.id,
           user_id: session.user_id,
           device_name: session.device_name,
@@ -213,7 +263,7 @@ useEffect(() => {
         setSessions(typedSessions);
       }
 
-      // âœ… FETCH BILLING HISTORY (with type casting)
+      // ✅ FETCH BILLING HISTORY (with type casting)
       const { data: billingData, error: billingError } = await supabase
         .from("billing_history")
         .select("*")
@@ -223,7 +273,7 @@ useEffect(() => {
 
       if (!billingError && billingData) {
         // Type cast to BillingHistory[]
-        const typedBilling: BillingHistory[] = billingData.map((bill) => ({
+        typedBilling = billingData.map((bill) => ({
           id: bill.id,
           user_id: bill.user_id,
           plan_name: bill.plan_name,
@@ -239,17 +289,43 @@ useEffect(() => {
         setBillingHistory(typedBilling);
       }
 
-      // âœ… FETCH NOTIFICATION PREFERENCES (from localStorage)
+      // ✅ FETCH NOTIFICATION PREFERENCES (from localStorage)
       const savedNotifications = localStorage.getItem("userNotifications");
       if (savedNotifications) {
         setNotifications(JSON.parse(savedNotifications));
       }
 
-      console.log("âœ… Settings data loaded");
-      toast.success("âœ… Ayarlar yÃ¼klendi");
+      sessionStorage.setItem(
+        getSettingsCacheKey(user.id),
+        JSON.stringify({
+          profileData,
+          organizationData: loadedOrganizationData,
+          formData: {
+            fullName: profileData.full_name || "",
+            phone: profileData.phone || "",
+            position: profileData.position || "",
+            department: profileData.department || "",
+          },
+          orgFormData: {
+            name: loadedOrganizationData?.name || "",
+            industry: loadedOrganizationData?.industry || "",
+            city: loadedOrganizationData?.city || "",
+            phone: loadedOrganizationData?.phone || "",
+            website: loadedOrganizationData?.website || "",
+          },
+          notifications: savedNotifications ? JSON.parse(savedNotifications) : notifications,
+          sessions: typedSessions ?? [],
+          billingHistory: typedBilling ?? [],
+          twoFactorEnabled: profileData.two_factor_enabled || false,
+          trustedDevices: trustedDevicesData ?? [],
+        })
+      );
+
+      console.log("✅ Settings data loaded");
+      toast.success("✅ Ayarlar yüklendi");
     } catch (err: any) {
-      console.error("âŒ Settings error:", err);
-      toast.error("Ayarlar yÃ¼klenemedi", {
+      console.error("❌ Settings error:", err);
+      toast.error("Ayarlar yüklenemedi", {
         description: err.message,
       });
     } finally {
@@ -257,7 +333,7 @@ useEffect(() => {
     }
   };
 
-  // âœ… SAVE PROFILE
+  // ✅ SAVE PROFILE
   const handleSaveProfile = async () => {
     if (!user) return;
 
@@ -288,12 +364,12 @@ useEffect(() => {
           : null
       );
 
-      toast.success("âœ… Profil bilgileri kaydedildi", {
-        description: "DeÄŸiÅŸiklikler baÅŸarÄ±yla uygulandÄ±",
+      toast.success("✅ Profil bilgileri kaydedildi", {
+        description: "Değişiklikler başarıyla uygulandı",
       });
     } catch (err: any) {
       console.error("Profile save error:", err);
-      toast.error("KayÄ±t baÅŸarÄ±sÄ±z", {
+      toast.error("Kayıt başarısız", {
         description: err.message,
       });
     } finally {
@@ -301,7 +377,7 @@ useEffect(() => {
     }
   };
 
-  // âœ… SAVE ORGANIZATION
+  // ✅ SAVE ORGANIZATION
   const handleSaveOrganization = async () => {
     if (!organizationData) return;
 
@@ -321,12 +397,12 @@ useEffect(() => {
 
       if (error) throw error;
 
-      toast.success("âœ… Åžirket bilgileri kaydedildi", {
-        description: "Organizasyon ayarlarÄ± gÃ¼ncellendi",
+      toast.success("✅ Şirket bilgileri kaydedildi", {
+        description: "Organizasyon ayarları güncellendi",
       });
     } catch (err: any) {
       console.error("Organization save error:", err);
-      toast.error("KayÄ±t baÅŸarÄ±sÄ±z", {
+      toast.error("Kayıt başarısız", {
         description: err.message,
       });
     } finally {
@@ -334,20 +410,20 @@ useEffect(() => {
     }
   };
 
-  // âœ… CHANGE PASSWORD
+  // ✅ CHANGE PASSWORD
   const handleChangePassword = async () => {
     if (!newPassword || !confirmPassword) {
-      toast.error("âŒ LÃ¼tfen parolalarÄ± girin");
+      toast.error("❌ Lütfen parolaları girin");
       return;
     }
 
     if (newPassword !== confirmPassword) {
-      toast.error("âŒ Parolalar eÅŸleÅŸmiyor");
+      toast.error("❌ Parolalar eşleşmiyor");
       return;
     }
 
     if (newPassword.length < 6) {
-      toast.error("âŒ Parola en az 6 karakter olmalÄ±dÄ±r");
+      toast.error("❌ Parola en az 6 karakter olmalıdır");
       return;
     }
 
@@ -361,12 +437,12 @@ useEffect(() => {
 
       setNewPassword("");
       setConfirmPassword("");
-      toast.success("âœ… Parola baÅŸarÄ±yla gÃ¼ncellendi", {
-        description: "Yeni parolanÄ±zla giriÅŸ yapabilirsiniz",
+      toast.success("✅ Parola başarıyla güncellendi", {
+        description: "Yeni parolanızla giriş yapabilirsiniz",
       });
     } catch (err: any) {
       console.error("Password change error:", err);
-      toast.error("âŒ Parola gÃ¼ncellenemedi", {
+      toast.error("❌ Parola güncellenemedi", {
         description: err.message,
       });
     } finally {
@@ -374,25 +450,25 @@ useEffect(() => {
     }
   };
 
-// âœ… TOGGLE 2FA - GERÃ‡EK SUPABASE MFA (FINAL - WORKING VERSION)
+// ✅ TOGGLE 2FA - GERÇEK SUPABASE MFA (FINAL - WORKING VERSION)
 const handleToggle2FA = async (enabled: boolean) => {
   if (!user) return;
 
   setSaving(true);
   try {
     if (enabled) {
-      // âœ… 1. TÃ¼m factor'leri kontrol et
+      // ✅ 1. Tüm factor'leri kontrol et
       const { data: existingFactors, error: listError } = await supabase.auth.mfa.listFactors();
       
       if (listError) {
-        console.error('âŒ List factors error:', listError);
+        console.error('❌ List factors error:', listError);
         throw listError;
       }
 
-      console.log('ðŸ“‹ Existing factors:', existingFactors);
-      console.log('ðŸ“‹ ALL factors:', existingFactors?.all);
+      console.log('📋 Existing factors:', existingFactors);
+      console.log('📋 ALL factors:', existingFactors?.all);
 
-      // âœ… 2. Verified TOTP factor varsa, kullanÄ±cÄ±ya bilgi ver
+      // ✅ 2. Verified TOTP factor varsa, kullanıcıya bilgi ver
       if (existingFactors && existingFactors.all && existingFactors.all.length > 0) {
         const verifiedTotpFactors = existingFactors.all.filter(
           (factor: any) => 
@@ -401,7 +477,7 @@ const handleToggle2FA = async (enabled: boolean) => {
         );
 
         if (verifiedTotpFactors.length > 0) {
-          console.log('âœ… Found verified TOTP factors:', verifiedTotpFactors.length);
+          console.log('✅ Found verified TOTP factors:', verifiedTotpFactors.length);
           
           // Zaten aktif 2FA var
           await supabase
@@ -414,44 +490,44 @@ const handleToggle2FA = async (enabled: boolean) => {
 
           setTwoFactorEnabled(true);
           
-          toast.info('â„¹ï¸ 2FA zaten aktif', {
-            description: 'Yeniden kurmak iÃ§in Ã¶nce kapatÄ±n',
+          toast.info('ℹ️ 2FA zaten aktif', {
+            description: 'Yeniden kurmak için önce kapatın',
           });
           
           setSaving(false);
           return;
         }
 
-        // âœ… 3. Unverified factor'leri temizle
+        // ✅ 3. Unverified factor'leri temizle
         const unverifiedFactors = existingFactors.all.filter(
           (factor: any) => factor.status !== 'verified'
         );
 
         if (unverifiedFactors.length > 0) {
-          console.log('ðŸ—‘ï¸ Cleaning unverified factors:', unverifiedFactors.length);
+          console.log('🗑️ Cleaning unverified factors:', unverifiedFactors.length);
           
           for (const factor of unverifiedFactors) {
             try {
-              console.log('ðŸ—‘ï¸ Removing unverified factor:', factor.id);
+              console.log('🗑️ Removing unverified factor:', factor.id);
               await supabase.auth.mfa.unenroll({ factorId: factor.id });
-              console.log('âœ… Factor removed:', factor.id);
+              console.log('✅ Factor removed:', factor.id);
             } catch (unenrollErr: any) {
-              console.error('âš ï¸ Failed to remove factor:', factor.id, unenrollErr);
+              console.error('⚠️ Failed to remove factor:', factor.id, unenrollErr);
             }
           }
           
-          // Supabase'in sync olmasÄ± iÃ§in bekle
+          // Supabase'in sync olması için bekle
           await new Promise(resolve => setTimeout(resolve, 500));
         }
       }
 
-      // âœ… 4. Yeni TOTP factor oluÅŸtur
-      console.log('âž• Creating new TOTP factor...');
+      // ✅ 4. Yeni TOTP factor oluştur
+      console.log('➕ Creating new TOTP factor...');
       
       // Unique friendly name (timestamp + random)
       const uniqueFriendlyName = `DENETRON-${user.email?.split('@')[0] || 'User'}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
       
-      console.log('ðŸ“ Friendly name:', uniqueFriendlyName);
+      console.log('📝 Friendly name:', uniqueFriendlyName);
 
       const { data: enrollData, error: enrollError } = await supabase.auth.mfa.enroll({
         factorType: 'totp',
@@ -459,15 +535,15 @@ const handleToggle2FA = async (enabled: boolean) => {
       });
 
       if (enrollError) {
-        console.error('âŒ Enroll error:', enrollError);
+        console.error('❌ Enroll error:', enrollError);
         throw enrollError;
       }
 
       if (enrollData && enrollData.totp) {
-        console.log('âœ… TOTP factor created:', enrollData);
-        console.log('ðŸ”‘ Factor ID:', enrollData.id); // âœ… Ã–NEMLÄ°
+        console.log('✅ TOTP factor created:', enrollData);
+        console.log('🔑 Factor ID:', enrollData.id); // ✅ ÖNEMLİ
         
-        // âœ… Factor ID'yi kaydet
+        // ✅ Factor ID'yi kaydet
         setCurrentFactorId(enrollData.id);
         
         // QR Code verilerini sakla
@@ -477,46 +553,46 @@ const handleToggle2FA = async (enabled: boolean) => {
           uri: enrollData.totp.uri,
         };
         
-        console.log('ðŸ’¾ Setting QR data:', qrData);
-        console.log('ðŸ’¾ Setting Factor ID:', enrollData.id);
+        console.log('💾 Setting QR data:', qrData);
+        console.log('💾 Setting Factor ID:', enrollData.id);
         
         setQRCodeData(qrData);
         setShow2FASetupModal(true);
 
-        toast.info('ðŸ“± 2FA Kurulumu BaÅŸlatÄ±ldÄ±', {
-          description: 'Google Authenticator ile QR kodu tarayÄ±n',
+        toast.info('📱 2FA Kurulumu Başlatıldı', {
+          description: 'Google Authenticator ile QR kodu tarayın',
           duration: 5000,
         });
       } else {
-        throw new Error('TOTP data bulunamadÄ±');
+        throw new Error('TOTP data bulunamadı');
       }
     } else {
-      // âœ… DISABLE 2FA - TÃœM FACTOR'LERÄ° SÄ°L
-      console.log('ðŸ”´ Disabling 2FA...');
+      // ✅ DISABLE 2FA - TÜM FACTOR'LERİ SİL
+      console.log('🔴 Disabling 2FA...');
       
       const { data: factors, error: listError } = await supabase.auth.mfa.listFactors();
       
       if (listError) {
-        console.error('âŒ List factors error:', listError);
+        console.error('❌ List factors error:', listError);
         throw listError;
       }
       
-      console.log('ðŸ“‹ Factors to remove:', factors?.all?.length || 0);
+      console.log('📋 Factors to remove:', factors?.all?.length || 0);
 
-      // ALL array'inden tÃ¼m factor'leri sil
+      // ALL array'inden tüm factor'leri sil
       if (factors && factors.all && factors.all.length > 0) {
         for (const factor of factors.all) {
           try {
-            console.log('ðŸ—‘ï¸ Removing factor:', factor.id, factor.friendly_name);
+            console.log('🗑️ Removing factor:', factor.id, factor.friendly_name);
             
             await supabase.auth.mfa.unenroll({
               factorId: factor.id,
             });
             
-            console.log('âœ… Factor removed:', factor.id);
+            console.log('✅ Factor removed:', factor.id);
           } catch (unenrollErr: any) {
-            console.error('âš ï¸ Failed to remove factor:', factor.id, unenrollErr);
-            // Devam et, diÄŸer factor'leri de dene
+            console.error('⚠️ Failed to remove factor:', factor.id, unenrollErr);
+            // Devam et, diğer factor'leri de dene
           }
         }
       }
@@ -532,29 +608,29 @@ const handleToggle2FA = async (enabled: boolean) => {
 
       setTwoFactorEnabled(false);
       
-      toast.success('âœ… Ä°ki faktÃ¶rlÃ¼ doÄŸrulama kapatÄ±ldÄ±', {
-        description: 'TÃ¼m 2FA ayarlarÄ± temizlendi',
+      toast.success('✅ İki faktörlü doğrulama kapatıldı', {
+        description: 'Tüm 2FA ayarları temizlendi',
       });
     }
   } catch (err: any) {
-    console.error('âŒ 2FA toggle error:', err);
+    console.error('❌ 2FA toggle error:', err);
     
-    let errorMessage = 'Ä°ÅŸlem baÅŸarÄ±sÄ±z';
+    let errorMessage = 'İşlem başarısız';
     let errorDescription = err.message || 'Bilinmeyen hata';
 
     // Specific error messages
     if (err.message?.includes('already exists')) {
-      errorMessage = '2FA Ã§akÄ±ÅŸmasÄ± tespit edildi';
-      errorDescription = 'LÃ¼tfen "2FA\'yÄ± SÄ±fÄ±rla" butonunu kullanÄ±n veya sayfayÄ± yenileyin';
+      errorMessage = '2FA çakışması tespit edildi';
+      errorDescription = 'Lütfen "2FA\'yı Sıfırla" butonunu kullanın veya sayfayı yenileyin';
     } else if (err.message?.includes('not found')) {
-      errorMessage = 'Factor bulunamadÄ±';
-      errorDescription = 'SayfayÄ± yenileyip tekrar deneyin';
+      errorMessage = 'Factor bulunamadı';
+      errorDescription = 'Sayfayı yenileyip tekrar deneyin';
     } else if (err.message?.includes('TOTP data')) {
-      errorMessage = 'QR kod oluÅŸturulamadÄ±';
-      errorDescription = 'LÃ¼tfen sayfayÄ± yenileyip tekrar deneyin';
+      errorMessage = 'QR kod oluşturulamadı';
+      errorDescription = 'Lütfen sayfayı yenileyip tekrar deneyin';
     }
 
-    toast.error(`âŒ ${errorMessage}`, {
+    toast.error(`❌ ${errorMessage}`, {
       description: errorDescription,
       duration: 5000,
     });
@@ -563,17 +639,17 @@ const handleToggle2FA = async (enabled: boolean) => {
   }
 };
 
-// âœ… Force Reset 2FA
+// ✅ Force Reset 2FA
 const handleForceReset2FA = async () => {
   if (!user) return;
   
-  if (!confirm('âš ï¸ Mevcut 2FA ayarlarÄ±nÄ±z silinecek. Devam edilsin mi?')) {
+  if (!confirm('⚠️ Mevcut 2FA ayarlarınız silinecek. Devam edilsin mi?')) {
     return;
   }
 
   setSaving(true);
   try {
-    console.log('ðŸ”„ Force resetting 2FA...');
+    console.log('🔄 Force resetting 2FA...');
     
     // Get all factors
     const { data: factors } = await supabase.auth.mfa.listFactors();
@@ -583,7 +659,7 @@ const handleForceReset2FA = async () => {
       for (const factor of factors.all) {
         try {
           await supabase.auth.mfa.unenroll({ factorId: factor.id });
-          console.log('âœ… Removed factor:', factor.id);
+          console.log('✅ Removed factor:', factor.id);
         } catch (err) {
           console.error('Failed to remove factor:', factor.id, err);
         }
@@ -601,8 +677,8 @@ const handleForceReset2FA = async () => {
 
     setTwoFactorEnabled(false);
     
-    toast.success('âœ… 2FA tamamen sÄ±fÄ±rlandÄ±', {
-      description: 'Åžimdi yeniden kurulum yapabilirsiniz',
+    toast.success('✅ 2FA tamamen sıfırlandı', {
+      description: 'Şimdi yeniden kurulum yapabilirsiniz',
     });
     
     // Refresh page
@@ -611,35 +687,35 @@ const handleForceReset2FA = async () => {
     }, 1500);
   } catch (err: any) {
     console.error('Force reset error:', err);
-    toast.error('âŒ SÄ±fÄ±rlama baÅŸarÄ±sÄ±z');
+    toast.error('❌ Sıfırlama başarısız');
   } finally {
     setSaving(false);
   }
 };
-  // âœ… TERMINATE SESSION
+  // ✅ TERMINATE SESSION
   const handleTerminateSession = async (sessionId: string) => {
     const success = await terminateSession(sessionId);
 
     if (success) {
       setSessions((prev) => prev.filter((s) => s.id !== sessionId));
-      toast.success("âœ… Oturum sonlandÄ±rÄ±ldÄ±", {
-        description: "Cihaz baÄŸlantÄ±sÄ± kesildi",
+      toast.success("✅ Oturum sonlandırıldı", {
+        description: "Cihaz bağlantısı kesildi",
       });
     } else {
-      toast.error("âŒ Oturum sonlandÄ±rÄ±lamadÄ±");
+      toast.error("❌ Oturum sonlandırılamadı");
     }
   };
 
-  // âœ… FORCE CLEAN - TÃ¼m factor'leri temizle (Debug iÃ§in)
+  // ✅ FORCE CLEAN - Tüm factor'leri temizle (Debug için)
 const handleForceCleanFactors = async () => {
   if (!user) return;
   
   const confirmed = confirm(
-    'âš ï¸ UYARI: TÃ¼m 2FA ayarlarÄ±nÄ±z silinecek!\n\n' +
-    'Bu iÅŸlem:\n' +
-    'â€¢ TÃ¼m factor\'leri siler\n' +
-    'â€¢ 2FA\'yÄ± tamamen devre dÄ±ÅŸÄ± bÄ±rakÄ±r\n' +
-    'â€¢ SayfayÄ± yeniler\n\n' +
+    '⚠️ UYARI: Tüm 2FA ayarlarınız silinecek!\n\n' +
+    'Bu işlem:\n' +
+    '• Tüm factor\'leri siler\n' +
+    '• 2FA\'yı tamamen devre dışı bırakır\n' +
+    '• Sayfayı yeniler\n\n' +
     'Devam etmek istiyor musunuz?'
   );
   
@@ -647,15 +723,15 @@ const handleForceCleanFactors = async () => {
 
   setSaving(true);
   try {
-    console.log('ðŸ”¥ FORCE CLEANING ALL FACTORS...');
+    console.log('🔥 FORCE CLEANING ALL FACTORS...');
     
     // List all factors
     const { data: factors } = await supabase.auth.mfa.listFactors();
     
-    console.log('ðŸ“‹ Total factors found:', factors?.all?.length || 0);
+    console.log('📋 Total factors found:', factors?.all?.length || 0);
 
     if (factors && factors.all) {
-      console.log('ðŸ—‘ï¸ Deleting factors:', factors.all.map((f: any) => ({
+      console.log('🗑️ Deleting factors:', factors.all.map((f: any) => ({
         id: f.id,
         name: f.friendly_name,
         type: f.factor_type,
@@ -666,9 +742,9 @@ const handleForceCleanFactors = async () => {
       for (const factor of factors.all) {
         try {
           await supabase.auth.mfa.unenroll({ factorId: factor.id });
-          console.log('âœ… Deleted:', factor.id);
+          console.log('✅ Deleted:', factor.id);
         } catch (err) {
-          console.error('âŒ Failed to delete:', factor.id, err);
+          console.error('❌ Failed to delete:', factor.id, err);
         }
       }
     }
@@ -682,7 +758,7 @@ const handleForceCleanFactors = async () => {
       })
       .eq('id', user.id);
 
-    toast.success('âœ… TÃ¼m 2FA ayarlarÄ± temizlendi', {
+    toast.success('✅ Tüm 2FA ayarları temizlendi', {
       description: 'Sayfa yenileniyor...',
     });
 
@@ -691,8 +767,8 @@ const handleForceCleanFactors = async () => {
       window.location.reload();
     }, 1500);
   } catch (err: any) {
-    console.error('âŒ Force clean error:', err);
-    toast.error('âŒ Temizleme baÅŸarÄ±sÄ±z', {
+    console.error('❌ Force clean error:', err);
+    toast.error('❌ Temizleme başarısız', {
       description: err.message,
     });
   } finally {
@@ -700,19 +776,19 @@ const handleForceCleanFactors = async () => {
   }
 };
 
-  // âœ… SAVE NOTIFICATIONS
+  // ✅ SAVE NOTIFICATIONS
   const handleSaveNotifications = () => {
     localStorage.setItem("userNotifications", JSON.stringify(notifications));
-    toast.success("âœ… Bildirim tercihleri kaydedildi");
+    toast.success("✅ Bildirim tercihleri kaydedildi");
   };
 
-  // âœ… LOGOUT
+  // ✅ LOGOUT
   const handleLogout = async () => {
     await signOut();
     navigate("/auth");
   };
 
-  // âœ… DOWNLOAD DATA
+  // ✅ DOWNLOAD DATA
   const handleDownloadData = () => {
     const data = {
       profile: profileData,
@@ -730,20 +806,20 @@ const handleForceCleanFactors = async () => {
     linkElement.setAttribute("download", exportFileDefaultName);
     linkElement.click();
 
-    toast.success("âœ… Veriler indirildi", {
-      description: "JSON dosyasÄ± bilgisayarÄ±nÄ±za kaydedildi",
+    toast.success("✅ Veriler indirildi", {
+      description: "JSON dosyası bilgisayarınıza kaydedildi",
     });
   };
 
-  // âœ… DELETE ACCOUNT
+  // ✅ DELETE ACCOUNT
   const handleDeleteAccount = () => {
     if (
       confirm(
-        "âš ï¸ HesabÄ±nÄ±zÄ± kalÄ±cÄ± olarak silmek istediÄŸinizden emin misiniz?\n\nBu iÅŸlem GERÄ° ALINAMAZ!"
+        "⚠️ Hesabınızı kalıcı olarak silmek istediğinizden emin misiniz?\n\nBu işlem GERİ ALINAMAZ!"
       )
     ) {
-      toast.error("ðŸ—‘ï¸ Hesap silme talebi alÄ±ndÄ±", {
-        description: "Destek ekibimiz en kÄ±sa sÃ¼rede sizinle iletiÅŸime geÃ§ecek",
+      toast.error("🗑️ Hesap silme talebi alındı", {
+        description: "Destek ekibimiz en kısa sürede sizinle iletişime geçecek",
         duration: 8000,
       });
     }
@@ -751,7 +827,7 @@ const handleForceCleanFactors = async () => {
 
   const tabs = [
     { id: "general" as const, label: "Genel", icon: <SettingsIcon className="h-4 w-4" /> },
-    { id: "security" as const, label: "GÃ¼venlik", icon: <Shield className="h-4 w-4" /> },
+    { id: "security" as const, label: "Güvenlik", icon: <Shield className="h-4 w-4" /> },
     { id: "billing" as const, label: "Faturalama", icon: <CreditCard className="h-4 w-4" /> },
     { id: "notifications" as const, label: "Bildirimler", icon: <Bell className="h-4 w-4" /> },
   ];
@@ -799,7 +875,7 @@ const handleForceCleanFactors = async () => {
   return (
     <>
       <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 p-6 space-y-6">
-        {/* âœ… HEADER */}
+        {/* ✅ HEADER */}
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold text-foreground flex items-center gap-3">
@@ -807,15 +883,15 @@ const handleForceCleanFactors = async () => {
               Ayarlar
             </h1>
             <p className="text-muted-foreground mt-1">
-              Hesap, gÃ¼venlik ve tercihlerinizi yÃ¶netin
+              Hesap, güvenlik ve tercihlerinizi yönetin
             </p>
           </div>
           <Button variant="outline" onClick={() => navigate("/profile")}>
-            Geri DÃ¶n
+            Geri Dön
           </Button>
         </div>
 
-        {/* âœ… SUBSCRIPTION STATUS BANNER */}
+        {/* ✅ SUBSCRIPTION STATUS BANNER */}
         {status === 'trial' && !isTrialExpired && (
           <Card className="border-l-4 border-l-yellow-500 bg-yellow-500/10">
             <CardContent className="p-4 flex items-center justify-between">
@@ -823,10 +899,10 @@ const handleForceCleanFactors = async () => {
                 <Clock className="h-5 w-5 text-yellow-500" />
                 <div>
                   <p className="font-semibold text-foreground">
-                    Deneme SÃ¼rÃ¼mÃ¼ Aktif
+                    Deneme Sürümü Aktif
                   </p>
                   <p className="text-sm text-muted-foreground">
-                    {daysLeftInTrial} gÃ¼n kaldÄ± Â· TÃ¼m premium Ã¶zellikler aÃ§Ä±k
+                    {daysLeftInTrial} gün kaldı · Tüm premium özellikler açık
                   </p>
                 </div>
               </div>
@@ -835,7 +911,7 @@ const handleForceCleanFactors = async () => {
                 className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
               >
                 <Crown className="h-4 w-4 mr-2" />
-                YÃ¼kselt
+                Yükselt
               </Button>
             </CardContent>
           </Card>
@@ -848,10 +924,10 @@ const handleForceCleanFactors = async () => {
                 <AlertCircle className="h-5 w-5 text-red-500" />
                 <div>
                   <p className="font-semibold text-foreground">
-                    Deneme SÃ¼resi Sona Erdi
+                    Deneme Süresi Sona Erdi
                   </p>
                   <p className="text-sm text-muted-foreground">
-                    Devam etmek iÃ§in bir paket seÃ§in
+                    Devam etmek için bir paket seçin
                   </p>
                 </div>
               </div>
@@ -859,7 +935,7 @@ const handleForceCleanFactors = async () => {
                 onClick={() => setShowUpgradeModal(true)}
                 className="bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-700 hover:to-orange-700"
               >
-                Paketi SeÃ§
+                Paketi Seç
               </Button>
             </CardContent>
           </Card>
@@ -872,10 +948,10 @@ const handleForceCleanFactors = async () => {
                 <CheckCircle className="h-5 w-5 text-green-500" />
                 <div>
                   <p className="font-semibold text-foreground">
-                    Premium Ãœyelik Aktif
+                    Premium Üyelik Aktif
                   </p>
                   <p className="text-sm text-muted-foreground">
-                    TÃ¼m Ã¶zelliklere sÄ±nÄ±rsÄ±z eriÅŸim
+                    Tüm özelliklere sınırsız erişim
                   </p>
                 </div>
               </div>
@@ -887,7 +963,7 @@ const handleForceCleanFactors = async () => {
           </Card>
         )}
 
-        {/* âœ… TABS */}
+        {/* ✅ TABS */}
         <Card>
           <CardContent className="p-4">
             <div className="flex gap-2 border-b border-border pb-3 overflow-x-auto">
@@ -907,14 +983,14 @@ const handleForceCleanFactors = async () => {
               ))}
             </div>
 
-            {/* âœ… TAB CONTENT */}
+            {/* ✅ TAB CONTENT */}
             <div className="mt-6">
               {/* GENERAL TAB */}
               {currentTab === "general" && (
                 <div className="space-y-6">
                   {/* Profile Section */}
                   <div>
-                    <h2 className="text-lg font-bold mb-4">ðŸ‘¤ Profil Bilgileri</h2>
+                    <h2 className="text-lg font-bold mb-4">👤 Profil Bilgileri</h2>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <Label>Ad Soyad *</Label>
@@ -947,7 +1023,7 @@ const handleForceCleanFactors = async () => {
                           onChange={(e) =>
                             setFormData({ ...formData, position: e.target.value })
                           }
-                          placeholder="Ä°SG UzmanÄ±"
+                          placeholder="İSG Uzmanı"
                         />
                       </div>
                       <div className="space-y-2 md:col-span-2">
@@ -957,7 +1033,7 @@ const handleForceCleanFactors = async () => {
                           onChange={(e) =>
                             setFormData({ ...formData, department: e.target.value })
                           }
-                          placeholder="Ä°SG DepartmanÄ±"
+                          placeholder="İSG Departmanı"
                         />
                       </div>
                     </div>
@@ -985,10 +1061,10 @@ const handleForceCleanFactors = async () => {
                     <>
                       <div className="h-px bg-border" />
                       <div>
-                        <h2 className="text-lg font-bold mb-4">ðŸ¢ Åžirket Bilgileri</h2>
+                        <h2 className="text-lg font-bold mb-4">🏢 Şirket Bilgileri</h2>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div className="space-y-2">
-                            <Label>Åžirket AdÄ±</Label>
+                            <Label>Şirket Adı</Label>
                             <Input
                               value={orgFormData.name}
                               onChange={(e) =>
@@ -997,7 +1073,7 @@ const handleForceCleanFactors = async () => {
                             />
                           </div>
                           <div className="space-y-2">
-                            <Label>SektÃ¶r</Label>
+                            <Label>Sektör</Label>
                             <Input
                               value={orgFormData.industry}
                               onChange={(e) =>
@@ -1006,7 +1082,7 @@ const handleForceCleanFactors = async () => {
                             />
                           </div>
                           <div className="space-y-2">
-                            <Label>Åžehir</Label>
+                            <Label>Şehir</Label>
                             <Input
                               value={orgFormData.city}
                               onChange={(e) =>
@@ -1046,7 +1122,7 @@ const handleForceCleanFactors = async () => {
                           ) : (
                             <>
                               <Save className="h-4 w-4 mr-2" />
-                              Åžirket Bilgilerini Kaydet
+                              Şirket Bilgilerini Kaydet
                             </>
                           )}
                         </Button>
@@ -1061,7 +1137,7 @@ const handleForceCleanFactors = async () => {
                 <div className="space-y-6">
                   {/* Change Password */}
                   <div>
-                    <h2 className="text-lg font-bold mb-4">ðŸ” Parola DeÄŸiÅŸtir</h2>
+                    <h2 className="text-lg font-bold mb-4">🔐 Parola Değiştir</h2>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <Label>Yeni Parola</Label>
@@ -1085,7 +1161,7 @@ const handleForceCleanFactors = async () => {
                         </div>
                       </div>
                       <div className="space-y-2">
-                        <Label>ParolayÄ± Onayla</Label>
+                        <Label>Parolayı Onayla</Label>
                         <Input
                           type="password"
                           value={confirmPassword}
@@ -1102,26 +1178,26 @@ const handleForceCleanFactors = async () => {
                       {saving ? (
                         <>
                           <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                          GÃ¼ncelleniyor...
+                          Güncelleniyor...
                         </>
                       ) : (
                         <>
                           <Lock className="h-4 w-4 mr-2" />
-                          ParolayÄ± GÃ¼ncelle
+                          Parolayı Güncelle
                         </>
                       )}
                     </Button>
                   </div>
                   <div>
-                    <h2 className="text-lg font-bold mb-4">ðŸ’š GÃ¼venilir Cihazlar</h2>
+                    <h2 className="text-lg font-bold mb-4">💚 Güvenilir Cihazlar</h2>
                     <p className="text-sm text-muted-foreground mb-4">
-                      Bu cihazlardan giriÅŸ yaparken 2FA kodu sorulmaz
+                      Bu cihazlardan giriş yaparken 2FA kodu sorulmaz
                     </p>
 
                     <div className="space-y-3">
                       {trustedDevices.length === 0 ? (
                         <p className="text-sm text-muted-foreground text-center py-8">
-                          HenÃ¼z gÃ¼venilir cihaz yok
+                          Henüz güvenilir cihaz yok
                         </p>
                       ) : (
                         trustedDevices.map((device) => (
@@ -1132,11 +1208,11 @@ const handleForceCleanFactors = async () => {
                                 <div>
                                   <p className="font-semibold">{device.device_name}</p>
                                   <p className="text-xs text-muted-foreground">
-                                    {device.ip_address} Â· Son kullanÄ±m:{" "}
+                                    {device.ip_address} · Son kullanım:{" "}
                                     {new Date(device.last_used_at).toLocaleString("tr-TR")}
                                   </p>
                                   <p className="text-xs text-green-500 mt-1">
-                                    âœ“ GÃ¼venilir Â· SÃ¼resi:{" "}
+                                    ✓ Güvenilir · Süresi:{" "}
                                     {new Date(device.expires_at).toLocaleDateString("tr-TR")}
                                   </p>
                                 </div>
@@ -1145,11 +1221,11 @@ const handleForceCleanFactors = async () => {
                                 variant="ghost"
                                 size="sm"
                                 onClick={async () => {
-                                  if (confirm("Bu cihazÄ± gÃ¼venilir listesinden Ã§Ä±kar?")) {
+                                  if (confirm("Bu cihazı güvenilir listesinden çıkar?")) {
                                     const success = await untrustDevice(device.id);
                                     if (success) {
                                       setTrustedDevices((prev) => prev.filter((d) => d.id !== device.id));
-                                      toast.success("âœ… Cihaz kaldÄ±rÄ±ldÄ±");
+                                      toast.success("✅ Cihaz kaldırıldı");
                                     }
                                   }
                                 }}
@@ -1168,7 +1244,7 @@ const handleForceCleanFactors = async () => {
 
                   {/* 2FA */}
                   <div>
-                    <h2 className="text-lg font-bold mb-4">ðŸ“± Ä°ki FaktÃ¶rlÃ¼ DoÄŸrulama</h2>
+                    <h2 className="text-lg font-bold mb-4">📱 İki Faktörlü Doğrulama</h2>
                     
                     <Card className="border-l-4 border-l-purple-500">
                       <CardContent className="p-6">
@@ -1181,8 +1257,8 @@ const handleForceCleanFactors = async () => {
                               </p>
                             </div>
                             <p className="text-sm text-muted-foreground mb-3">
-                              HesabÄ±nÄ±zÄ± ekstra bir gÃ¼venlik katmanÄ± ile koruyun. 
-                              GiriÅŸ yaparken Google Authenticator'dan alacaÄŸÄ±nÄ±z 6 haneli kodu girmeniz gerekecek.
+                              Hesabınızı ekstra bir güvenlik katmanı ile koruyun. 
+                              Giriş yaparken Google Authenticator'dan alacağınız 6 haneli kodu girmeniz gerekecek.
                             </p>
                             
                             {/* Status Badge */}
@@ -1192,12 +1268,12 @@ const handleForceCleanFactors = async () => {
                                 variant="outline"
                                 size="sm"
                                 onClick={() => {
-                                  toast.info('Yedek kodlar Ã¶zelliÄŸi yakÄ±nda eklenecek');
+                                  toast.info('Yedek kodlar özelliği yakında eklenecek');
                                 }}
                                 className="text-blue-500 border-blue-500/30 hover:bg-blue-500/10"
                               >
                                 <Download className="h-4 w-4 mr-2" />
-                                Yedek KodlarÄ± Ä°ndir
+                                Yedek Kodları İndir
                               </Button>
                               <Button
                                 variant="outline"
@@ -1207,7 +1283,7 @@ const handleForceCleanFactors = async () => {
                                 className="text-red-500 border-red-500/30 hover:bg-red-500/10"
                               >
                                 <Trash2 className="h-4 w-4 mr-2" />
-                                2FA'yÄ± SÄ±fÄ±rla
+                                2FA'yı Sıfırla
                               </Button>
                             </div>
                             ) : (
@@ -1215,11 +1291,11 @@ const handleForceCleanFactors = async () => {
                                 <div className="flex items-center gap-2 px-3 py-1.5 bg-yellow-500/20 border border-yellow-500/30 rounded-lg">
                                   <AlertCircle className="h-4 w-4 text-yellow-500" />
                                   <span className="text-sm font-semibold text-yellow-600">
-                                    2FA KapalÄ±
+                                    2FA Kapalı
                                   </span>
                                 </div>
                                 <p className="text-xs text-muted-foreground">
-                                  HesabÄ±nÄ±z risk altÄ±nda olabilir
+                                  Hesabınız risk altında olabilir
                                 </p>
                               </div>
                             )}
@@ -1234,7 +1310,7 @@ const handleForceCleanFactors = async () => {
                               className="data-[state=checked]:bg-green-500"
                             />
                             <span className="text-xs text-muted-foreground">
-                              {twoFactorEnabled ? 'AÃ§Ä±k' : 'KapalÄ±'}
+                              {twoFactorEnabled ? 'Açık' : 'Kapalı'}
                             </span>
                           </div>
                         </div>
@@ -1250,12 +1326,12 @@ const handleForceCleanFactors = async () => {
                               </div>
                               <div className="flex-1">
                                 <p className="text-sm font-semibold text-foreground mb-1">
-                                  Neden 2FA kullanmalÄ±sÄ±nÄ±z?
+                                  Neden 2FA kullanmalısınız?
                                 </p>
                                 <ul className="text-xs text-muted-foreground space-y-1">
-                                  <li>â€¢ HesabÄ±nÄ±z Ã§alÄ±nsa bile gÃ¼vende kalÄ±rsÄ±nÄ±z</li>
-                                  <li>â€¢ Åžifreniz ele geÃ§se bile giriÅŸ yapÄ±lamaz</li>
-                                  <li>â€¢ Google Authenticator tamamen Ã¼cretsizdir</li>
+                                  <li>• Hesabınız çalınsa bile güvende kalırsınız</li>
+                                  <li>• Şifreniz ele geçse bile giriş yapılamaz</li>
+                                  <li>• Google Authenticator tamamen ücretsizdir</li>
                                 </ul>
                               </div>
                             </div>
@@ -1270,12 +1346,12 @@ const handleForceCleanFactors = async () => {
                               size="sm"
                               onClick={() => {
                                 // Show backup codes modal
-                                toast.info('Yedek kodlar Ã¶zelliÄŸi yakÄ±nda eklenecek');
+                                toast.info('Yedek kodlar özelliği yakında eklenecek');
                               }}
                               className="text-blue-500 border-blue-500/30 hover:bg-blue-500/10"
                             >
                               <Download className="h-4 w-4 mr-2" />
-                              Yedek KodlarÄ± Ä°ndir
+                              Yedek Kodları İndir
                             </Button>
                             <Button
                               variant="outline"
@@ -1301,14 +1377,14 @@ const handleForceCleanFactors = async () => {
                       <Card className="mt-4 bg-gradient-to-br from-purple-500/5 to-blue-500/5">
                         <CardContent className="p-4">
                           <p className="text-sm font-semibold mb-3 flex items-center gap-2">
-                            <span>ðŸ“±</span>
+                            <span>📱</span>
                             Google Authenticator Kurulumu
                           </p>
                           <div className="space-y-2 text-xs text-muted-foreground">
                             <div className="flex gap-2">
                               <span className="font-bold text-purple-500">1.</span>
                               <p>
-                                Google Authenticator uygulamasÄ±nÄ± telefonunuza indirin 
+                                Google Authenticator uygulamasını telefonunuza indirin 
                                 <a 
                                   href="https://play.google.com/store/apps/details?id=com.google.android.apps.authenticator2" 
                                   target="_blank"
@@ -1329,15 +1405,15 @@ const handleForceCleanFactors = async () => {
                             </div>
                             <div className="flex gap-2">
                               <span className="font-bold text-purple-500">2.</span>
-                              <p>YukarÄ±daki switch'i aÃ§Ä±n ve QR kodu tarayÄ±n</p>
+                              <p>Yukarıdaki switch'i açın ve QR kodu tarayın</p>
                             </div>
                             <div className="flex gap-2">
                               <span className="font-bold text-purple-500">3.</span>
-                              <p>Uygulamadan aldÄ±ÄŸÄ±nÄ±z 6 haneli kodu girin</p>
+                              <p>Uygulamadan aldığınız 6 haneli kodu girin</p>
                             </div>
                             <div className="flex gap-2">
                               <span className="font-bold text-purple-500">4.</span>
-                              <p>TamamlandÄ±! ArtÄ±k giriÅŸ yaparken kod istenecek</p>
+                              <p>Tamamlandı! Artık giriş yaparken kod istenecek</p>
                             </div>
                           </div>
                         </CardContent>
@@ -1349,7 +1425,7 @@ const handleForceCleanFactors = async () => {
                   {/* Active Sessions */}
                   <div>
                     <div className="flex items-center justify-between mb-4">
-                      <h2 className="text-lg font-bold">ðŸ”— Aktif Oturumlar</h2>
+                      <h2 className="text-lg font-bold">🔗 Aktif Oturumlar</h2>
                       <Button
                         variant="outline"
                         size="sm"
@@ -1357,12 +1433,12 @@ const handleForceCleanFactors = async () => {
                           const nonCurrentSessions = sessions.filter((s) => !s.is_current);
                           
                           if (nonCurrentSessions.length === 0) {
-                            toast.info('KapatÄ±lacak baÅŸka oturum yok');
+                            toast.info('Kapatılacak başka oturum yok');
                             return;
                           }
 
                           const confirmed = confirm(
-                            `${nonCurrentSessions.length} oturum kapatÄ±lacak. Devam edilsin mi?`
+                            `${nonCurrentSessions.length} oturum kapatılacak. Devam edilsin mi?`
                           );
 
                           if (!confirmed) return;
@@ -1378,9 +1454,9 @@ const handleForceCleanFactors = async () => {
                           setSessions((prev) => prev.filter((s) => s.is_current));
 
                           toast.success(
-                            `âœ… ${successCount} oturum kapatÄ±ldÄ±`,
+                            `✅ ${successCount} oturum kapatıldı`,
                             {
-                              description: `${nonCurrentSessions.length - successCount} oturum kapatÄ±lamadÄ±`,
+                              description: `${nonCurrentSessions.length - successCount} oturum kapatılamadı`,
                             }
                           );
 
@@ -1391,14 +1467,14 @@ const handleForceCleanFactors = async () => {
                         className="text-destructive"
                       >
                         <LogOut className="h-4 w-4 mr-2" />
-                        DiÄŸerlerini Kapat ({sessions.filter((s) => !s.is_current).length})
+                        Diğerlerini Kapat ({sessions.filter((s) => !s.is_current).length})
                       </Button>
                     </div>
 
                     <div className="space-y-3">
                       {sessions.length === 0 ? (
                         <p className="text-sm text-muted-foreground text-center py-8">
-                          Aktif oturum bulunamadÄ±
+                          Aktif oturum bulunamadı
                         </p>
                       ) : (
                         sessions.map((session) => (
@@ -1416,7 +1492,7 @@ const handleForceCleanFactors = async () => {
                                     )}
                                   </div>
                                   <p className="text-xs text-muted-foreground">
-                                    {session.ip_address} Â·{" "}
+                                    {session.ip_address} ·{" "}
                                     {new Date(session.last_activity).toLocaleString("tr-TR")}
                                   </p>
                                 </div>
@@ -1449,17 +1525,17 @@ const handleForceCleanFactors = async () => {
                       <div className="flex items-center justify-between">
                         <div>
                           <p className="text-lg font-bold">
-                            {plan === 'expert' ? 'Uzman Paketi' : 'Ãœcretsiz Paket'}
+                            {plan === 'expert' ? 'Uzman Paketi' : 'Ücretsiz Paket'}
                           </p>
                           <p className="text-sm text-muted-foreground mt-1">
                             {status === 'trial'
-                              ? `Deneme sÃ¼rÃ¼mÃ¼ Â· ${daysLeftInTrial} gÃ¼n kaldÄ±`
+                              ? `Deneme sürümü · ${daysLeftInTrial} gün kaldı`
                               : status === 'premium'
-                              ? 'Premium Ã¼yelik aktif'
-                              : 'Temel Ã¶zellikler'}
+                              ? 'Premium üyelik aktif'
+                              : 'Temel özellikler'}
                           </p>
                           {plan === 'expert' && (
-                            <p className="text-2xl font-bold mt-2">â‚º499.99/ay</p>
+                            <p className="text-2xl font-bold mt-2">₺499.99/ay</p>
                           )}
                         </div>
                         <Button
@@ -1467,7 +1543,7 @@ const handleForceCleanFactors = async () => {
                           className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
                         >
                           <Crown className="h-4 w-4 mr-2" />
-                          {plan === 'expert' ? 'PlanÄ± YÃ¶net' : 'YÃ¼kselt'}
+                          {plan === 'expert' ? 'Planı Yönet' : 'Yükselt'}
                         </Button>
                       </div>
                     </CardContent>
@@ -1475,14 +1551,14 @@ const handleForceCleanFactors = async () => {
 
                   {/* Billing History */}
                   <div>
-                    <h2 className="text-lg font-bold mb-4">ðŸ“‹ Fatura GeÃ§miÅŸi</h2>
+                    <h2 className="text-lg font-bold mb-4">📋 Fatura Geçmişi</h2>
                     <div className="space-y-3">
                       {billingHistory.length === 0 ? (
                         <Card>
                           <CardContent className="p-8 text-center">
                             <CreditCard className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
                             <p className="text-sm text-muted-foreground">
-                              HenÃ¼z fatura geÃ§miÅŸiniz yok
+                              Henüz fatura geçmişiniz yok
                             </p>
                           </CardContent>
                         </Card>
@@ -1493,7 +1569,7 @@ const handleForceCleanFactors = async () => {
                               <div>
                                 <p className="font-semibold">{bill.plan_name}</p>
                                 <p className="text-sm text-muted-foreground">
-                                  {new Date(bill.billing_date).toLocaleDateString("tr-TR")} Â·{" "}
+                                  {new Date(bill.billing_date).toLocaleDateString("tr-TR")} ·{" "}
                                   {bill.currency} {bill.amount}
                                 </p>
                               </div>
@@ -1503,7 +1579,7 @@ const handleForceCleanFactors = async () => {
                                     bill.status === "paid" ? "default" : "secondary"
                                   }
                                 >
-                                  {bill.status === "paid" ? "Ã–dendi" : "Bekliyor"}
+                                  {bill.status === "paid" ? "Ödendi" : "Bekliyor"}
                                 </Badge>
                                 {bill.invoice_url && (
                                   <Button variant="ghost" size="sm">
@@ -1523,25 +1599,25 @@ const handleForceCleanFactors = async () => {
               {/* NOTIFICATIONS TAB */}
               {currentTab === "notifications" && (
                 <div className="space-y-4">
-                  <h2 className="text-lg font-bold mb-4">ðŸ”” Bildirim Tercihleri</h2>
+                  <h2 className="text-lg font-bold mb-4">🔔 Bildirim Tercihleri</h2>
                   {Object.entries(notifications).map(([key, value]) => (
                     <Card key={key}>
                       <CardContent className="p-4 flex items-center justify-between">
                         <div>
                           <p className="font-semibold">
-                            {key === "emailNotifications" && "ðŸ“§ E-posta Bildirimleri"}
-                            {key === "capaAlerts" && "âš ï¸ CAPA UyarÄ±larÄ±"}
-                            {key === "riskAlerts" && "ðŸ”´ Risk UyarÄ±larÄ±"}
-                            {key === "weeklyReport" && "ðŸ“Š HaftalÄ±k Rapor"}
-                            {key === "systemUpdates" && "ðŸ”„ Sistem GÃ¼ncellemeleri"}
+                            {key === "emailNotifications" && "📧 E-posta Bildirimleri"}
+                            {key === "capaAlerts" && "⚠️ CAPA Uyarıları"}
+                            {key === "riskAlerts" && "🔴 Risk Uyarıları"}
+                            {key === "weeklyReport" && "📊 Haftalık Rapor"}
+                            {key === "systemUpdates" && "🔄 Sistem Güncellemeleri"}
                           </p>
                           <p className="text-xs text-muted-foreground">
                             {key === "emailNotifications" &&
-                              "Yeni denetim raporlarÄ± iÃ§in"}
-                            {key === "capaAlerts" && "YÃ¼ksek riskli bulgular iÃ§in"}
-                            {key === "riskAlerts" && "Kritik risk tespitleri iÃ§in"}
-                            {key === "weeklyReport" && "HaftalÄ±k Ã¶zet raporu"}
-                            {key === "systemUpdates" && "Uygulama gÃ¼ncellemeleri"}
+                              "Yeni denetim raporları için"}
+                            {key === "capaAlerts" && "Yüksek riskli bulgular için"}
+                            {key === "riskAlerts" && "Kritik risk tespitleri için"}
+                            {key === "weeklyReport" && "Haftalık özet raporu"}
+                            {key === "systemUpdates" && "Uygulama güncellemeleri"}
                           </p>
                         </div>
                         <Switch
@@ -1569,10 +1645,10 @@ const handleForceCleanFactors = async () => {
           </CardContent>
         </Card>
 
-        {/* âœ… DANGER ZONE */}
+        {/* ✅ DANGER ZONE */}
         <Card className="border-l-4 border-l-destructive">
           <CardHeader>
-            <CardTitle className="text-destructive">âš ï¸ Tehlikeli Ä°ÅŸlemler</CardTitle>
+            <CardTitle className="text-destructive">⚠️ Tehlikeli İşlemler</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1582,7 +1658,7 @@ const handleForceCleanFactors = async () => {
                 className="justify-start"
               >
                 <Download className="h-4 w-4 mr-2" />
-                Verilerinizi Ä°ndir
+                Verilerinizi İndir
               </Button>
               <Button
                 onClick={handleDeleteAccount}
@@ -1590,7 +1666,7 @@ const handleForceCleanFactors = async () => {
                 className="justify-start text-destructive border-destructive hover:bg-destructive/10"
               >
                 <Trash2 className="h-4 w-4 mr-2" />
-                HesabÄ± Sil
+                Hesabı Sil
               </Button>
             </div>
           </CardContent>
@@ -1599,7 +1675,7 @@ const handleForceCleanFactors = async () => {
         {/* Footer */}
         <div className="flex justify-end gap-3">
           <Button variant="outline" onClick={() => navigate("/profile")}>
-            Geri DÃ¶n
+            Geri Dön
           </Button>
           <Button
             variant="ghost"
@@ -1607,31 +1683,31 @@ const handleForceCleanFactors = async () => {
             className="text-destructive hover:bg-destructive/10"
           >
             <LogOut className="h-4 w-4 mr-2" />
-            Ã‡Ä±kÄ±ÅŸ Yap
+            Çıkış Yap
           </Button>
         </div>
       </div>
 
-      {/* âœ… UPGRADE MODAL */}
-        {/* âœ… UPGRADE MODAL */}
+      {/* ✅ UPGRADE MODAL */}
+        {/* ✅ UPGRADE MODAL */}
     <UpgradeModal
       open={showUpgradeModal}
       onOpenChange={setShowUpgradeModal}
       triggeredBy="manual"
     />
-   {/* âœ… 2FA SETUP MODAL */}
+   {/* ✅ 2FA SETUP MODAL */}
     {qrCodeData && show2FASetupModal && currentFactorId && (
       <TwoFactorSetupModal
         open={show2FASetupModal}
         onOpenChange={setShow2FASetupModal}
-        factorId={currentFactorId} // âœ… YENÄ° PROP
+        factorId={currentFactorId} // ✅ YENİ PROP
         qrCodeUri={qrCodeData.uri}
         secret={qrCodeData.secret}
         onSuccess={() => {
-          console.log('âœ… 2FA verification successful');
+          console.log('✅ 2FA verification successful');
           setTwoFactorEnabled(true);
           setQRCodeData(null);
-          setCurrentFactorId(null); // âœ… Temizle
+          setCurrentFactorId(null); // ✅ Temizle
           fetchSettingsData();
         }}
       />
@@ -1639,3 +1715,4 @@ const handleForceCleanFactors = async () => {
     </>
   );
 }
+

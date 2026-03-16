@@ -78,6 +78,9 @@ interface StatCard {
   trend?: string;
 }
 
+const getInspectionsCacheKey = (userId: string) =>
+  `denetron:inspections:${userId}`;
+
 const statusFilters = ["all", "completed", "in_progress", "draft", "cancelled"] as const;
 
 const statusConfig = {
@@ -127,12 +130,24 @@ export default function Inspections() {
   }, [location.state]);
 
   useEffect(() => {
-    fetchInspections();
+    if (!user) return;
+    const cached = sessionStorage.getItem(getInspectionsCacheKey(user.id));
+    if (cached) {
+      try {
+        setInspections(JSON.parse(cached) as Inspection[]);
+        setLoading(false);
+      } catch {
+        sessionStorage.removeItem(getInspectionsCacheKey(user.id));
+      }
+    }
+    void fetchInspections(Boolean(cached));
   }, [user]);
 
-  const fetchInspections = async () => {
+  const fetchInspections = async (silent = false) => {
     if (!user) return;
-    setLoading(true);
+    if (!silent) {
+      setLoading(true);
+    }
     try {
       const { data, error } = await supabase
         .from("inspections")
@@ -142,6 +157,10 @@ export default function Inspections() {
 
       if (error) throw error;
       setInspections((data as Inspection[]) || []);
+      sessionStorage.setItem(
+        getInspectionsCacheKey(user.id),
+        JSON.stringify((data as Inspection[]) || [])
+      );
     } catch (error: any) {
       toast.error("Denetimler yüklenirken hata oluştu");
       console.error(error);

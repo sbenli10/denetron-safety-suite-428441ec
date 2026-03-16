@@ -59,6 +59,9 @@ interface BoardMeetingListItem {
   agenda_count?: number;
 }
 
+const getBoardMeetingsCacheKey = (userId: string) =>
+  `denetron:board-meetings:${userId}`;
+
 export default function BoardMeetings() {
   const navigate = useNavigate();
   const { user } = useAuth();
@@ -70,14 +73,25 @@ export default function BoardMeetings() {
 
   useEffect(() => {
     if (user) {
-      void fetchMeetings();
+      const cached = sessionStorage.getItem(getBoardMeetingsCacheKey(user.id));
+      if (cached) {
+        try {
+          setMeetings(JSON.parse(cached) as BoardMeetingListItem[]);
+          setLoading(false);
+        } catch {
+          sessionStorage.removeItem(getBoardMeetingsCacheKey(user.id));
+        }
+      }
+      void fetchMeetings(Boolean(cached));
     }
   }, [user]);
 
-  const fetchMeetings = async () => {
+  const fetchMeetings = async (silent = false) => {
     if (!user) return;
 
-    setLoading(true);
+    if (!silent) {
+      setLoading(true);
+    }
     try {
       console.log("Board meetings loading...");
 
@@ -114,6 +128,10 @@ export default function BoardMeetings() {
 
       console.log("Board meetings loaded:", meetingsWithCounts);
       setMeetings(meetingsWithCounts as BoardMeetingListItem[]);
+      sessionStorage.setItem(
+        getBoardMeetingsCacheKey(user.id),
+        JSON.stringify(meetingsWithCounts)
+      );
     } catch (error: any) {
       console.error("Board meetings load error:", error);
       toast.error("Toplant\u0131lar y\u00fcklenemedi");

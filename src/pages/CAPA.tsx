@@ -56,8 +56,8 @@ interface CAPARecord {
   status: CAPAStatus;
   priority: "Düşük" | "Orta" | "Yüksek" | "Kritik";
   notes?: string;
-  media_urls?: string[]; // ✅ YENİ
-  source?: string; // ✅ YENİ (kaynak bilgisi)
+  media_urls?: string[];
+  source?: string;
   created_at: string;
   updated_at: string;
 }
@@ -74,6 +74,8 @@ const priorityConfig: Record<string, { color: string; icon: string }> = {
   "Orta": { color: "bg-yellow-500/10 text-yellow-600", icon: "🟡" },
   "Düşük": { color: "bg-success/10 text-success", icon: "🟢" },
 };
+
+const getCapaCacheKey = (userId: string) => `denetron:capa:${userId}`;
 
 export default function CAPA() {
   const { user } = useAuth();
@@ -97,12 +99,20 @@ export default function CAPA() {
   const [priority, setPriority] = useState<"Düşük" | "Orta" | "Yüksek" | "Kritik">("Orta");
   const [notes, setNotes] = useState("");
 
-  // ✅ Fetch records (hem capa_records hem findings)
   useEffect(() => {
-    fetchRecords();
+    if (!user) return;
+    const cached = sessionStorage.getItem(getCapaCacheKey(user.id));
+    if (cached) {
+      try {
+        setRecords(JSON.parse(cached) as CAPARecord[]);
+        setLoading(false);
+      } catch {
+        sessionStorage.removeItem(getCapaCacheKey(user.id));
+      }
+    }
+    void fetchRecords(Boolean(cached));
   }, [user]);
 
-  // ✅ AI Raporları'ndan gelen veriyi doldur
   useEffect(() => {
     if (location.state?.aiData) {
       const { description, plan, justification, risk } = location.state.aiData;
@@ -115,16 +125,18 @@ export default function CAPA() {
       else setPriority("Orta");
 
       setDialogOpen(true);
-      toast.success("📋 AI verisi DÖF formuna dolduruldu!");
+      toast.success("AI verisi DÖF formuna dolduruldu.");
     }
   }, [location.state]);
 
-  const fetchRecords = async () => {
+  const fetchRecords = async (silent = false) => {
     if (!user) return;
 
-    setLoading(true);
+    if (!silent) {
+      setLoading(true);
+    }
     try {
-      console.log("🔍 Fetching records for user:", user.id);
+      console.log("Fetching records for user:", user.id);
 
       // 1. Profile ve Organization ID bilgisini al
       const { data: profile } = await supabase
@@ -183,8 +195,8 @@ export default function CAPA() {
           org_id: profile?.organization_id || user.id,
           user_id: f.user_id || user.id,
           non_conformity: f.description,
-          root_cause: inspection?.risk_definition || "Bulk CAPA'dan otomatik oluşturuldu", // ✅ YENİ
-          corrective_action: inspection?.corrective_action || f.action_required || "Belirtilmemiş", // ✅ YENİ
+          root_cause: inspection?.risk_definition || "Bulk CAPA'dan otomatik oluşturuldu",
+          corrective_action: inspection?.corrective_action || f.action_required || "Belirtilmemiş",
           assigned_person: f.assigned_to || "Atanmamış",
           deadline: f.due_date || new Date().toISOString().split('T')[0],
           status: f.is_resolved ? "Tamamlandı" : "Açık" as CAPAStatus,
@@ -194,10 +206,10 @@ export default function CAPA() {
             f.priority === "medium" ? "Orta" : "Düşük"
           ) as "Düşük" | "Orta" | "Yüksek" | "Kritik",
           notes: [
-            `📍 Konum: ${inspection?.location_name || "Bilinmiyor"}`,
-            `📋 Kaynak: Toplu DÖF`,
-            `📷 Fotoğraf: ${inspection?.media_urls?.length || 0} adet`,
-            `🔧 Önleyici: ${inspection?.preventive_action?.substring(0, 100) || "Yok"}...`, // ✅ YENİ
+            `Konum: ${inspection?.location_name || "Bilinmiyor"}`,
+            `Kaynak: Toplu DÖF`,
+            `Fotoğraf: ${inspection?.media_urls?.length || 0} adet`,
+            `Önleyici: ${inspection?.preventive_action?.substring(0, 100) || "Yok"}...`,
             inspection?.notes || "",
             f.resolution_notes || ""
           ].filter(Boolean).join("\n"),
@@ -211,15 +223,16 @@ export default function CAPA() {
       // 4. İki farklı kaynaktan gelen verileri birleştir
       const allRecords = [...capaRecords, ...findingsAsCapa];
 
-      console.log(`✅ İşlem Tamamlandı: ${capaRecords.length} Standart, ${findingsAsCapa.length} Toplu DÖF yüklendi.`);
+      console.log(`İşlem tamamlandı: ${capaRecords.length} standart, ${findingsAsCapa.length} toplu DÖF yüklendi.`);
 
       setRecords(allRecords);
+      sessionStorage.setItem(getCapaCacheKey(user.id), JSON.stringify(allRecords));
       
       if (allRecords.length === 0) {
         toast.info("Henüz DÖF kaydı bulunamadı.");
       }
     } catch (error: any) {
-      console.error("💥 CAPA Yükleme Hatası:", error);
+      console.error("CAPA yükleme hatası:", error);
       toast.error(`Veriler çekilirken bir sorun oluştu: ${error.message}`);
     } finally {
       setLoading(false);
@@ -242,7 +255,7 @@ export default function CAPA() {
       const orgId = profile?.organization_id || user?.id;
 
       if (editingId) {
-        // ✅ UPDATE - Hangi tablodan geldiğini kontrol et
+        // UPDATE - Hangi tablodan geldiğini kontrol et
         const record = records.find(r => r.id === editingId);
         
         if (record?.source === "findings") {
@@ -280,9 +293,9 @@ export default function CAPA() {
           if (error) throw error;
         }
         
-        toast.success("✅ DÖF güncellendi");
+        toast.success("DÖF güncellendi");
       } else {
-        // ✅ CREATE - Sadece capa_records'a ekle
+        // CREATE - Sadece capa_records'a ekle
         const { error } = await supabase
           .from("capa_records")
           .insert({
@@ -299,7 +312,7 @@ export default function CAPA() {
           });
 
         if (error) throw error;
-        toast.success("✅ Yeni DÖF kaydı oluşturuldu");
+        toast.success("Yeni DÖF kaydı oluşturuldu");
       }
 
       // Reset form
@@ -357,10 +370,10 @@ export default function CAPA() {
       setRecords(records.filter((r) => r.id !== id));
       setDetailsOpen(false);
       setDetailRecord(null);
-      toast.success("✅ DÖF silindi");
+      toast.success("DÖF silindi");
     } catch (error: any) {
       console.error("Delete error:", error);
-      toast.error("❌ Silme işlemi başarısız");
+      toast.error("Silme işlemi başarısız");
     }
   };
 
@@ -390,7 +403,7 @@ export default function CAPA() {
       }
 
       setRecords(records.map((r) => (r.id === id ? { ...r, status } : r)));
-      toast.success(`✅ Durum güncellendi: ${status}`);
+      toast.success(`Durum güncellendi: ${status}`);
     } catch (error: any) {
       console.error("Update status error:", error);
       toast.error("Durum güncellenemedi");
@@ -407,10 +420,10 @@ export default function CAPA() {
 
   const stats = {
     total: records.length,
-    açık: records.filter((r) => r.status === "Açık").length,
+    acik: records.filter((r) => r.status === "Açık").length,
     devamEdiyor: records.filter((r) => r.status === "Devam Ediyor").length,
-    tamamlandı: records.filter((r) => r.status === "Tamamlandı").length,
-    gecmiş: records.filter((r) => r.status !== "Tamamlandı" && isPast(parseISO(r.deadline))).length,
+    tamamlandi: records.filter((r) => r.status === "Tamamlandı").length,
+    gecmis: records.filter((r) => r.status !== "Tamamlandı" && isPast(parseISO(r.deadline))).length,
   };
 
   return (
@@ -419,10 +432,10 @@ export default function CAPA() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-foreground flex items-center gap-2">
-            📋 DÖF Yönetim Sistemi
+            DÖF Yönetim Sistemi
           </h1>
           <p className="text-sm text-muted-foreground mt-2">
-            Düzeltici ve Önleyici Faaliyetler — Uygunsuzluk takibi, durum yönetimi
+            Düzeltici ve Önleyici Faaliyetler - Uygunsuzluk takibi ve durum yönetimi
           </p>
         </div>
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -480,7 +493,7 @@ export default function CAPA() {
                 />
               </div>
 
-              {/* DÜZELTICI FAALIYET */}
+              {/* DÜZELTİCİ FAALİYET */}
               <div className="space-y-2">
                 <Label className="text-sm font-semibold">Düzeltici Faaliyet Planı *</Label>
                 <Textarea
@@ -574,7 +587,7 @@ export default function CAPA() {
         </div>
         <div className="glass-card p-4 border border-destructive/30 bg-destructive/5 space-y-2">
           <p className="text-xs text-destructive">🔴 Açık</p>
-          <p className="text-2xl font-bold text-destructive">{stats.açık}</p>
+          <p className="text-2xl font-bold text-destructive">{stats.acik}</p>
         </div>
         <div className="glass-card p-4 border border-warning/30 bg-warning/5 space-y-2">
           <p className="text-xs text-warning">🟡 Devam Ediyor</p>
@@ -582,11 +595,11 @@ export default function CAPA() {
         </div>
         <div className="glass-card p-4 border border-success/30 bg-success/5 space-y-2">
           <p className="text-xs text-success">✅ Tamamlandı</p>
-          <p className="text-2xl font-bold text-success">{stats.tamamlandı}</p>
+          <p className="text-2xl font-bold text-success">{stats.tamamlandi}</p>
         </div>
         <div className="glass-card p-4 border border-red-500/30 bg-red-500/5 space-y-2">
-          <p className="text-xs text-red-600">⚠️ Gecikmiş</p>
-          <p className="text-2xl font-bold text-red-600">{stats.gecmiş}</p>
+          <p className="text-xs text-red-600">⏰ Gecikmiş</p>
+          <p className="text-2xl font-bold text-red-600">{stats.gecmis}</p>
         </div>
       </div>
 
@@ -673,7 +686,7 @@ export default function CAPA() {
                           </span>
                           {record.source === "findings" && (
                             <span className="text-[10px] px-2 py-0.5 rounded bg-purple-500/10 text-purple-600 border border-purple-500/20 w-fit">
-                              📋 Toplu DÖF
+                              Toplu DÖF
                             </span>
                           )}
                         </div>
@@ -690,7 +703,7 @@ export default function CAPA() {
                       </td>
                       <td className="px-4 py-3">{record.assigned_person}</td>
                       <td className={`px-4 py-3 ${isOverdue ? "text-red-600 font-bold" : ""}`}>
-                        {record.deadline} {isOverdue && "⚠️"}
+                        {record.deadline} {isOverdue && "⏰"}
                       </td>
                       <td className="px-4 py-3">
                         <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2 py-1 rounded ${priorCfg.color}`}>
@@ -707,7 +720,7 @@ export default function CAPA() {
                           </SelectTrigger>
                           <SelectContent className="bg-card">
                             <SelectItem value="Açık">🔴 Açık</SelectItem>
-                            <SelectItem value="Devam Ediyor">🟡 Devam</SelectItem>
+                            <SelectItem value="Devam Ediyor">🟡 Devam Ediyor</SelectItem>
                             <SelectItem value="Tamamlandı">✅ Tamamlandı</SelectItem>
                           </SelectContent>
                         </Select>
@@ -745,7 +758,7 @@ export default function CAPA() {
         </div>
       )}
 
-      {/* ✅ DETAILS MODAL */}
+      {/* DETAILS MODAL */}
       {detailsOpen && detailRecord && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-card rounded-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto border border-primary/20">
@@ -753,7 +766,7 @@ export default function CAPA() {
             <div className="sticky top-0 bg-gradient-to-r from-primary to-primary/80 p-6 flex items-center justify-between z-10">
               <div>
                 <h2 className="text-xl font-bold text-primary-foreground flex items-center gap-2">
-                  📋 DÖF Detayları
+                  DÖF Detayları
                   {detailRecord.source === "findings" && (
                     <span className="text-xs px-2 py-1 rounded bg-white/20 border border-white/30">
                       Toplu DÖF
@@ -818,17 +831,17 @@ export default function CAPA() {
               {/* KÖK NEDEN */}
               <div className="glass-card p-4 border border-border/50 space-y-2">
                 <p className="text-sm font-semibold flex items-center gap-2">
-                  🔍 Kök Neden
+                  Kök Neden
                 </p>
                 <p className="text-sm text-muted-foreground whitespace-pre-wrap">
                   {detailRecord.root_cause}
                 </p>
               </div>
 
-              {/* DÜZELTICI FAALIYET */}
+              {/* DÜZELTİCİ FAALİYET */}
               <div className="glass-card p-4 border border-border/50 space-y-2">
                 <p className="text-sm font-semibold flex items-center gap-2">
-                  🔧 Düzeltici Faaliyet
+                  Düzeltici Faaliyet
                 </p>
                 <p className="text-sm text-muted-foreground whitespace-pre-wrap">
                   {detailRecord.corrective_action}
@@ -846,7 +859,7 @@ export default function CAPA() {
                   </p>
                 </div>
               )}
-              {/* ✅ FOTOĞRAFLAR - BASE64 DESTEĞI */}
+              {/* FOTOĞRAFLAR - BASE64 DESTEĞİ */}
               {detailRecord.media_urls && detailRecord.media_urls.length > 0 && (
                 <div>
                   <p className="text-sm font-semibold mb-3 flex items-center gap-2">
@@ -855,7 +868,7 @@ export default function CAPA() {
                   </p>
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                     {detailRecord.media_urls.map((url, idx) => {
-                      // ✅ Base64 veya HTTP URL kontrolü
+                      // Base64 veya HTTP URL kontrolü
                       const isBase64 = url.startsWith('data:image');
                       const isHttpUrl = url.startsWith('http');
                       
@@ -870,7 +883,7 @@ export default function CAPA() {
                           key={idx}
                           className="group relative rounded-lg overflow-hidden border border-border/50 hover:border-primary/50 transition-colors cursor-pointer"
                           onClick={() => {
-                            // ✅ Base64 ise yeni sekmede aç
+                            // Base64 ise yeni sekmede aç
                             if (isBase64) {
                               const win = window.open();
                               if (win) {
@@ -896,7 +909,7 @@ export default function CAPA() {
                           <p className="absolute bottom-2 right-2 text-xs font-semibold bg-black/70 text-white px-2 py-1 rounded">
                             {idx + 1}/{detailRecord.media_urls.length}
                           </p>
-                          {/* ✅ Base64 Badge */}
+                          {/* Base64 Badge */}
                           {isBase64 && (
                             <p className="absolute top-2 left-2 text-[9px] font-semibold bg-purple-600 text-white px-2 py-1 rounded">
                               BASE64

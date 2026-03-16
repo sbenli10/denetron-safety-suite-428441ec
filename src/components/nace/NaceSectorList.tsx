@@ -50,6 +50,9 @@ interface NaceCode {
   created_at: string;
 }
 
+const NACE_SECTOR_LIST_CACHE_KEY = "denetron:nace-sector-list";
+const NACE_SECTOR_LIST_CACHE_TTL = 24 * 60 * 60 * 1000;
+
 export default function NaceSectorList() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
@@ -61,15 +64,38 @@ export default function NaceSectorList() {
   const [sectors, setSectors] = useState<string[]>([]);
 
   useEffect(() => {
-    loadNaceCodes();
+    const cached = sessionStorage.getItem(NACE_SECTOR_LIST_CACHE_KEY);
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached) as {
+          naceCodes: NaceCode[];
+          sectors: string[];
+          timestamp: number;
+        };
+
+        if (Date.now() - parsed.timestamp < NACE_SECTOR_LIST_CACHE_TTL) {
+          setNaceCodes(parsed.naceCodes);
+          setSectors(parsed.sectors);
+          setLoading(false);
+          void loadNaceCodes(true);
+          return;
+        }
+      } catch {
+        sessionStorage.removeItem(NACE_SECTOR_LIST_CACHE_KEY);
+      }
+    }
+
+    void loadNaceCodes();
   }, []);
 
   useEffect(() => {
     filterCodes();
   }, [searchTerm, sectorFilter, hazardFilter, naceCodes]);
 
-  const loadNaceCodes = async () => {
-  setLoading(true);
+  const loadNaceCodes = async (silent = false) => {
+  if (!silent) {
+    setLoading(true);
+  }
   try {
     const pageSize = 1000;
     let from = 0;
@@ -98,6 +124,14 @@ export default function NaceSectorList() {
       new Set(allRows.map((item) => item.sector))
     ).sort();
     setSectors(uniqueSectors);
+    sessionStorage.setItem(
+      NACE_SECTOR_LIST_CACHE_KEY,
+      JSON.stringify({
+        naceCodes: allRows,
+        sectors: uniqueSectors,
+        timestamp: Date.now(),
+      })
+    );
 
     toast.success(`${allRows.length || 0} NACE kodu yüklendi`);
   } catch (error) {

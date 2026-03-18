@@ -281,7 +281,6 @@ const calculatePriorityScore = (params: {
 export default function ISGBotCommandCenter() {
   const { user } = useAuth();
   const navigate = useNavigate();
-
   const [layer, setLayer] = useState<LayerMode>("expert");
   const [loading, setLoading] = useState(true);
   const [creatingTaskId, setCreatingTaskId] = useState<string | null>(null);
@@ -303,12 +302,7 @@ export default function ISGBotCommandCenter() {
     void loadCommandData();
   }, [user?.id]);
 
-  const osgbHazardOptions = useMemo(
-    () => ["ALL", ...Array.from(new Set(companies.map((company) => company.hazard_class).filter(Boolean)))],
-    [companies]
-  );
-
-  const expertFilterOptions = useMemo(
+ const osgbExpertOptions = useMemo(
     () => [
       "ALL",
       ...Array.from(
@@ -323,28 +317,14 @@ export default function ISGBotCommandCenter() {
   );
 
   useEffect(() => {
-    if (selectedOsgbExpert === "ALL") return;
-
-    const availableExperts = [
-      "ALL",
-      ...Array.from(
-        new Set(
-          companies.map(
-            (company) => company.assigned_person_name || company.service_provider_name || "Atanmamış"
-          )
-        )
-      ),
-    ];
-
-    if (!availableExperts.includes(selectedOsgbExpert)) {
+    if (selectedOsgbExpert !== "ALL" && !osgbExpertOptions.includes(selectedOsgbExpert)) {
       setSelectedOsgbExpert("ALL");
     }
-  }, [companies, selectedOsgbExpert]);
+  }, [osgbExpertOptions, selectedOsgbExpert]);
 
   const loadCommandData = async () => {
     if (!user) return;
     setLoading(true);
-
     try {
       const orgId = user.id;
       const [companiesResponse, flagsResponse, alertsResponse, meetingsResponse, tasksResponse] =
@@ -793,6 +773,13 @@ export default function ISGBotCommandCenter() {
 
     return Array.from(grouped.values()).sort((a, b) => b.count - a.count).slice(0, 4);
   }, [expertActions]);
+
+  const osgbHazardOptions = useMemo(
+    () => ["ALL", ...Array.from(new Set(companies.map((company) => company.hazard_class).filter(Boolean)))],
+    [companies]
+  );
+
+  
 
   const filteredOsgbCompanies = useMemo(
     () =>
@@ -1342,9 +1329,9 @@ export default function ISGBotCommandCenter() {
                 </div>
                 <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-4">
                   <div className="mb-2 flex items-center gap-2 text-sm font-medium text-white"><Users className="h-4 w-4 text-amber-400" />Uzman filtresi</div>
-                    <Select value={osgbExpertFilter} onValueChange={setOsgbExpertFilter}>
-                      <SelectTrigger className="border-slate-700 bg-slate-950 text-slate-200"><SelectValue /></SelectTrigger>
-                    <SelectContent>{expertFilterOptions.map((option) => <SelectItem key={option} value={option}>{option === "ALL" ? "Tum uzmanlar" : option}</SelectItem>)}</SelectContent>
+                  <Select value={osgbExpertFilter} onValueChange={setOsgbExpertFilter}>
+                    <SelectTrigger className="border-slate-700 bg-slate-950 text-slate-200"><SelectValue /></SelectTrigger>
+                    <SelectContent>{osgbExpertOptions.map((option) => <SelectItem key={option} value={option}>{option === "ALL" ? "Tum uzmanlar" : option}</SelectItem>)}</SelectContent>
                   </Select>
                 </div>
                 <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-4">

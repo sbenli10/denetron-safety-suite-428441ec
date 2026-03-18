@@ -76,6 +76,56 @@ const priorityConfig: Record<string, { color: string; icon: string }> = {
 };
 
 const getCapaCacheKey = (userId: string) => `denetron:capa:${userId}`;
+const CAPA_CACHE_LIMIT = 100;
+const CAPA_NOTES_PREVIEW_LIMIT = 400;
+
+const compactCapaRecord = (record: CAPARecord): CAPARecord => ({
+  ...record,
+  non_conformity: (record.non_conformity || "").slice(0, 600),
+  root_cause: (record.root_cause || "").slice(0, 500),
+  corrective_action: (record.corrective_action || "").slice(0, 500),
+  notes: (record.notes || "").slice(0, CAPA_NOTES_PREVIEW_LIMIT),
+  media_urls: Array.isArray(record.media_urls) ? record.media_urls.slice(0, 1) : [],
+});
+
+const loadCapaCache = (userId: string): CAPARecord[] | null => {
+  const cacheKey = getCapaCacheKey(userId);
+  const candidates = [
+    () => sessionStorage.getItem(cacheKey),
+    () => localStorage.getItem(cacheKey),
+  ];
+
+  for (const read of candidates) {
+    try {
+      const raw = read();
+      if (!raw) continue;
+      return JSON.parse(raw) as CAPARecord[];
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
+};
+
+const saveCapaCache = (userId: string, records: CAPARecord[]) => {
+  const cacheKey = getCapaCacheKey(userId);
+  const compactRecords = records.slice(0, CAPA_CACHE_LIMIT).map(compactCapaRecord);
+  const payload = JSON.stringify(compactRecords);
+
+  try {
+    sessionStorage.setItem(cacheKey, payload);
+    return;
+  } catch (error) {
+    console.warn("CAPA session cache write failed:", error);
+  }
+
+  try {
+    localStorage.setItem(cacheKey, payload);
+  } catch (error) {
+    console.warn("CAPA local cache write failed:", error);
+  }
+};
 
 export default function CAPA() {
   const { user } = useAuth();
@@ -101,14 +151,10 @@ export default function CAPA() {
 
   useEffect(() => {
     if (!user) return;
-    const cached = sessionStorage.getItem(getCapaCacheKey(user.id));
+    const cached = loadCapaCache(user.id);
     if (cached) {
-      try {
-        setRecords(JSON.parse(cached) as CAPARecord[]);
-        setLoading(false);
-      } catch {
-        sessionStorage.removeItem(getCapaCacheKey(user.id));
-      }
+      setRecords(cached);
+      setLoading(false);
     }
     void fetchRecords(Boolean(cached));
   }, [user]);
@@ -226,7 +272,7 @@ export default function CAPA() {
       console.log(`İşlem tamamlandı: ${capaRecords.length} standart, ${findingsAsCapa.length} toplu DÖF yüklendi.`);
 
       setRecords(allRecords);
-      sessionStorage.setItem(getCapaCacheKey(user.id), JSON.stringify(allRecords));
+      saveCapaCache(user.id, allRecords);
       
       if (allRecords.length === 0) {
         toast.info("Henüz DÖF kaydı bulunamadı.");
@@ -367,7 +413,11 @@ export default function CAPA() {
         if (error) throw error;
       }
       
-      setRecords(records.filter((r) => r.id !== id));
+      setRecords((prev) => {
+        const next = prev.filter((r) => r.id !== id);
+        if (user?.id) saveCapaCache(user.id, next);
+        return next;
+      });
       setDetailsOpen(false);
       setDetailRecord(null);
       toast.success("DÖF silindi");
@@ -402,7 +452,11 @@ export default function CAPA() {
         if (error) throw error;
       }
 
-      setRecords(records.map((r) => (r.id === id ? { ...r, status } : r)));
+      setRecords((prev) => {
+        const next = prev.map((r) => (r.id === id ? { ...r, status } : r));
+        if (user?.id) saveCapaCache(user.id, next);
+        return next;
+      });
       toast.success(`Durum güncellendi: ${status}`);
     } catch (error: any) {
       console.error("Update status error:", error);

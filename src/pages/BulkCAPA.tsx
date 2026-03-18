@@ -1,5 +1,5 @@
 ﻿//src\pages\BulkCAPA.tsx
-import { useState, useRef, useEffect } from "react";
+import { Component, ReactNode, useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Download,
@@ -29,6 +29,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
@@ -77,6 +83,15 @@ interface AIAnalysisResult {
   importance_level: "Normal" | "Yüksek" | "Kritik";
 }
 
+type ErrorBoundaryProps = {
+  children: ReactNode;
+};
+
+type ErrorBoundaryState = {
+  hasError: boolean;
+  message: string;
+};
+
 const coerceText = (value: unknown): string => {
   if (typeof value === 'string') return value;
   if (Array.isArray(value)) {
@@ -88,6 +103,103 @@ const coerceText = (value: unknown): string => {
   if (value == null) return '';
   return String(value);
 };
+
+const buildMediaKey = (url: string, index: number) => {
+  const head = typeof url === "string" ? url.slice(0, 48) : "";
+  return `${head}-${index}`;
+};
+
+const getUserFriendlyErrorMessage = (error: unknown, context?: string) => {
+  const raw =
+    error instanceof Error
+      ? error.message
+      : typeof error === "string"
+      ? error
+      : "Bilinmeyen hata";
+
+  const normalized = raw.toLowerCase();
+
+  if (normalized.includes("quota")) {
+    return "Tarayıcı geçici depolama alanı dolduğu için işlem tamamlanamadı. Sayfayı yenileyip tekrar deneyin.";
+  }
+  if (normalized.includes("failed to fetch") || normalized.includes("networkerror")) {
+    return "İnternet bağlantısı veya servis erişimi sırasında sorun oluştu. Bağlantıyı kontrol edip tekrar deneyin.";
+  }
+  if (normalized.includes("google api key") || normalized.includes("api anahtarı")) {
+    return "Yapay zeka servisi için gerekli API anahtarı tanımlı değil.";
+  }
+  if (normalized.includes("generatecontent") || normalized.includes("gemini api error")) {
+    return "Yapay zeka servisi şu anda yanıt vermedi. Birkaç saniye sonra tekrar deneyin.";
+  }
+  if (normalized.includes("no text response") || normalized.includes("parse")) {
+    return "Yapay zeka analizi tamamlandı ancak sonuç okunabilir formatta dönmedi. Tekrar deneyin.";
+  }
+  if (normalized.includes("invalid data url") || normalized.includes("base64") || normalized.includes("empty buffer")) {
+    return "Yüklenen görsellerden biri işlenemedi. Fotoğrafı yeniden yükleyip tekrar deneyin.";
+  }
+  if (normalized.includes("storage upload")) {
+    return "Rapor dosyası arşive yüklenemedi. Dosya indirilebilir ancak buluta kaydedilemedi.";
+  }
+  if (normalized.includes("removechild") || normalized.includes("insertbefore") || normalized.includes("notfounderror")) {
+    return "Sayfa görüntüsü beklenmeyen şekilde bozuldu. Sayfayı yenileyip işlemi tekrar başlatın.";
+  }
+
+  if (context === "analysis") {
+    return "Fotoğraf analizi tamamlanamadı. Fotoğrafları yeniden seçip tekrar deneyin.";
+  }
+  if (context === "overall-analysis") {
+    return "Genel analiz oluşturulamadı. Mevcut bulgular kaybolmadı, tekrar deneyebilirsiniz.";
+  }
+  if (context === "export") {
+    return "Rapor oluşturulurken hata oluştu. Verileriniz duruyor, tekrar deneyebilirsiniz.";
+  }
+
+  return raw || "Beklenmeyen bir hata oluştu.";
+};
+
+class BulkCAPAErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  state: ErrorBoundaryState = {
+    hasError: false,
+    message: "",
+  };
+
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+    return {
+      hasError: true,
+      message: getUserFriendlyErrorMessage(error),
+    };
+  }
+
+  componentDidCatch(error: Error, errorInfo: unknown) {
+    console.error("BulkCAPA runtime error:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="space-y-6">
+          <div className="rounded-2xl border border-destructive/30 bg-destructive/5 p-6">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="mt-0.5 h-5 w-5 text-destructive" />
+              <div className="space-y-2">
+                <h2 className="text-xl font-semibold text-foreground">Bu sayfada bir sorun oluştu</h2>
+                <p className="text-sm text-muted-foreground">{this.state.message}</p>
+                <div className="flex gap-3">
+                  <Button onClick={() => window.location.reload()}>Sayfayı yenile</Button>
+                  <Button variant="outline" onClick={() => window.location.assign("/bulk-capa")}>
+                    Sayfayı yeniden aç
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
 
 // ✅ CONSTANTS
 const DEPARTMENTS = [
@@ -959,11 +1071,12 @@ const generateWordDocument = async (
 };
 
 // ✅ MAIN COMPONENT
-export default function BulkCAPA() {
+function BulkCAPAContent() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dropZoneRef = useRef<HTMLDivElement>(null);
+  const activeAnalysisRef = useRef(0);
   const [entries, setEntries] = useState<HazardEntry[]>([]);
   const [siteName, setSiteName] = useState("");
   const [orgData, setOrgData] = useState<OrganizationData | null>(null);
@@ -974,6 +1087,12 @@ export default function BulkCAPA() {
   const [analyzing, setAnalyzing] = useState(false);
   const [overallAnalysis, setOverallAnalysis] = useState("");
   const [overallAnalyzing, setOverallAnalyzing] = useState(false);
+
+  useEffect(() => {
+    return () => {
+      activeAnalysisRef.current += 1;
+    };
+  }, []);
 
   const [newEntry, setNewEntry] = useState<HazardEntry>({
     id: "",
@@ -1169,6 +1288,10 @@ Birden fazla risk varsa importance_level en tehlikeli riske göre belirlenmelidi
       return;
     }
 
+    if (analyzing) return;
+
+    const runId = Date.now();
+    activeAnalysisRef.current = runId;
     setAnalyzing(true);
 
     try {
@@ -1195,6 +1318,10 @@ Birden fazla risk varsa importance_level en tehlikeli riske göre belirlenmelidi
         finalAnalysis = mergeAnalyses(analyses);
       }
 
+      if (activeAnalysisRef.current !== runId) {
+        return;
+      }
+
       setNewEntry((prev) => ({
         ...prev,
         description: finalAnalysis.description,
@@ -1207,10 +1334,12 @@ Birden fazla risk varsa importance_level en tehlikeli riske göre belirlenmelidi
 
       toast.success(`${total} fotoğraf için analiz tamamlandı`);
     } catch (error: any) {
-      toast.error(`AI analizi başarısız: ${error.message}`);
+      toast.error(getUserFriendlyErrorMessage(error, "analysis"));
       console.error("Analysis error:", error);
     } finally {
-      setAnalyzing(false);
+      if (activeAnalysisRef.current === runId) {
+        setAnalyzing(false);
+      }
     }
   };
 
@@ -1326,7 +1455,7 @@ ${entries
       toast.success("Genel analiz oluşturuldu");
     } catch (error: any) {
       console.error("Genel analiz hatası:", error);
-      toast.error(`Genel analiz oluşturulamadı: ${error.message}`);
+      toast.error(getUserFriendlyErrorMessage(error, "overall-analysis"));
     } finally {
       setOverallAnalyzing(false);
     }
@@ -1375,6 +1504,7 @@ ${entries
         setNewEntry((prev) => ({
           ...prev,
           media_urls: [...prev.media_urls, dataUrl],
+          ai_analyzed: false,
         }));
         toast.success("Fotoğraf eklendi");
       };
@@ -1461,7 +1591,7 @@ ${entries
       id: `entry-${Date.now()}`,
     };
 
-    setEntries([...entries, entry]);
+    setEntries((prev) => [...prev, entry]);
 
     setNewEntry({
       id: "",
@@ -1481,7 +1611,7 @@ ${entries
 
   // ✅ DELETE ENTRY
   const handleDeleteEntry = (id: string) => {
-    setEntries(entries.filter((e) => e.id !== id));
+    setEntries((prev) => prev.filter((e) => e.id !== id));
     toast.info("Bulgu silindi");
   };
 
@@ -1599,7 +1729,7 @@ const handleSaveAndExport = async () => {
 
       if (uploadError) {
         console.error("Storage upload error:", uploadError);
-        toast.error(`Storage upload hatası: ${uploadError.message}`);
+          toast.error(getUserFriendlyErrorMessage(`storage upload: ${uploadError.message}`, "export"));
       } else {
         // ✅ 5. PUBLIC URL AL
         const { data: publicUrlData } = supabase.storage
@@ -1632,7 +1762,7 @@ const handleSaveAndExport = async () => {
 
       if (dbError) {
         console.error("Reports insert error:", dbError);
-        toast.error(`Reports kaydı başarısız: ${dbError.message}`);
+         toast.error(`Rapor kaydı oluşturulamadı: ${dbError.message}`);
       } else {
         toast.success("Rapor arşivlendi");
       }
@@ -1673,7 +1803,7 @@ const handleSaveAndExport = async () => {
     }
   } catch (error: any) {
     console.error("Error:", error);
-    toast.error(`Hata: ${error.message}`);
+    toast.error(getUserFriendlyErrorMessage(error, "export"));
   } finally {
     setSaving(false);
   }
@@ -1861,7 +1991,7 @@ const handleSaveAndExport = async () => {
 
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   {newEntry.media_urls.map((url, idx) => (
-                    <div key={idx} className="relative group">
+                    <div key={buildMediaKey(url, idx)} className="relative group">
                       <img
                         src={url}
                         alt={`Upload ${idx}`}
@@ -2210,24 +2340,16 @@ const handleSaveAndExport = async () => {
         <p className="text-xs text-muted-foreground">E-posta paylaşımı bu ekranda kaldırıldı. Raporu indirdikten sonra Denetimler sayfasında ilgili denetim detayından "E-posta Gönder" ile paylaşabilirsiniz.</p>
       </div>
 
-      {/* PREVIEW MODAL - FIXED WITH IMAGE GALLERY */}
-      {previewOpen && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-          <div className="bg-card rounded-lg max-w-4xl max-h-[90vh] overflow-y-auto w-full p-6 space-y-4">
-            <div className="flex items-center justify-between sticky top-0 bg-card">
-              <h2 className="text-xl font-bold text-foreground flex items-center gap-2">
-                Rapor Önizlemesi
-                <Sparkles className="h-5 w-5 text-yellow-500" />
-              </h2>
-              <button
-                onClick={() => setPreviewOpen(false)}
-                className="text-muted-foreground hover:text-foreground"
-              >
-                <X className="h-6 w-6" />
-              </button>
-            </div>
+      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-xl">
+              Rapor Önizlemesi
+              <Sparkles className="h-5 w-5 text-yellow-500" />
+            </DialogTitle>
+          </DialogHeader>
 
-            <div className="space-y-6">
+          <div className="space-y-6">
               {/* SUMMARY */}
               <div className="bg-secondary/50 p-4 rounded space-y-2">
                 <p>
@@ -2293,7 +2415,7 @@ const handleSaveAndExport = async () => {
                       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                         {entry.media_urls.map((imageUrl, imgIdx) => (
                           <div
-                            key={imgIdx}
+                            key={buildMediaKey(imageUrl, imgIdx)}
                             className="relative group rounded-lg overflow-hidden border border-border shadow-sm hover:shadow-md transition-shadow"
                           >
                             <img
@@ -2313,17 +2435,24 @@ const handleSaveAndExport = async () => {
                   )}
                 </div>
               ))}
-            </div>
-            <Button
-              onClick={() => setPreviewOpen(false)}
-              className="w-full"
-              variant="outline"
-            >
-              Kapat
-            </Button>
           </div>
-        </div>
-      )}
+          <Button
+            onClick={() => setPreviewOpen(false)}
+            className="w-full"
+            variant="outline"
+          >
+            Kapat
+          </Button>
+        </DialogContent>
+      </Dialog>
     </div>
+  );
+}
+
+export default function BulkCAPA() {
+  return (
+    <BulkCAPAErrorBoundary>
+      <BulkCAPAContent />
+    </BulkCAPAErrorBoundary>
   );
 }

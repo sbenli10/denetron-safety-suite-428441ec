@@ -153,7 +153,7 @@ export default function ISGBot() {
         </Card>
       </div>
 
-      <Card>
+      <Card id="isg-bot-toolset">
         <CardHeader>
           <CardTitle>Araç seti</CardTitle>
           <CardDescription>

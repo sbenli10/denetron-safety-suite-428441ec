@@ -31,6 +31,7 @@ const CAPA = lazy(() => import("./pages/CAPA"));
 const BulkCAPA = lazy(() => import("./pages/BulkCAPA"));
 const BulkCAPAHowTo = lazy(() => import("./pages/BulkCAPAHowTo"));
 const SafetyLibrary = lazy(() => import("./pages/SafetyLibrary"));
+const SafetyLibraryGuide = lazy(() => import("./pages/SafetyLibraryGuide"));
 const Settings = lazy(() => import("./pages/Settings"));
 const Profile = lazy(() => import("./pages/Profile"));
 const CompanyManager = lazy(() => import("./pages/CompanyManager"));
@@ -293,6 +294,7 @@ const App = () => (
                           {/* SAFETY LIBRARY */}
                           {/* ============================================ */}
                           <Route path="/safety-library" element={<SafetyLibrary />} />
+                          <Route path="/safety-library/guide" element={<SafetyLibraryGuide />} />
                           {/* ✅ NACE Module Routes */}
                           <Route path="nace-query" element={<NaceHazardQuery />} />
                           <Route path="nace-query/sectors" element={<NaceSectorList />} />

@@ -7,6 +7,7 @@ import {
   ArrowRight,
   BookOpen,
   Building2,
+  CircleHelp,
   Download,
   Factory,
   FileText,
@@ -65,6 +66,7 @@ interface Category {
 
 interface ArchiveFile {
   name: string;
+  displayName: string;
   url: string;
   created_at: string;
   size: number;
@@ -145,6 +147,15 @@ const emptyHazardForm = {
   prevention: "",
   regulation: "",
   details: "",
+};
+
+const getArchiveDisplayName = (storedName: string) => {
+  if (storedName.includes("__")) {
+    const parts = storedName.split("__");
+    return parts.slice(1).join("__") || storedName;
+  }
+
+  return storedName;
 };
 
 export default function SafetyLibrary() {
@@ -247,11 +258,17 @@ export default function SafetyLibrary() {
             .getPublicUrl(file.name);
           return {
             name: file.name,
+            displayName: getArchiveDisplayName(file.name),
             url: urlData.publicUrl,
             created_at: file.created_at,
             size: file.metadata?.size || 0,
           };
-        });
+        })
+        .sort(
+          (left, right) =>
+            new Date(right.created_at).getTime() -
+            new Date(left.created_at).getTime(),
+        );
 
       setFiles(fileList);
     } catch (error) {
@@ -297,10 +314,11 @@ export default function SafetyLibrary() {
 
     setUploading(true);
     try {
-      const fileExtension = file.name.split(".").pop();
-      const fileName = `${Math.random()
-        .toString(36)
-        .slice(2)}_${Date.now()}.${fileExtension}`;
+      const safeOriginalName = file.name
+        .replace(/[\\/:*?"<>|]+/g, "-")
+        .replace(/\s+/g, " ")
+        .trim();
+      const fileName = `${Date.now()}__${safeOriginalName}`;
       const { error } = await supabase.storage
         .from("safety_documents")
         .upload(fileName, file);
@@ -555,31 +573,42 @@ export default function SafetyLibrary() {
           </button>
         </div>
 
-        {activeTab === "library" ? (
+        <div className="flex flex-col gap-2 sm:flex-row">
           <Button
-            onClick={() => setAddModalOpen(true)}
-            className="gap-2 bg-emerald-600 text-white hover:bg-emerald-700"
+            variant="outline"
+            onClick={() => navigate("/safety-library/guide")}
+            className="gap-2 border-slate-700 bg-slate-950 text-slate-200 hover:bg-slate-900 hover:text-white"
           >
-            <Plus className="h-4 w-4" /> Yeni tehlike ekle
+            <CircleHelp className="h-4 w-4" />
+            Nasıl kullanılır?
           </Button>
-        ) : (
-          <label htmlFor="safety-doc-upload">
+
+          {activeTab === "library" ? (
             <Button
-              asChild
-              className="gap-2 bg-blue-600 text-white hover:bg-blue-700"
-              disabled={uploading}
+              onClick={() => setAddModalOpen(true)}
+              className="gap-2 bg-emerald-600 text-white hover:bg-emerald-700"
             >
-              <span>
-                {uploading ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <UploadCloud className="h-4 w-4" />
-                )}
-                Doküman yükle
-              </span>
+              <Plus className="h-4 w-4" /> Yeni tehlike ekle
             </Button>
-          </label>
-        )}
+          ) : (
+            <label htmlFor="safety-doc-upload">
+              <Button
+                asChild
+                className="gap-2 bg-blue-600 text-white hover:bg-blue-700"
+                disabled={uploading}
+              >
+                <span>
+                  {uploading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <UploadCloud className="h-4 w-4" />
+                  )}
+                  Doküman yükle
+                </span>
+              </Button>
+            </label>
+          )}
+        </div>
       </div>
 
       {activeTab === "library" ? (
@@ -851,9 +880,9 @@ export default function SafetyLibrary() {
                       <div className="min-w-0 flex-1">
                         <p
                           className="truncate text-sm font-semibold text-white"
-                          title={file.name}
+                          title={file.displayName}
                         >
-                          {file.name}
+                          {file.displayName}
                         </p>
                         <p className="mt-1 text-xs text-slate-500">
                           {formatFileSize(file.size)}

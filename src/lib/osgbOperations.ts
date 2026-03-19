@@ -66,6 +66,19 @@ export interface OsgbNoteRecord {
   company?: { company_name: string | null } | null;
 }
 
+export interface OsgbBatchLogRecord {
+  id: string;
+  user_id: string | null;
+  batch_type: string;
+  run_source: string;
+  status: "success" | "error";
+  processed_count: number;
+  created_count: number;
+  skipped_count: number;
+  error_message: string | null;
+  created_at: string;
+}
+
 export interface OsgbTaskInput {
   companyId?: string | null;
   relatedDocumentId?: string | null;

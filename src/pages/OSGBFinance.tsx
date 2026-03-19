@@ -191,6 +191,35 @@ export default function OSGBFinance() {
     }, {});
   }, [calendarItems, calendarView]);
 
+  const weeklyWorkload = useMemo(() => {
+    const rows = Object.entries(
+      calendarItems.reduce<Record<string, { label: string; totalAmount: number; count: number; overdueCount: number }>>((acc, item) => {
+        const date = new Date(item.dueDate);
+        const day = date.getDay();
+        const diff = date.getDate() - (day === 0 ? 6 : day - 1);
+        const monday = new Date(date);
+        monday.setDate(diff);
+        const sunday = new Date(monday);
+        sunday.setDate(monday.getDate() + 6);
+        const key = monday.toISOString().slice(0, 10);
+        if (!acc[key]) {
+          acc[key] = {
+            label: `${monday.toLocaleDateString("tr-TR", { day: "2-digit", month: "2-digit" })} - ${sunday.toLocaleDateString("tr-TR", { day: "2-digit", month: "2-digit" })}`,
+            totalAmount: 0,
+            count: 0,
+            overdueCount: 0,
+          };
+        }
+        acc[key].totalAmount += item.amount;
+        acc[key].count += 1;
+        if (item.isOverdue) acc[key].overdueCount += 1;
+        return acc;
+      }, {}),
+    );
+
+    return rows.sort(([a], [b]) => a.localeCompare(b)).map(([, value]) => value);
+  }, [calendarItems]);
+
   const openCreate = () => {
     setEditing(null);
     setForm(emptyForm);
@@ -376,6 +405,33 @@ export default function OSGBFinance() {
                         </div>
                       </button>
                     ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card className="border-slate-800 bg-slate-900/70">
+        <CardHeader>
+          <CardTitle className="text-white">Haftalık iş yükü görünümü</CardTitle>
+          <CardDescription>Tahsilat ekibinin hafta bazında yoğunluğunu ve gecikmiş kayıt baskısını gösterir.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {weeklyWorkload.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-slate-800 bg-slate-950/40 p-6 text-sm text-slate-400">
+              Haftalık iş yükü için uygun finans kaydı bulunamadı.
+            </div>
+          ) : (
+            <div className="grid gap-3 xl:grid-cols-3">
+              {weeklyWorkload.map((week) => (
+                <div key={week.label} className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4">
+                  <div className="text-sm font-semibold text-white">{week.label}</div>
+                  <div className="mt-3 space-y-1 text-sm text-slate-400">
+                    <div>Planlanan tahsilat: <span className="text-slate-200">{week.count}</span></div>
+                    <div>Toplam tutar: <span className="text-slate-200">{formatMoney(week.totalAmount, "TRY")}</span></div>
+                    <div>Gecikmiş kayıt: <span className={cn("font-medium", week.overdueCount > 0 ? "text-red-300" : "text-emerald-300")}>{week.overdueCount}</span></div>
                   </div>
                 </div>
               ))}

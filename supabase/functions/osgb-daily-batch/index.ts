@@ -89,14 +89,20 @@ serve(async (req) => {
 
     let created = 0;
     let skipped = 0;
+    const perUserStats = new Map<string, { processed: number; created: number; skipped: number }>();
 
     for (const document of actionableDocuments) {
+      const currentStats = perUserStats.get(document.user_id) ?? { processed: 0, created: 0, skipped: 0 };
+      currentStats.processed += 1;
+      perUserStats.set(document.user_id, currentStats);
+
       const duplicate = ((existingTasks ?? []) as ExistingTaskRow[]).some(
         (task) => task.user_id === document.user_id && task.related_document_id === document.id,
       );
 
       if (duplicate) {
         skipped += 1;
+        currentStats.skipped += 1;
         continue;
       }
 
@@ -117,6 +123,23 @@ serve(async (req) => {
 
       if (insertError) throw insertError;
       created += 1;
+      currentStats.created += 1;
+    }
+
+    const userLogRows = Array.from(perUserStats.entries()).map(([userId, stats]) => ({
+      user_id: userId,
+      batch_type: "document_daily_batch",
+      run_source: "cron",
+      status: "success",
+      processed_count: stats.processed,
+      created_count: stats.created,
+      skipped_count: stats.skipped,
+      error_message: null,
+    }));
+
+    if (userLogRows.length > 0) {
+      const { error: logError } = await supabase.from("osgb_batch_logs").insert(userLogRows);
+      if (logError) throw logError;
     }
 
     return new Response(JSON.stringify({ success: true, created, skipped, total: actionableDocuments.length }), {
@@ -125,6 +148,25 @@ serve(async (req) => {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    try {
+      const supabaseUrl = Deno.env.get("SUPABASE_URL");
+      const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+      if (supabaseUrl && serviceRoleKey) {
+        const supabase = createClient(supabaseUrl, serviceRoleKey);
+        await supabase.from("osgb_batch_logs").insert({
+          user_id: null,
+          batch_type: "document_daily_batch",
+          run_source: "cron",
+          status: "error",
+          processed_count: 0,
+          created_count: 0,
+          skipped_count: 0,
+          error_message: message,
+        });
+      }
+    } catch {
+      // ignore secondary logging errors
+    }
     return new Response(JSON.stringify({ success: false, error: message }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

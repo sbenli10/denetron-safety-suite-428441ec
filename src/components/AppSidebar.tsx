@@ -34,7 +34,7 @@ import {
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useAuth } from "@/contexts/AuthContext";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -60,6 +60,7 @@ interface MenuItem {
   url: string;
   icon: React.ComponentType<{ className?: string }>;
   badge?: string | number | null;
+  children?: MenuItem[];
 }
 
 interface MenuGroup {
@@ -100,9 +101,11 @@ export function AppSidebar() {
   const { state, toggleSidebar } = useSidebar();
   const { signOut, user } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
   const collapsed = state === "collapsed";
 
   const [collapsedGroups, setCollapsedGroups] = useState<string[]>([]);
+  const [collapsedSubmenus, setCollapsedSubmenus] = useState<string[]>([]);
   const [draftMeetingsCount, setDraftMeetingsCount] = useState(0);
 
   // Fetch draft meetings count
@@ -186,54 +189,56 @@ export function AppSidebar() {
           url: "/osgb",
           icon: Briefcase,
           badge: "NEW",
-        },
-        {
-          title: "OSGB Dashboard",
-          url: "/osgb/dashboard",
-          icon: LayoutDashboard,
-          badge: null,
-        },
-        {
-          title: "Süre ve Kapasite",
-          url: "/osgb/capacity",
-          icon: TrendingUp,
-          badge: null,
-        },
-        {
-          title: "Uyarı Merkezi",
-          url: "/osgb/alerts",
-          icon: ShieldAlert,
-          badge: "NEW",
-        },
-        {
-          title: "Finans Yönetimi",
-          url: "/osgb/finance",
-          icon: FileText,
-          badge: null,
-        },
-        {
-          title: "Evrak Takibi",
-          url: "/osgb/documents",
-          icon: FileSearch,
-          badge: null,
-        },
-        {
-          title: "Görev Motoru",
-          url: "/osgb/tasks",
-          icon: ClipboardCheck,
-          badge: null,
-        },
-        {
-          title: "Operasyon Notları",
-          url: "/osgb/notes",
-          icon: BookOpen,
-          badge: null,
-        },
-        {
-          title: "Trend Analizi",
-          url: "/osgb/analytics",
-          icon: TrendingUp,
-          badge: null,
+          children: [
+            {
+              title: "OSGB Dashboard",
+              url: "/osgb/dashboard",
+              icon: LayoutDashboard,
+              badge: null,
+            },
+            {
+              title: "Süre ve Kapasite",
+              url: "/osgb/capacity",
+              icon: TrendingUp,
+              badge: null,
+            },
+            {
+              title: "Uyarı Merkezi",
+              url: "/osgb/alerts",
+              icon: ShieldAlert,
+              badge: "NEW",
+            },
+            {
+              title: "Finans Yönetimi",
+              url: "/osgb/finance",
+              icon: FileText,
+              badge: null,
+            },
+            {
+              title: "Evrak Takibi",
+              url: "/osgb/documents",
+              icon: FileSearch,
+              badge: null,
+            },
+            {
+              title: "Görev Motoru",
+              url: "/osgb/tasks",
+              icon: ClipboardCheck,
+              badge: null,
+            },
+            {
+              title: "Operasyon Notları",
+              url: "/osgb/notes",
+              icon: BookOpen,
+              badge: null,
+            },
+            {
+              title: "Trend Analizi",
+              url: "/osgb/analytics",
+              icon: TrendingUp,
+              badge: null,
+            },
+          ],
         },
       ],
     },
@@ -376,6 +381,27 @@ export function AppSidebar() {
     );
   };
 
+  const toggleSubmenu = (label: string) => {
+    if (collapsed) return;
+    setCollapsedSubmenus((prev) =>
+      prev.includes(label) ? prev.filter((item) => item !== label) : [...prev, label],
+    );
+  };
+
+  const isItemActive = (item: MenuItem) => {
+    if (item.url === "/") {
+      return location.pathname === "/";
+    }
+
+    return location.pathname === item.url || location.pathname.startsWith(`${item.url}/`);
+  };
+
+  const isSubmenuOpen = (item: MenuItem) => {
+    if (!item.children?.length) return false;
+    const childActive = item.children.some((child) => isItemActive(child));
+    return childActive || !collapsedSubmenus.includes(item.title);
+  };
+
   const handleSignOut = async () => {
     await signOut();
     navigate("/auth");
@@ -435,40 +461,96 @@ export function AppSidebar() {
             {(!collapsedGroups.includes(group.label) || collapsed) && (
               <SidebarGroupContent>
                 <SidebarMenu className="mt-1 gap-1">
-                  {group.items.map((item) => (
-                    <SidebarMenuItem key={item.url}>
-                      <SidebarMenuButton asChild tooltip={item.title}>
-                        <NavLink
-                          to={item.url}
-                          end={item.url === "/"}
-                          className="group relative flex items-center gap-3 overflow-hidden rounded-xl border border-transparent px-3 py-2.5 text-sm font-medium text-slate-300/85 transition-all duration-200 hover:border-slate-700 hover:bg-slate-900/80 hover:text-white"
-                          activeClassName="border-cyan-400/20 bg-[linear-gradient(90deg,rgba(8,145,178,0.22),rgba(30,64,175,0.18))] text-white font-semibold shadow-lg shadow-cyan-950/40"
-                        >
-                          {/* Active Indicator */}
-                          <div className="absolute inset-y-1 left-0 w-1 rounded-r-full bg-cyan-300 opacity-0 transition-opacity group-[.active]:opacity-100" />
+                  {group.items.map((item) => {
+                    const hasChildren = Boolean(item.children?.length);
+                    const submenuOpen = isSubmenuOpen(item);
 
-                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-800 bg-slate-900/80 transition-all duration-200 group-hover:border-slate-700 group-hover:bg-slate-800 group-[.active]:border-cyan-300/20 group-[.active]:bg-cyan-400/10">
-                            <item.icon className="h-[16px] w-[16px] shrink-0 transition-transform group-hover:scale-110" />
-                          </div>
-
-                          {!collapsed && (
-                            <>
-                              <span className="flex-1 truncate transition-transform group-hover:translate-x-0.5">
-                                {item.title}
-                              </span>
-                              {item.badge && (
-                                <span
-                                  className={`rounded-full border px-2 py-0.5 text-[8px] font-black uppercase tracking-wider ${badgeClassNames(item.badge)}`}
-                                >
-                                  {item.badge}
-                                </span>
+                    return (
+                      <SidebarMenuItem key={item.url}>
+                        {hasChildren ? (
+                          <div className="space-y-1">
+                            <button
+                              type="button"
+                              onClick={() => toggleSubmenu(item.title)}
+                              className={cn(
+                                "group relative flex w-full items-center gap-3 overflow-hidden rounded-xl border border-transparent px-3 py-2.5 text-sm font-medium text-slate-300/85 transition-all duration-200 hover:border-slate-700 hover:bg-slate-900/80 hover:text-white",
+                                isItemActive(item) && "border-cyan-400/20 bg-[linear-gradient(90deg,rgba(8,145,178,0.22),rgba(30,64,175,0.18))] text-white font-semibold shadow-lg shadow-cyan-950/40",
                               )}
-                            </>
-                          )}
-                        </NavLink>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  ))}
+                            >
+                              <div className={cn("absolute inset-y-1 left-0 w-1 rounded-r-full bg-cyan-300 opacity-0 transition-opacity", isItemActive(item) && "opacity-100")} />
+                              <div className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-800 bg-slate-900/80 transition-all duration-200 group-hover:border-slate-700 group-hover:bg-slate-800", isItemActive(item) && "border-cyan-300/20 bg-cyan-400/10")}>
+                                <item.icon className="h-[16px] w-[16px] shrink-0 transition-transform group-hover:scale-110" />
+                              </div>
+
+                              {!collapsed && (
+                                <>
+                                  <span className="flex-1 truncate text-left">{item.title}</span>
+                                  {item.badge && (
+                                    <span className={`rounded-full border px-2 py-0.5 text-[8px] font-black uppercase tracking-wider ${badgeClassNames(item.badge)}`}>
+                                      {item.badge}
+                                    </span>
+                                  )}
+                                  <ChevronDown className={cn("h-4 w-4 transition-transform", submenuOpen && "rotate-180")} />
+                                </>
+                              )}
+                            </button>
+
+                            {!collapsed && submenuOpen ? (
+                              <div className="ml-5 space-y-1 border-l border-slate-800/80 pl-4">
+                                {item.children?.map((child) => (
+                                  <SidebarMenuButton key={child.url} asChild tooltip={child.title}>
+                                    <NavLink
+                                      to={child.url}
+                                      className="group relative flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium text-slate-400 transition-all duration-200 hover:bg-slate-900 hover:text-white"
+                                      activeClassName="border border-cyan-400/15 bg-slate-900 text-white"
+                                    >
+                                      <child.icon className="h-4 w-4 shrink-0" />
+                                      <span className="flex-1 truncate">{child.title}</span>
+                                      {child.badge && (
+                                        <span className={`rounded-full border px-2 py-0.5 text-[8px] font-black uppercase tracking-wider ${badgeClassNames(child.badge)}`}>
+                                          {child.badge}
+                                        </span>
+                                      )}
+                                    </NavLink>
+                                  </SidebarMenuButton>
+                                ))}
+                              </div>
+                            ) : null}
+                          </div>
+                        ) : (
+                          <SidebarMenuButton asChild tooltip={item.title}>
+                            <NavLink
+                              to={item.url}
+                              end={item.url === "/"}
+                              className="group relative flex items-center gap-3 overflow-hidden rounded-xl border border-transparent px-3 py-2.5 text-sm font-medium text-slate-300/85 transition-all duration-200 hover:border-slate-700 hover:bg-slate-900/80 hover:text-white"
+                              activeClassName="border-cyan-400/20 bg-[linear-gradient(90deg,rgba(8,145,178,0.22),rgba(30,64,175,0.18))] text-white font-semibold shadow-lg shadow-cyan-950/40"
+                            >
+                              <div className="absolute inset-y-1 left-0 w-1 rounded-r-full bg-cyan-300 opacity-0 transition-opacity group-[.active]:opacity-100" />
+
+                              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-800 bg-slate-900/80 transition-all duration-200 group-hover:border-slate-700 group-hover:bg-slate-800 group-[.active]:border-cyan-300/20 group-[.active]:bg-cyan-400/10">
+                                <item.icon className="h-[16px] w-[16px] shrink-0 transition-transform group-hover:scale-110" />
+                              </div>
+
+                              {!collapsed && (
+                                <>
+                                  <span className="flex-1 truncate transition-transform group-hover:translate-x-0.5">
+                                    {item.title}
+                                  </span>
+                                  {item.badge && (
+                                    <span
+                                      className={`rounded-full border px-2 py-0.5 text-[8px] font-black uppercase tracking-wider ${badgeClassNames(item.badge)}`}
+                                    >
+                                      {item.badge}
+                                    </span>
+                                  )}
+                                </>
+                              )}
+                            </NavLink>
+                          </SidebarMenuButton>
+                        )}
+                      </SidebarMenuItem>
+                    );
+                  })}
                 </SidebarMenu>
               </SidebarGroupContent>
             )}

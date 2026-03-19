@@ -6,7 +6,15 @@ import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { getOsgbOperationalSummary, type OsgbOperationalSummary } from "@/lib/osgbOperations";
+import { Input } from "@/components/ui/input";
+import {
+  getOsgbOperationalSummary,
+  listOsgbDocuments,
+  listOsgbFinance,
+  type OsgbDocumentRecord,
+  type OsgbFinanceRecord,
+  type OsgbOperationalSummary,
+} from "@/lib/osgbOperations";
 
 type ViewMode = "finance" | "documents";
 
@@ -15,8 +23,16 @@ export default function OSGBAnalytics() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [summary, setSummary] = useState<OsgbOperationalSummary | null>(null);
+  const [financeRecords, setFinanceRecords] = useState<OsgbFinanceRecord[]>([]);
+  const [documentRecords, setDocumentRecords] = useState<OsgbDocumentRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [startDate, setStartDate] = useState(() => {
+    const value = new Date();
+    value.setMonth(value.getMonth() - 5);
+    return value.toISOString().slice(0, 10);
+  });
+  const [endDate, setEndDate] = useState(() => new Date().toISOString().slice(0, 10));
 
   const view = useMemo<ViewMode>(() => {
     const requested = searchParams.get("view");
@@ -29,8 +45,14 @@ export default function OSGBAnalytics() {
     const load = async () => {
       setLoading(true);
       try {
-        const result = await getOsgbOperationalSummary(user.id);
+        const [result, financeRows, documentRows] = await Promise.all([
+          getOsgbOperationalSummary(user.id),
+          listOsgbFinance(user.id),
+          listOsgbDocuments(user.id),
+        ]);
         setSummary(result);
+        setFinanceRecords(financeRows);
+        setDocumentRecords(documentRows);
         setError(null);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Trend analizi yüklenemedi.");
@@ -41,6 +63,62 @@ export default function OSGBAnalytics() {
 
     void load();
   }, [user?.id]);
+
+  const financeTrend = useMemo(() => {
+    if (!startDate || !endDate) return summary?.finance.monthlyTrend ?? [];
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    end.setHours(23, 59, 59, 999);
+    const monthMap = new Map<string, { month: string; pendingAmount: number; paidAmount: number; overdueAmount: number }>();
+
+    for (const record of financeRecords) {
+      const reference = record.due_date || record.invoice_date;
+      if (!reference) continue;
+      const date = new Date(reference);
+      if (Number.isNaN(date.getTime()) || date < start || date > end) continue;
+      const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+      const label = date.toLocaleDateString("tr-TR", { month: "short", year: "2-digit" });
+      if (!monthMap.has(key)) {
+        monthMap.set(key, { month: label, pendingAmount: 0, paidAmount: 0, overdueAmount: 0 });
+      }
+      const row = monthMap.get(key)!;
+      if (record.status === "pending") row.pendingAmount += record.amount;
+      if (record.status === "paid") row.paidAmount += record.amount;
+      if (record.status === "overdue") row.overdueAmount += record.amount;
+    }
+
+    return Array.from(monthMap.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([, value]) => value);
+  }, [endDate, financeRecords, startDate, summary?.finance.monthlyTrend]);
+
+  const documentTrend = useMemo(() => {
+    if (!startDate || !endDate) return summary?.documents.monthlyTrend ?? [];
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    end.setHours(23, 59, 59, 999);
+    const monthMap = new Map<string, { month: string; activeCount: number; warningCount: number; expiredCount: number }>();
+
+    for (const record of documentRecords) {
+      const reference = record.expiry_date || record.created_at;
+      if (!reference) continue;
+      const date = new Date(reference);
+      if (Number.isNaN(date.getTime()) || date < start || date > end) continue;
+      const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+      const label = date.toLocaleDateString("tr-TR", { month: "short", year: "2-digit" });
+      if (!monthMap.has(key)) {
+        monthMap.set(key, { month: label, activeCount: 0, warningCount: 0, expiredCount: 0 });
+      }
+      const row = monthMap.get(key)!;
+      if (record.status === "active") row.activeCount += 1;
+      if (record.status === "warning") row.warningCount += 1;
+      if (record.status === "expired") row.expiredCount += 1;
+    }
+
+    return Array.from(monthMap.entries())
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([, value]) => value);
+  }, [documentRecords, endDate, startDate, summary?.documents.monthlyTrend]);
 
   return (
     <div className="container mx-auto space-y-6 py-6">
@@ -65,6 +143,36 @@ export default function OSGBAnalytics() {
         </div>
       </div>
 
+      <Card className="border-slate-800 bg-slate-900/70">
+        <CardHeader>
+          <CardTitle className="text-white">Tarih aralığı</CardTitle>
+          <CardDescription>Grafikleri seçilen tarih aralığına göre yeniden hesaplar.</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <div className="space-y-2">
+            <div className="text-sm text-slate-300">Başlangıç</div>
+            <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+          </div>
+          <div className="space-y-2">
+            <div className="text-sm text-slate-300">Bitiş</div>
+            <Input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+          </div>
+          <div className="flex items-end">
+            <Button
+              variant="outline"
+              onClick={() => {
+                const value = new Date();
+                value.setMonth(value.getMonth() - 5);
+                setStartDate(value.toISOString().slice(0, 10));
+                setEndDate(new Date().toISOString().slice(0, 10));
+              }}
+            >
+              Son 6 ay
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
       {error ? (
         <Alert variant="destructive" className="border-red-500/20 bg-red-500/10 text-red-100">
           <AlertTitle>Trend analizi yüklenemedi</AlertTitle>
@@ -86,7 +194,7 @@ export default function OSGBAnalytics() {
             </CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={360}>
-                <LineChart data={summary.finance.monthlyTrend}>
+                <LineChart data={financeTrend}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
                   <XAxis dataKey="month" stroke="#94a3b8" />
                   <YAxis stroke="#94a3b8" />
@@ -108,7 +216,7 @@ export default function OSGBAnalytics() {
             </CardHeader>
             <CardContent>
               <ResponsiveContainer width="100%" height={360}>
-                <BarChart data={summary.documents.monthlyTrend}>
+                <BarChart data={documentTrend}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
                   <XAxis dataKey="month" stroke="#94a3b8" />
                   <YAxis stroke="#94a3b8" allowDecimals={false} />

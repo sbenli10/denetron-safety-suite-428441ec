@@ -7,6 +7,38 @@ export interface OsgbCompanyOption {
   contractEnd: string | null;
 }
 
+export interface OsgbPersonnelRecord {
+  id: string;
+  user_id: string;
+  full_name: string;
+  role: "igu" | "hekim" | "dsp";
+  certificate_no: string | null;
+  phone: string | null;
+  email: string | null;
+  monthly_capacity_minutes: number;
+  is_active: boolean;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface OsgbAssignmentRecord {
+  id: string;
+  user_id: string;
+  company_id: string;
+  personnel_id: string;
+  assigned_role: "igu" | "hekim" | "dsp";
+  assigned_minutes: number;
+  start_date: string | null;
+  end_date: string | null;
+  status: "active" | "passive" | "completed" | "cancelled";
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+  company?: { company_name: string | null } | null;
+  personnel?: { full_name: string | null; role: string | null } | null;
+}
+
 export interface OsgbFinanceRecord {
   id: string;
   user_id: string;
@@ -123,6 +155,58 @@ export interface OsgbNoteInput {
   noteType?: OsgbNoteRecord["note_type"];
 }
 
+export interface OsgbPersonnelInput {
+  fullName: string;
+  role: OsgbPersonnelRecord["role"];
+  certificateNo?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  monthlyCapacityMinutes: number;
+  isActive?: boolean;
+  notes?: string | null;
+}
+
+export interface OsgbAssignmentInput {
+  companyId: string;
+  personnelId: string;
+  assignedRole: OsgbAssignmentRecord["assigned_role"];
+  assignedMinutes: number;
+  startDate?: string | null;
+  endDate?: string | null;
+  status?: OsgbAssignmentRecord["status"];
+  notes?: string | null;
+}
+
+export interface OsgbCompanyTrackingRecord {
+  companyId: string;
+  companyName: string;
+  hazardClass: string;
+  employeeCount: number;
+  contractEnd: string | null;
+  requiredMinutes: number;
+  assignedMinutes: number;
+  assignmentStatus: "atandi" | "eksik" | "atanmamis";
+  activeAssignment: {
+    assignmentId: string;
+    personnelName: string;
+    role: string;
+    assignedMinutes: number;
+    startDate: string | null;
+    endDate: string | null;
+  } | null;
+  documentSummary: {
+    active: number;
+    warning: number;
+    expired: number;
+  };
+  financeSummary: {
+    pendingAmount: number;
+    overdueAmount: number;
+  };
+  openTaskCount: number;
+  noteCount: number;
+}
+
 export interface OsgbFinanceCalendarItem {
   id: string;
   companyName: string;
@@ -166,6 +250,9 @@ export interface OsgbOperationalSummary {
   };
 }
 
+const assignmentDuplicateMessage =
+  "Bu firmada zaten aktif bir personel görevlendirmesi var. Mükerrer atama engellendi.";
+
 export const getOsgbCompanyOptions = async (userId: string): Promise<OsgbCompanyOption[]> => {
   const { data, error } = await supabase
     .from("isgkatip_companies")
@@ -182,6 +269,135 @@ export const getOsgbCompanyOptions = async (userId: string): Promise<OsgbCompany
     hazardClass: item.hazard_class || "Bilinmiyor",
     contractEnd: item.contract_end || null,
   }));
+};
+
+export const listOsgbPersonnel = async (userId: string): Promise<OsgbPersonnelRecord[]> => {
+  const { data, error } = await supabase
+    .from("osgb_personnel")
+    .select("*")
+    .eq("user_id", userId)
+    .order("full_name", { ascending: true });
+
+  if (error) throw error;
+  return (data ?? []) as OsgbPersonnelRecord[];
+};
+
+export const upsertOsgbPersonnel = async (userId: string, input: OsgbPersonnelInput, id?: string) => {
+  const payload = {
+    user_id: userId,
+    full_name: input.fullName,
+    role: input.role,
+    certificate_no: input.certificateNo || null,
+    phone: input.phone || null,
+    email: input.email || null,
+    monthly_capacity_minutes: input.monthlyCapacityMinutes,
+    is_active: input.isActive ?? true,
+    notes: input.notes || null,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (id) {
+    const { data, error } = await supabase.from("osgb_personnel").update(payload).eq("id", id).select("*").single();
+    if (error) throw error;
+    return data as OsgbPersonnelRecord;
+  }
+
+  const { data, error } = await supabase.from("osgb_personnel").insert(payload).select("*").single();
+  if (error) throw error;
+  return data as OsgbPersonnelRecord;
+};
+
+export const deleteOsgbPersonnel = async (id: string) => {
+  const { error } = await supabase.from("osgb_personnel").delete().eq("id", id);
+  if (error) throw error;
+};
+
+export const listOsgbAssignments = async (userId: string): Promise<OsgbAssignmentRecord[]> => {
+  const { data, error } = await supabase
+    .from("osgb_assignments")
+    .select("*, company:isgkatip_companies(company_name), personnel:osgb_personnel(full_name, role)")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+  return (data ?? []) as OsgbAssignmentRecord[];
+};
+
+export const getCompanyActiveAssignment = async (userId: string, companyId: string, assignmentId?: string) => {
+  let query = supabase
+    .from("osgb_assignments")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("company_id", companyId)
+    .eq("status", "active")
+    .limit(1);
+
+  if (assignmentId) {
+    query = query.neq("id", assignmentId);
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data ?? []).length > 0;
+};
+
+export const upsertOsgbAssignment = async (userId: string, input: OsgbAssignmentInput, id?: string) => {
+  const hasDuplicate = input.status === "active"
+    ? await getCompanyActiveAssignment(userId, input.companyId, id)
+    : false;
+
+  if (hasDuplicate) {
+    throw new Error(assignmentDuplicateMessage);
+  }
+
+  const payload = {
+    user_id: userId,
+    company_id: input.companyId,
+    personnel_id: input.personnelId,
+    assigned_role: input.assignedRole,
+    assigned_minutes: input.assignedMinutes,
+    start_date: input.startDate || null,
+    end_date: input.endDate || null,
+    status: input.status || "active",
+    notes: input.notes || null,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (id) {
+    const { data, error } = await supabase
+      .from("osgb_assignments")
+      .update(payload)
+      .eq("id", id)
+      .select("*, company:isgkatip_companies(company_name), personnel:osgb_personnel(full_name, role)")
+      .single();
+
+    if (error) {
+      if ((error as { code?: string }).code === "23505") {
+        throw new Error(assignmentDuplicateMessage);
+      }
+      throw error;
+    }
+    return data as OsgbAssignmentRecord;
+  }
+
+  const { data, error } = await supabase
+    .from("osgb_assignments")
+    .insert(payload)
+    .select("*, company:isgkatip_companies(company_name), personnel:osgb_personnel(full_name, role)")
+    .single();
+
+  if (error) {
+    if ((error as { code?: string }).code === "23505") {
+      throw new Error(assignmentDuplicateMessage);
+    }
+    throw error;
+  }
+  return data as OsgbAssignmentRecord;
+};
+
+export const deleteOsgbAssignment = async (id: string) => {
+  const { error } = await supabase.from("osgb_assignments").delete().eq("id", id);
+  if (error) throw error;
 };
 
 export const listOsgbFinance = async (userId: string): Promise<OsgbFinanceRecord[]> => {
@@ -369,6 +585,78 @@ export const getOsgbOperationalSummary = async (userId: string): Promise<OsgbOpe
       monthlyTrend: documentMonthlyTrend,
     },
   };
+};
+
+export const getOsgbCompanyTracking = async (userId: string): Promise<OsgbCompanyTrackingRecord[]> => {
+  const [companies, assignments, documents, finance, tasks, notes] = await Promise.all([
+    supabase
+      .from("isgkatip_companies")
+      .select("id, company_name, hazard_class, employee_count, contract_end, required_minutes, assigned_minutes")
+      .eq("org_id", userId)
+      .eq("is_deleted", false)
+      .order("company_name", { ascending: true }),
+    listOsgbAssignments(userId),
+    listOsgbDocuments(userId),
+    listOsgbFinance(userId),
+    listOsgbTasks(userId),
+    listOsgbNotes(userId),
+  ]);
+
+  if (companies.error) throw companies.error;
+
+  return (companies.data ?? []).map((company: any) => {
+    const activeAssignment = assignments.find(
+      (assignment) => assignment.company_id === company.id && assignment.status === "active",
+    );
+    const companyDocuments = documents.filter((document) => document.company_id === company.id);
+    const companyFinance = finance.filter((item) => item.company_id === company.id);
+    const companyTasks = tasks.filter(
+      (task) => task.company_id === company.id && task.status !== "completed" && task.status !== "cancelled",
+    );
+    const companyNotes = notes.filter((note) => note.company_id === company.id);
+
+    const assignmentStatus: OsgbCompanyTrackingRecord["assignmentStatus"] = !activeAssignment
+      ? "atanmamis"
+      : (activeAssignment.assigned_minutes || 0) < (company.required_minutes || 0)
+        ? "eksik"
+        : "atandi";
+
+    return {
+      companyId: company.id,
+      companyName: company.company_name,
+      hazardClass: company.hazard_class || "Bilinmiyor",
+      employeeCount: company.employee_count || 0,
+      contractEnd: company.contract_end || null,
+      requiredMinutes: company.required_minutes || 0,
+      assignedMinutes: activeAssignment?.assigned_minutes || 0,
+      assignmentStatus,
+      activeAssignment: activeAssignment
+        ? {
+            assignmentId: activeAssignment.id,
+            personnelName: activeAssignment.personnel?.full_name || "Atanan personel",
+            role: activeAssignment.assigned_role,
+            assignedMinutes: activeAssignment.assigned_minutes,
+            startDate: activeAssignment.start_date,
+            endDate: activeAssignment.end_date,
+          }
+        : null,
+      documentSummary: {
+        active: companyDocuments.filter((document) => document.status === "active").length,
+        warning: companyDocuments.filter((document) => document.status === "warning").length,
+        expired: companyDocuments.filter((document) => document.status === "expired").length,
+      },
+      financeSummary: {
+        pendingAmount: companyFinance
+          .filter((item) => item.status === "pending")
+          .reduce((sum, item) => sum + item.amount, 0),
+        overdueAmount: companyFinance
+          .filter((item) => item.status === "overdue")
+          .reduce((sum, item) => sum + item.amount, 0),
+      },
+      openTaskCount: companyTasks.length,
+      noteCount: companyNotes.length,
+    } satisfies OsgbCompanyTrackingRecord;
+  });
 };
 
 export const listOsgbTasks = async (userId: string): Promise<OsgbTaskRecord[]> => {

@@ -38,6 +38,9 @@ const CompanyManager = lazy(() => import("./pages/CompanyManager"));
 const AssignmentLetters = lazy(() => import("./pages/AssignmentLetters"));
 const OSGBModule = lazy(() => import("./pages/OSGBModule"));
 const OSGBDashboard = lazy(() => import("./pages/OSGBDashboard"));
+const OSGBPersonnel = lazy(() => import("./pages/OSGBPersonnel"));
+const OSGBAssignments = lazy(() => import("./pages/OSGBAssignments"));
+const OSGBCompanyTracking = lazy(() => import("./pages/OSGBCompanyTracking"));
 const OSGBCapacity = lazy(() => import("./pages/OSGBCapacity"));
 const OSGBAlerts = lazy(() => import("./pages/OSGBAlerts"));
 const OSGBFinance = lazy(() => import("./pages/OSGBFinance"));
@@ -208,6 +211,9 @@ const App = () => (
                           <Route path="/assignment-letters" element={<AssignmentLetters />} />
                           <Route path="/osgb" element={<OSGBModule />} />
                           <Route path="/osgb/dashboard" element={<OSGBDashboard />} />
+                          <Route path="/osgb/personnel" element={<OSGBPersonnel />} />
+                          <Route path="/osgb/assignments" element={<OSGBAssignments />} />
+                          <Route path="/osgb/company-tracking" element={<OSGBCompanyTracking />} />
                           <Route path="/osgb/capacity" element={<OSGBCapacity />} />
                           <Route path="/osgb/alerts" element={<OSGBAlerts />} />
                           <Route path="/osgb/finance" element={<OSGBFinance />} />

@@ -198,6 +198,24 @@ export function AppSidebar() {
               badge: null,
             },
             {
+              title: "Personel Havuzu",
+              url: "/osgb/personnel",
+              icon: Users,
+              badge: null,
+            },
+            {
+              title: "Personel Görevlendirme",
+              url: "/osgb/assignments",
+              icon: Briefcase,
+              badge: null,
+            },
+            {
+              title: "Firma Takibi",
+              url: "/osgb/company-tracking",
+              icon: Building2,
+              badge: null,
+            },
+            {
               title: "Süre ve Kapasite",
               url: "/osgb/capacity",
               icon: TrendingUp,

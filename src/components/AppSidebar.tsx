@@ -181,6 +181,18 @@ export function AppSidebar() {
           icon: Users,
           badge: null,
         },
+        {
+          title: "OSGB Modülü",
+          url: "/osgb",
+          icon: Briefcase,
+          badge: "NEW",
+        },
+        {
+          title: "OSGB Dashboard",
+          url: "/osgb/dashboard",
+          icon: LayoutDashboard,
+          badge: null,
+        },
       ],
     },
     {

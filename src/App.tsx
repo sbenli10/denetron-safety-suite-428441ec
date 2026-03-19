@@ -36,6 +36,8 @@ const Settings = lazy(() => import("./pages/Settings"));
 const Profile = lazy(() => import("./pages/Profile"));
 const CompanyManager = lazy(() => import("./pages/CompanyManager"));
 const AssignmentLetters = lazy(() => import("./pages/AssignmentLetters"));
+const OSGBModule = lazy(() => import("./pages/OSGBModule"));
+const OSGBDashboard = lazy(() => import("./pages/OSGBDashboard"));
 const CertificatesDashboard = lazy(() => import("./pages/CertificatesDashboard"));
 const CertificateStudio = lazy(() => import("./pages/CertificateStudio"));
 const CertificatesHistory = lazy(() => import("./pages/CertificatesHistory"));
@@ -197,6 +199,8 @@ const App = () => (
                           {/* ============================================ */}
                           <Route path="/companies" element={<CompanyManager />} />
                           <Route path="/assignment-letters" element={<AssignmentLetters />} />
+                          <Route path="/osgb" element={<OSGBModule />} />
+                          <Route path="/osgb/dashboard" element={<OSGBDashboard />} />
                           <Route path="/dashboard/certificates" element={<CertificatesDashboard />} />
                           <Route path="/dashboard/certificate-studio" element={<CertificateStudio />} />
                           <Route path="/dashboard/certificates/history" element={<CertificatesHistory />} />

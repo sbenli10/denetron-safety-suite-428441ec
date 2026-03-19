@@ -6,6 +6,13 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -40,6 +47,7 @@ export default function OSGBCompanyTracking() {
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
+  const [selectedCompany, setSelectedCompany] = useState<OsgbCompanyTrackingRecord | null>(null);
 
   const loadData = async () => {
     if (!user?.id) return;
@@ -75,14 +83,15 @@ export default function OSGBCompanyTracking() {
     });
   }, [records, search, statusFilter]);
 
-  const summary = useMemo(() => {
-    return {
+  const summary = useMemo(
+    () => ({
       tracked: records.length,
       withExpiredDocs: records.filter((item) => item.documentSummary.expired > 0).length,
       withOverdueFinance: records.filter((item) => item.financeSummary.overdueAmount > 0).length,
       assignmentRisk: records.filter((item) => item.assignmentStatus !== "atandi").length,
-    };
-  }, [records]);
+    }),
+    [records],
+  );
 
   return (
     <div className="container mx-auto space-y-6 py-6">
@@ -107,34 +116,10 @@ export default function OSGBCompanyTracking() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <Card className="border-slate-800 bg-slate-950/70">
-          <CardHeader className="pb-2">
-            <CardDescription>Takip edilen firma</CardDescription>
-            <CardTitle className="text-3xl text-white">{summary.tracked}</CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-slate-400">Portföyde aktif görünen toplam firma.</CardContent>
-        </Card>
-        <Card className="border-slate-800 bg-slate-950/70">
-          <CardHeader className="pb-2">
-            <CardDescription>Süresi dolan evrak</CardDescription>
-            <CardTitle className="text-3xl text-white">{summary.withExpiredDocs}</CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-slate-400">En az bir süresi dolmuş evrakı olan firmalar.</CardContent>
-        </Card>
-        <Card className="border-slate-800 bg-slate-950/70">
-          <CardHeader className="pb-2">
-            <CardDescription>Gecikmiş finans</CardDescription>
-            <CardTitle className="text-3xl text-white">{summary.withOverdueFinance}</CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-slate-400">Gecikmiş ödeme kaydı bulunan firmalar.</CardContent>
-        </Card>
-        <Card className="border-slate-800 bg-slate-950/70">
-          <CardHeader className="pb-2">
-            <CardDescription>Atama riski</CardDescription>
-            <CardTitle className="text-3xl text-white">{summary.assignmentRisk}</CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-slate-400">Atanmamış veya eksik süreli firma sayısı.</CardContent>
-        </Card>
+        <Card className="border-slate-800 bg-slate-950/70"><CardHeader className="pb-2"><CardDescription>Takip edilen firma</CardDescription><CardTitle className="text-3xl text-white">{summary.tracked}</CardTitle></CardHeader><CardContent className="text-xs text-slate-400">Portföyde aktif görünen toplam firma.</CardContent></Card>
+        <Card className="border-slate-800 bg-slate-950/70"><CardHeader className="pb-2"><CardDescription>Süresi dolan evrak</CardDescription><CardTitle className="text-3xl text-white">{summary.withExpiredDocs}</CardTitle></CardHeader><CardContent className="text-xs text-slate-400">En az bir süresi dolmuş evrakı olan firmalar.</CardContent></Card>
+        <Card className="border-slate-800 bg-slate-950/70"><CardHeader className="pb-2"><CardDescription>Gecikmiş finans</CardDescription><CardTitle className="text-3xl text-white">{summary.withOverdueFinance}</CardTitle></CardHeader><CardContent className="text-xs text-slate-400">Gecikmiş ödeme kaydı bulunan firmalar.</CardContent></Card>
+        <Card className="border-slate-800 bg-slate-950/70"><CardHeader className="pb-2"><CardDescription>Atama riski</CardDescription><CardTitle className="text-3xl text-white">{summary.assignmentRisk}</CardTitle></CardHeader><CardContent className="text-xs text-slate-400">Atanmamış veya eksik süreli firma sayısı.</CardContent></Card>
       </div>
 
       {error ? (
@@ -148,7 +133,7 @@ export default function OSGBCompanyTracking() {
       <Card className="border-slate-800 bg-slate-950/70">
         <CardHeader className="pb-4">
           <CardTitle className="text-white">Filtreler</CardTitle>
-          <CardDescription>Portföyü arama ve assignment durumuna göre daraltın.</CardDescription>
+          <CardDescription>Portföyü arama ve atama durumuna göre daraltın.</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-3 md:grid-cols-[1fr_220px]">
           <div className="space-y-2">
@@ -160,11 +145,7 @@ export default function OSGBCompanyTracking() {
           </div>
           <div className="space-y-2">
             <Label>Atama durumu</Label>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-            >
+            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm">
               <option value="ALL">Tüm durumlar</option>
               <option value="atandi">Atama tamam</option>
               <option value="eksik">Eksik süre</option>
@@ -191,7 +172,7 @@ export default function OSGBCompanyTracking() {
                   <TableHead>Evrak</TableHead>
                   <TableHead>Finans</TableHead>
                   <TableHead>Görev / Not</TableHead>
-                  <TableHead className="text-right">Drill-down</TableHead>
+                  <TableHead className="text-right">İşlem</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -200,20 +181,14 @@ export default function OSGBCompanyTracking() {
                     <TableCell>
                       <div className="space-y-1">
                         <div className="font-medium text-white">{record.companyName}</div>
-                        <div className="text-xs text-slate-400">
-                          {record.hazardClass} • {record.employeeCount} çalışan • Bitiş: {record.contractEnd || "-"}
-                        </div>
+                        <div className="text-xs text-slate-400">{record.hazardClass} • {record.employeeCount} çalışan • Bitiş: {record.contractEnd || "-"}</div>
                       </div>
                     </TableCell>
                     <TableCell>
                       <div className="space-y-2">
-                        <Badge className={assignmentStatusClass[record.assignmentStatus]}>
-                          {assignmentStatusLabel[record.assignmentStatus]}
-                        </Badge>
+                        <Badge className={assignmentStatusClass[record.assignmentStatus]}>{assignmentStatusLabel[record.assignmentStatus]}</Badge>
                         <div className="text-xs text-slate-400">
-                          {record.activeAssignment
-                            ? `${record.activeAssignment.personnelName} • ${record.activeAssignment.assignedMinutes}/${record.requiredMinutes} dk`
-                            : `Atama yok • Gerekli: ${record.requiredMinutes} dk`}
+                          {record.activeAssignment ? `${record.activeAssignment.personnelName} • ${record.activeAssignment.assignedMinutes}/${record.requiredMinutes} dk` : `Atama yok • Gerekli: ${record.requiredMinutes} dk`}
                         </div>
                       </div>
                     </TableCell>
@@ -238,6 +213,7 @@ export default function OSGBCompanyTracking() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
+                        <Button size="sm" variant="outline" onClick={() => setSelectedCompany(record)}>Detay</Button>
                         <Button asChild size="sm" variant="outline">
                           <Link to={`/osgb/documents?status=${record.documentSummary.expired > 0 ? "expired" : record.documentSummary.warning > 0 ? "warning" : "active"}`}>
                             <FileClock className="mr-2 h-4 w-4" />
@@ -259,6 +235,53 @@ export default function OSGBCompanyTracking() {
           )}
         </CardContent>
       </Card>
+
+      <Dialog open={Boolean(selectedCompany)} onOpenChange={(open) => !open && setSelectedCompany(null)}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{selectedCompany?.companyName}</DialogTitle>
+            <DialogDescription>Firma bazlı operasyon özeti, riskler ve doğrudan geçiş bağlantıları.</DialogDescription>
+          </DialogHeader>
+          {selectedCompany ? (
+            <div className="grid gap-4 md:grid-cols-2">
+              <Card className="border-slate-800 bg-slate-950/70">
+                <CardHeader><CardTitle className="text-base text-white">Atama özeti</CardTitle></CardHeader>
+                <CardContent className="space-y-2 text-sm text-slate-300">
+                  <div>Durum: <Badge className={assignmentStatusClass[selectedCompany.assignmentStatus]}>{assignmentStatusLabel[selectedCompany.assignmentStatus]}</Badge></div>
+                  <div>Gerekli süre: {selectedCompany.requiredMinutes} dk</div>
+                  <div>Atanan süre: {selectedCompany.assignedMinutes} dk</div>
+                  <div>Aktif personel: {selectedCompany.activeAssignment?.personnelName || "-"}</div>
+                  <div>Rol: {selectedCompany.activeAssignment?.role || "-"}</div>
+                </CardContent>
+              </Card>
+              <Card className="border-slate-800 bg-slate-950/70">
+                <CardHeader><CardTitle className="text-base text-white">Evrak özeti</CardTitle></CardHeader>
+                <CardContent className="space-y-2 text-sm text-slate-300">
+                  <div>Aktif evrak: {selectedCompany.documentSummary.active}</div>
+                  <div>Yaklaşan evrak: {selectedCompany.documentSummary.warning}</div>
+                  <div>Süresi dolmuş evrak: {selectedCompany.documentSummary.expired}</div>
+                </CardContent>
+              </Card>
+              <Card className="border-slate-800 bg-slate-950/70">
+                <CardHeader><CardTitle className="text-base text-white">Finans özeti</CardTitle></CardHeader>
+                <CardContent className="space-y-2 text-sm text-slate-300">
+                  <div>Bekleyen tutar: {money(selectedCompany.financeSummary.pendingAmount)}</div>
+                  <div>Geciken tutar: {money(selectedCompany.financeSummary.overdueAmount)}</div>
+                </CardContent>
+              </Card>
+              <Card className="border-slate-800 bg-slate-950/70">
+                <CardHeader><CardTitle className="text-base text-white">Operasyon yoğunluğu</CardTitle></CardHeader>
+                <CardContent className="space-y-2 text-sm text-slate-300">
+                  <div>Açık görev: {selectedCompany.openTaskCount}</div>
+                  <div>Not sayısı: {selectedCompany.noteCount}</div>
+                  <div>Tehlike sınıfı: {selectedCompany.hazardClass}</div>
+                  <div>Çalışan sayısı: {selectedCompany.employeeCount}</div>
+                </CardContent>
+              </Card>
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

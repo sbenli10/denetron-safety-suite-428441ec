@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   Briefcase,
+  Gauge,
   Plus,
   RefreshCcw,
   Search,
@@ -139,6 +140,32 @@ export default function OSGBAssignments() {
     void loadData();
   }, [user?.id]);
 
+  const livePersonnelCapacity = useMemo(() => {
+    if (!form.personnelId) return null;
+    const selected = personnel.find((item) => item.id === form.personnelId);
+    if (!selected) return null;
+
+    const currentAssigned = records
+      .filter((record) => record.personnel_id === form.personnelId && record.status === "active" && record.id !== editing?.id)
+      .reduce((sum, record) => sum + record.assigned_minutes, 0);
+
+    const requested = Number(form.assignedMinutes || 0);
+    const totalProjected = currentAssigned + requested;
+    const remaining = selected.monthly_capacity_minutes - totalProjected;
+    const ratio = selected.monthly_capacity_minutes > 0
+      ? Math.round((totalProjected / selected.monthly_capacity_minutes) * 100)
+      : 0;
+
+    return {
+      selected,
+      currentAssigned,
+      totalProjected,
+      remaining,
+      ratio,
+      exceeded: remaining < 0,
+    };
+  }, [editing?.id, form.assignedMinutes, form.personnelId, personnel, records]);
+
   const filteredRecords = useMemo(() => {
     const query = search.trim().toLowerCase();
     return records.filter((record) => {
@@ -158,9 +185,7 @@ export default function OSGBAssignments() {
   const summary = useMemo(() => {
     const active = records.filter((item) => item.status === "active").length;
     const pendingCompanyIds = new Set(
-      companies
-        .filter((company) => !records.some((record) => record.company_id === company.id && record.status === "active"))
-        .map((company) => company.id),
+      companies.filter((company) => !records.some((record) => record.company_id === company.id && record.status === "active")).map((company) => company.id),
     );
     return {
       active,
@@ -209,9 +234,7 @@ export default function OSGBAssignments() {
         notes: form.notes,
       };
       const saved = await upsertOsgbAssignment(user.id, payload, editing?.id);
-      setRecords((prev) =>
-        editing ? prev.map((item) => (item.id === saved.id ? saved : item)) : [saved, ...prev],
-      );
+      setRecords((prev) => (editing ? prev.map((item) => (item.id === saved.id ? saved : item)) : [saved, ...prev]));
       setDialogOpen(false);
       setEditing(null);
       setForm(emptyForm);
@@ -263,35 +286,15 @@ export default function OSGBAssignments() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
-        <Card className="border-slate-800 bg-slate-950/70">
-          <CardHeader className="pb-2">
-            <CardDescription>Aktif atama</CardDescription>
-            <CardTitle className="text-3xl text-white">{summary.active}</CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-slate-400">Şu an aktif durumda olan firma atamaları.</CardContent>
-        </Card>
-        <Card className="border-slate-800 bg-slate-950/70">
-          <CardHeader className="pb-2">
-            <CardDescription>Toplam kayıt</CardDescription>
-            <CardTitle className="text-3xl text-white">{summary.total}</CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-slate-400">Aktif, pasif, tamamlanan ve iptal edilen tüm kayıtlar.</CardContent>
-        </Card>
-        <Card className="border-slate-800 bg-slate-950/70">
-          <CardHeader className="pb-2">
-            <CardDescription>Atanmamış firma</CardDescription>
-            <CardTitle className="text-3xl text-white">{summary.unassignedCompanies}</CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-slate-400">Henüz aktif personel atanmamış firma sayısı.</CardContent>
-        </Card>
+        <Card className="border-slate-800 bg-slate-950/70"><CardHeader className="pb-2"><CardDescription>Aktif atama</CardDescription><CardTitle className="text-3xl text-white">{summary.active}</CardTitle></CardHeader><CardContent className="text-xs text-slate-400">Şu an aktif durumda olan firma atamaları.</CardContent></Card>
+        <Card className="border-slate-800 bg-slate-950/70"><CardHeader className="pb-2"><CardDescription>Toplam kayıt</CardDescription><CardTitle className="text-3xl text-white">{summary.total}</CardTitle></CardHeader><CardContent className="text-xs text-slate-400">Aktif, pasif, tamamlanan ve iptal edilen tüm kayıtlar.</CardContent></Card>
+        <Card className="border-slate-800 bg-slate-950/70"><CardHeader className="pb-2"><CardDescription>Atanmamış firma</CardDescription><CardTitle className="text-3xl text-white">{summary.unassignedCompanies}</CardTitle></CardHeader><CardContent className="text-xs text-slate-400">Henüz aktif personel atanmamış firma sayısı.</CardContent></Card>
       </div>
 
       <Alert>
         <ShieldBan className="h-4 w-4" />
         <AlertTitle>Mükerrer atama engeli aktif</AlertTitle>
-        <AlertDescription>
-          Bir firmada aynı anda yalnızca bir aktif personel görevlendirmesi olabilir. Yeni aktif kayıt eklenmeye çalışılırsa işlem reddedilir.
-        </AlertDescription>
+        <AlertDescription>Bir firmada aynı anda yalnızca bir aktif personel görevlendirmesi olabilir. Yeni aktif kayıt eklenmeye çalışılırsa işlem reddedilir.</AlertDescription>
       </Alert>
 
       {error ? (
@@ -318,9 +321,7 @@ export default function OSGBAssignments() {
           <div className="space-y-2">
             <Label>Durum</Label>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger>
-                <SelectValue placeholder="Tüm durumlar" />
-              </SelectTrigger>
+              <SelectTrigger><SelectValue placeholder="Tüm durumlar" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="ALL">Tüm durumlar</SelectItem>
                 <SelectItem value="active">Aktif</SelectItem>
@@ -366,17 +367,11 @@ export default function OSGBAssignments() {
                     </TableCell>
                     <TableCell>{roleLabel[record.assigned_role]}</TableCell>
                     <TableCell>{record.assigned_minutes} dk</TableCell>
-                    <TableCell>
-                      {formatDate(record.start_date)} - {formatDate(record.end_date)}
-                    </TableCell>
-                    <TableCell>
-                      <Badge className={statusClass[record.status]}>{statusLabel[record.status]}</Badge>
-                    </TableCell>
+                    <TableCell>{formatDate(record.start_date)} - {formatDate(record.end_date)}</TableCell>
+                    <TableCell><Badge className={statusClass[record.status]}>{statusLabel[record.status]}</Badge></TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
-                        <Button size="sm" variant="outline" onClick={() => openEdit(record)}>
-                          Düzenle
-                        </Button>
+                        <Button size="sm" variant="outline" onClick={() => openEdit(record)}>Düzenle</Button>
                         <Button size="sm" variant="ghost" className="text-rose-300 hover:text-rose-200" onClick={() => void handleDelete(record.id)}>
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -394,47 +389,27 @@ export default function OSGBAssignments() {
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>{editing ? "Görevlendirme düzenle" : "Yeni görevlendirme oluştur"}</DialogTitle>
-            <DialogDescription>
-              Firma, personel ve dakika bilgilerini girin. Bir firmada tek aktif assignment kuralı uygulanır.
-            </DialogDescription>
+            <DialogDescription>Firma, personel ve dakika bilgilerini girin. Bir firmada tek aktif assignment kuralı uygulanır.</DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-2 md:grid-cols-2">
             <div className="space-y-2">
               <Label>Firma</Label>
               <Select value={form.companyId} onValueChange={(value) => setForm((prev) => ({ ...prev, companyId: value }))}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Firma seçin" />
-                </SelectTrigger>
-                <SelectContent>
-                  {companies.map((company) => (
-                    <SelectItem key={company.id} value={company.id}>
-                      {company.companyName}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
+                <SelectTrigger><SelectValue placeholder="Firma seçin" /></SelectTrigger>
+                <SelectContent>{companies.map((company) => <SelectItem key={company.id} value={company.id}>{company.companyName}</SelectItem>)}</SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
               <Label>Personel</Label>
               <Select value={form.personnelId} onValueChange={(value) => setForm((prev) => ({ ...prev, personnelId: value }))}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Personel seçin" />
-                </SelectTrigger>
-                <SelectContent>
-                  {personnel.map((item) => (
-                    <SelectItem key={item.id} value={item.id}>
-                      {item.full_name} • {item.role.toUpperCase()}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
+                <SelectTrigger><SelectValue placeholder="Personel seçin" /></SelectTrigger>
+                <SelectContent>{personnel.map((item) => <SelectItem key={item.id} value={item.id}>{item.full_name} • {item.role.toUpperCase()}</SelectItem>)}</SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
               <Label>Görevlendirme rolü</Label>
               <Select value={form.assignedRole} onValueChange={(value) => setForm((prev) => ({ ...prev, assignedRole: value as AssignmentFormState["assignedRole"] }))}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
+                <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="igu">İGU</SelectItem>
                   <SelectItem value="hekim">İşyeri Hekimi</SelectItem>
@@ -446,6 +421,17 @@ export default function OSGBAssignments() {
               <Label>Atanan süre (dk)</Label>
               <Input type="number" min="0" value={form.assignedMinutes} onChange={(e) => setForm((prev) => ({ ...prev, assignedMinutes: e.target.value }))} />
             </div>
+            {livePersonnelCapacity ? (
+              <div className="space-y-2 md:col-span-2">
+                <Alert variant={livePersonnelCapacity.exceeded ? "destructive" : "default"}>
+                  <Gauge className="h-4 w-4" />
+                  <AlertTitle>{livePersonnelCapacity.selected.full_name} için canlı kapasite görünümü</AlertTitle>
+                  <AlertDescription>
+                    Mevcut yük: {livePersonnelCapacity.currentAssigned} dk • Bu atama ile toplam: {livePersonnelCapacity.totalProjected} dk / {livePersonnelCapacity.selected.monthly_capacity_minutes} dk • Kalan: {livePersonnelCapacity.remaining} dk
+                  </AlertDescription>
+                </Alert>
+              </div>
+            ) : null}
             <div className="space-y-2">
               <Label>Başlangıç tarihi</Label>
               <Input type="date" value={form.startDate} onChange={(e) => setForm((prev) => ({ ...prev, startDate: e.target.value }))} />
@@ -457,9 +443,7 @@ export default function OSGBAssignments() {
             <div className="space-y-2">
               <Label>Durum</Label>
               <Select value={form.status} onValueChange={(value) => setForm((prev) => ({ ...prev, status: value as AssignmentFormState["status"] }))}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
+                <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="active">Aktif</SelectItem>
                   <SelectItem value="passive">Pasif</SelectItem>
@@ -474,10 +458,8 @@ export default function OSGBAssignments() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>
-              Vazgeç
-            </Button>
-            <Button onClick={() => void handleSave()} disabled={saving}>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>Vazgeç</Button>
+            <Button onClick={() => void handleSave()} disabled={saving || livePersonnelCapacity?.exceeded}>
               {saving ? "Kaydediliyor..." : editing ? "Güncelle" : "Kaydet"}
             </Button>
           </DialogFooter>

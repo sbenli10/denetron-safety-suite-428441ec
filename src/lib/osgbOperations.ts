@@ -15,6 +15,8 @@ export interface OsgbPersonnelRecord {
   certificate_no: string | null;
   phone: string | null;
   email: string | null;
+  certificate_expiry_date: string | null;
+  expertise_areas: string[] | null;
   monthly_capacity_minutes: number;
   is_active: boolean;
   notes: string | null;
@@ -161,6 +163,8 @@ export interface OsgbPersonnelInput {
   certificateNo?: string | null;
   phone?: string | null;
   email?: string | null;
+  certificateExpiryDate?: string | null;
+  expertiseAreas?: string[] | null;
   monthlyCapacityMinutes: number;
   isActive?: boolean;
   notes?: string | null;
@@ -290,6 +294,8 @@ export const upsertOsgbPersonnel = async (userId: string, input: OsgbPersonnelIn
     certificate_no: input.certificateNo || null,
     phone: input.phone || null,
     email: input.email || null,
+    certificate_expiry_date: input.certificateExpiryDate || null,
+    expertise_areas: input.expertiseAreas?.filter(Boolean) || [],
     monthly_capacity_minutes: input.monthlyCapacityMinutes,
     is_active: input.isActive ?? true,
     notes: input.notes || null,

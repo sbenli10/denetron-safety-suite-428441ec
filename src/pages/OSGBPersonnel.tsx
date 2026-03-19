@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  AlertTriangle,
   BadgeCheck,
+  CalendarClock,
   Plus,
   RefreshCcw,
   Search,
@@ -55,6 +57,8 @@ type PersonnelFormState = {
   fullName: string;
   role: OsgbPersonnelRecord["role"];
   certificateNo: string;
+  certificateExpiryDate: string;
+  expertiseAreas: string;
   phone: string;
   email: string;
   monthlyCapacityMinutes: string;
@@ -66,6 +70,8 @@ const emptyForm: PersonnelFormState = {
   fullName: "",
   role: "igu",
   certificateNo: "",
+  certificateExpiryDate: "",
+  expertiseAreas: "",
   phone: "",
   email: "",
   monthlyCapacityMinutes: "",
@@ -89,6 +95,13 @@ const roleBadgeClass: Record<OsgbPersonnelRecord["role"], string> = {
   igu: "bg-cyan-500/15 text-cyan-200 border-cyan-400/20",
   hekim: "bg-emerald-500/15 text-emerald-200 border-emerald-400/20",
   dsp: "bg-violet-500/15 text-violet-200 border-violet-400/20",
+};
+
+const formatDate = (value: string | null) => {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "-";
+  return date.toLocaleDateString("tr-TR");
 };
 
 export default function OSGBPersonnel() {
@@ -127,22 +140,22 @@ export default function OSGBPersonnel() {
     void loadData();
   }, [user?.id]);
 
-  const loadByPersonnelId = useMemo(() => {
-    return assignments
-      .filter((assignment) => assignment.status === "active")
-      .reduce<Record<string, number>>((acc, assignment) => {
-        acc[assignment.personnel_id] = (acc[assignment.personnel_id] || 0) + assignment.assigned_minutes;
-        return acc;
-      }, {});
-  }, [assignments]);
+  const loadByPersonnelId = useMemo(
+    () =>
+      assignments
+        .filter((assignment) => assignment.status === "active")
+        .reduce<Record<string, number>>((acc, assignment) => {
+          acc[assignment.personnel_id] = (acc[assignment.personnel_id] || 0) + assignment.assigned_minutes;
+          return acc;
+        }, {}),
+    [assignments],
+  );
 
   const filteredRecords = useMemo(() => {
     const query = search.trim().toLowerCase();
     return records.filter((record) => {
       const matchesRole = roleFilter === "ALL" || record.role === roleFilter;
-      const matchesStatus =
-        statusFilter === "ALL" ||
-        (statusFilter === "active" ? record.is_active : !record.is_active);
+      const matchesStatus = statusFilter === "ALL" || (statusFilter === "active" ? record.is_active : !record.is_active);
       const matchesQuery =
         !query ||
         [
@@ -150,6 +163,7 @@ export default function OSGBPersonnel() {
           record.email || "",
           record.phone || "",
           record.certificate_no || "",
+          ...(record.expertise_areas || []),
           roleLabels[record.role],
         ].some((value) => value.toLowerCase().includes(query));
       return matchesRole && matchesStatus && matchesQuery;
@@ -158,10 +172,18 @@ export default function OSGBPersonnel() {
 
   const summary = useMemo(() => {
     const active = records.filter((item) => item.is_active).length;
-    const igu = records.filter((item) => item.role === "igu" && item.is_active).length;
-    const hekim = records.filter((item) => item.role === "hekim" && item.is_active).length;
-    const dsp = records.filter((item) => item.role === "dsp" && item.is_active).length;
-    return { active, igu, hekim, dsp };
+    const expiringSoon = records.filter((item) => {
+      if (!item.certificate_expiry_date) return false;
+      const diff = new Date(item.certificate_expiry_date).getTime() - Date.now();
+      return diff >= 0 && diff <= 1000 * 60 * 60 * 24 * 45;
+    }).length;
+    return {
+      active,
+      igu: records.filter((item) => item.role === "igu" && item.is_active).length,
+      hekim: records.filter((item) => item.role === "hekim" && item.is_active).length,
+      dsp: records.filter((item) => item.role === "dsp" && item.is_active).length,
+      expiringSoon,
+    };
   }, [records]);
 
   const openCreate = () => {
@@ -176,6 +198,8 @@ export default function OSGBPersonnel() {
       fullName: record.full_name,
       role: record.role,
       certificateNo: record.certificate_no || "",
+      certificateExpiryDate: record.certificate_expiry_date || "",
+      expertiseAreas: (record.expertise_areas || []).join(", "),
       phone: record.phone || "",
       email: record.email || "",
       monthlyCapacityMinutes: String(record.monthly_capacity_minutes || ""),
@@ -197,6 +221,11 @@ export default function OSGBPersonnel() {
         fullName: form.fullName,
         role: form.role,
         certificateNo: form.certificateNo,
+        certificateExpiryDate: form.certificateExpiryDate,
+        expertiseAreas: form.expertiseAreas
+          .split(",")
+          .map((item) => item.trim())
+          .filter(Boolean),
         phone: form.phone,
         email: form.email,
         monthlyCapacityMinutes: Number(form.monthlyCapacityMinutes),
@@ -205,9 +234,7 @@ export default function OSGBPersonnel() {
       };
 
       const saved = await upsertOsgbPersonnel(user.id, payload, editing?.id);
-      setRecords((prev) =>
-        editing ? prev.map((item) => (item.id === saved.id ? saved : item)) : [saved, ...prev],
-      );
+      setRecords((prev) => (editing ? prev.map((item) => (item.id === saved.id ? saved : item)) : [saved, ...prev]));
       setDialogOpen(false);
       setEditing(null);
       setForm(emptyForm);
@@ -242,7 +269,7 @@ export default function OSGBPersonnel() {
             <div>
               <h1 className="text-3xl font-bold tracking-tight text-white">OSGB Personel Havuzu</h1>
               <p className="text-sm text-slate-400">
-                İGU, işyeri hekimi ve DSP personellerini tek havuzdan yönetin. Kapasite ve doluluk oranları aktif atamalarla eşleştirilir.
+                İGU, işyeri hekimi ve DSP personellerini tek havuzdan yönetin. Belge geçerlilikleri, uzmanlık alanları ve kapasite dolulukları birlikte izlenir.
               </p>
             </div>
           </div>
@@ -259,35 +286,12 @@ export default function OSGBPersonnel() {
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <Card className="border-slate-800 bg-slate-950/70">
-          <CardHeader className="pb-2">
-            <CardDescription>Aktif personel</CardDescription>
-            <CardTitle className="text-3xl text-white">{summary.active}</CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-slate-400">Havuzda aktif tutulan personel sayısı.</CardContent>
-        </Card>
-        <Card className="border-slate-800 bg-slate-950/70">
-          <CardHeader className="pb-2">
-            <CardDescription>İGU</CardDescription>
-            <CardTitle className="text-3xl text-white">{summary.igu}</CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-slate-400">İş güvenliği uzmanı kapasitesi.</CardContent>
-        </Card>
-        <Card className="border-slate-800 bg-slate-950/70">
-          <CardHeader className="pb-2">
-            <CardDescription>İşyeri hekimi</CardDescription>
-            <CardTitle className="text-3xl text-white">{summary.hekim}</CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-slate-400">İşyeri hekimi kapasitesi.</CardContent>
-        </Card>
-        <Card className="border-slate-800 bg-slate-950/70">
-          <CardHeader className="pb-2">
-            <CardDescription>DSP</CardDescription>
-            <CardTitle className="text-3xl text-white">{summary.dsp}</CardTitle>
-          </CardHeader>
-          <CardContent className="text-xs text-slate-400">Diğer sağlık personeli kapasitesi.</CardContent>
-        </Card>
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+        <Card className="border-slate-800 bg-slate-950/70"><CardHeader className="pb-2"><CardDescription>Aktif personel</CardDescription><CardTitle className="text-3xl text-white">{summary.active}</CardTitle></CardHeader></Card>
+        <Card className="border-slate-800 bg-slate-950/70"><CardHeader className="pb-2"><CardDescription>İGU</CardDescription><CardTitle className="text-3xl text-white">{summary.igu}</CardTitle></CardHeader></Card>
+        <Card className="border-slate-800 bg-slate-950/70"><CardHeader className="pb-2"><CardDescription>İşyeri hekimi</CardDescription><CardTitle className="text-3xl text-white">{summary.hekim}</CardTitle></CardHeader></Card>
+        <Card className="border-slate-800 bg-slate-950/70"><CardHeader className="pb-2"><CardDescription>DSP</CardDescription><CardTitle className="text-3xl text-white">{summary.dsp}</CardTitle></CardHeader></Card>
+        <Card className="border-slate-800 bg-slate-950/70"><CardHeader className="pb-2"><CardDescription>Belgesi yaklaşan</CardDescription><CardTitle className="text-3xl text-white">{summary.expiringSoon}</CardTitle></CardHeader></Card>
       </div>
 
       {error ? (
@@ -308,15 +312,13 @@ export default function OSGBPersonnel() {
             <Label>Arama</Label>
             <div className="relative">
               <Search className="absolute left-3 top-3.5 h-4 w-4 text-slate-500" />
-              <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Ad, belge no veya e-posta..." className="pl-9" />
+              <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Ad, belge no, uzmanlık veya e-posta..." className="pl-9" />
             </div>
           </div>
           <div className="space-y-2">
             <Label>Rol</Label>
             <Select value={roleFilter} onValueChange={setRoleFilter}>
-              <SelectTrigger>
-                <SelectValue placeholder="Tüm roller" />
-              </SelectTrigger>
+              <SelectTrigger><SelectValue placeholder="Tüm roller" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="ALL">Tüm roller</SelectItem>
                 <SelectItem value="igu">İGU</SelectItem>
@@ -328,9 +330,7 @@ export default function OSGBPersonnel() {
           <div className="space-y-2">
             <Label>Durum</Label>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger>
-                <SelectValue placeholder="Tüm durumlar" />
-              </SelectTrigger>
+              <SelectTrigger><SelectValue placeholder="Tüm durumlar" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="ALL">Tüm durumlar</SelectItem>
                 <SelectItem value="active">Aktif</SelectItem>
@@ -344,7 +344,7 @@ export default function OSGBPersonnel() {
       <Card className="border-slate-800 bg-slate-950/70">
         <CardHeader>
           <CardTitle className="text-white">Personel listesi</CardTitle>
-          <CardDescription>Aktif assignment yükleri kapasite yüzdesi olarak gösterilir.</CardDescription>
+          <CardDescription>Belge geçerliliği, uzmanlık alanı ve kapasite doluluğu birlikte gösterilir.</CardDescription>
         </CardHeader>
         <CardContent>
           {loading ? (
@@ -355,19 +355,17 @@ export default function OSGBPersonnel() {
                 <TableRow className="border-slate-800">
                   <TableHead>Personel</TableHead>
                   <TableHead>Rol</TableHead>
-                  <TableHead>Belge No</TableHead>
+                  <TableHead>Belge / Geçerlilik</TableHead>
+                  <TableHead>Uzmanlık alanı</TableHead>
                   <TableHead>Kapasite</TableHead>
                   <TableHead>Doluluk</TableHead>
-                  <TableHead>Durum</TableHead>
                   <TableHead className="text-right">İşlem</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filteredRecords.map((record) => {
                   const assignedMinutes = loadByPersonnelId[record.id] || 0;
-                  const ratio = record.monthly_capacity_minutes > 0
-                    ? Math.round((assignedMinutes / record.monthly_capacity_minutes) * 100)
-                    : 0;
+                  const ratio = record.monthly_capacity_minutes > 0 ? Math.round((assignedMinutes / record.monthly_capacity_minutes) * 100) : 0;
                   const RoleIcon = roleIcons[record.role];
 
                   return (
@@ -375,40 +373,42 @@ export default function OSGBPersonnel() {
                       <TableCell>
                         <div className="space-y-1">
                           <div className="font-medium text-white">{record.full_name}</div>
-                          <div className="text-xs text-slate-400">
-                            {record.email || "-"} {record.phone ? `• ${record.phone}` : ""}
+                          <div className="text-xs text-slate-400">{record.email || "-"} {record.phone ? `• ${record.phone}` : ""}</div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge className={roleBadgeClass[record.role]}><RoleIcon className="mr-1 h-3.5 w-3.5" />{roleLabels[record.role]}</Badge>
+                      </TableCell>
+                      <TableCell>
+                        <div className="space-y-1 text-xs">
+                          <div className="text-white">{record.certificate_no || "-"}</div>
+                          <div className="flex items-center gap-1 text-slate-400">
+                            <CalendarClock className="h-3.5 w-3.5" />
+                            {formatDate(record.certificate_expiry_date)}
                           </div>
                         </div>
                       </TableCell>
                       <TableCell>
-                        <Badge className={roleBadgeClass[record.role]}>
-                          <RoleIcon className="mr-1 h-3.5 w-3.5" />
-                          {roleLabels[record.role]}
-                        </Badge>
+                        <div className="flex flex-wrap gap-1">
+                          {(record.expertise_areas || []).length > 0
+                            ? record.expertise_areas?.map((item) => (
+                                <Badge key={item} variant="outline" className="border-slate-700 text-slate-300">{item}</Badge>
+                              ))
+                            : <span className="text-xs text-slate-500">Tanımlanmadı</span>}
+                        </div>
                       </TableCell>
-                      <TableCell>{record.certificate_no || "-"}</TableCell>
                       <TableCell>{record.monthly_capacity_minutes} dk</TableCell>
                       <TableCell>
                         <div className="space-y-1">
                           <div className="text-sm text-white">{assignedMinutes} dk / %{Math.min(ratio, 999)}</div>
                           <div className="h-2 rounded-full bg-slate-800">
-                            <div
-                              className={`h-2 rounded-full ${ratio >= 100 ? "bg-red-500" : ratio >= 80 ? "bg-yellow-500" : "bg-cyan-500"}`}
-                              style={{ width: `${Math.min(ratio, 100)}%` }}
-                            />
+                            <div className={`h-2 rounded-full ${ratio >= 100 ? "bg-red-500" : ratio >= 80 ? "bg-yellow-500" : "bg-cyan-500"}`} style={{ width: `${Math.min(ratio, 100)}%` }} />
                           </div>
                         </div>
                       </TableCell>
-                      <TableCell>
-                        <Badge className={record.is_active ? "bg-emerald-500/15 text-emerald-200 border-emerald-400/20" : "bg-slate-500/15 text-slate-200 border-slate-400/20"}>
-                          {record.is_active ? "Aktif" : "Pasif"}
-                        </Badge>
-                      </TableCell>
                       <TableCell className="text-right">
                         <div className="flex justify-end gap-2">
-                          <Button size="sm" variant="outline" onClick={() => openEdit(record)}>
-                            Düzenle
-                          </Button>
+                          <Button size="sm" variant="outline" onClick={() => openEdit(record)}>Düzenle</Button>
                           <Button size="sm" variant="ghost" className="text-rose-300 hover:text-rose-200" onClick={() => void handleDelete(record.id)}>
                             <Trash2 className="h-4 w-4" />
                           </Button>
@@ -427,9 +427,7 @@ export default function OSGBPersonnel() {
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
             <DialogTitle>{editing ? "Personel kaydını düzenle" : "Yeni personel ekle"}</DialogTitle>
-            <DialogDescription>
-              OSGB personel havuzuna yeni personel ekleyin veya mevcut kaydı güncelleyin.
-            </DialogDescription>
+            <DialogDescription>OSGB personel havuzuna yeni personel ekleyin veya mevcut kaydı güncelleyin.</DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-2 md:grid-cols-2">
             <div className="space-y-2 md:col-span-2">
@@ -439,9 +437,7 @@ export default function OSGBPersonnel() {
             <div className="space-y-2">
               <Label>Rol</Label>
               <Select value={form.role} onValueChange={(value) => setForm((prev) => ({ ...prev, role: value as PersonnelFormState["role"] }))}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
+                <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="igu">İGU</SelectItem>
                   <SelectItem value="hekim">İşyeri Hekimi</SelectItem>
@@ -458,6 +454,14 @@ export default function OSGBPersonnel() {
               <Input value={form.certificateNo} onChange={(e) => setForm((prev) => ({ ...prev, certificateNo: e.target.value }))} />
             </div>
             <div className="space-y-2">
+              <Label>Belge geçerlilik tarihi</Label>
+              <Input type="date" value={form.certificateExpiryDate} onChange={(e) => setForm((prev) => ({ ...prev, certificateExpiryDate: e.target.value }))} />
+            </div>
+            <div className="space-y-2 md:col-span-2">
+              <Label>Uzmanlık alanları</Label>
+              <Input value={form.expertiseAreas} onChange={(e) => setForm((prev) => ({ ...prev, expertiseAreas: e.target.value }))} placeholder="İnşaat, üretim, perakende..." />
+            </div>
+            <div className="space-y-2">
               <Label>Telefon</Label>
               <Input value={form.phone} onChange={(e) => setForm((prev) => ({ ...prev, phone: e.target.value }))} />
             </div>
@@ -468,9 +472,7 @@ export default function OSGBPersonnel() {
             <div className="space-y-2">
               <Label>Durum</Label>
               <Select value={form.isActive} onValueChange={(value) => setForm((prev) => ({ ...prev, isActive: value as PersonnelFormState["isActive"] }))}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
+                <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="active">Aktif</SelectItem>
                   <SelectItem value="passive">Pasif</SelectItem>
@@ -483,12 +485,8 @@ export default function OSGBPersonnel() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>
-              Vazgeç
-            </Button>
-            <Button onClick={() => void handleSave()} disabled={saving}>
-              {saving ? "Kaydediliyor..." : editing ? "Güncelle" : "Kaydet"}
-            </Button>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>Vazgeç</Button>
+            <Button onClick={() => void handleSave()} disabled={saving}>{saving ? "Kaydediliyor..." : editing ? "Güncelle" : "Kaydet"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

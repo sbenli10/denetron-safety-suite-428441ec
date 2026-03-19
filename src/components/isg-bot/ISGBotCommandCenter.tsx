@@ -26,6 +26,7 @@ import { toast } from "sonner";
 
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
+import { createOsgbTask } from "@/lib/osgbOperations";
 import { addInterFontsToJsPDF } from "@/utils/fonts";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -351,8 +352,8 @@ export default function ISGBotCommandCenter() {
             .select("id, company_id, meeting_date, status")
             .eq("user_id", user.id),
           supabase
-            .from("capa_records")
-            .select("id, status, priority, deadline")
+            .from("osgb_tasks")
+            .select("id, status, priority, due_date")
             .eq("user_id", user.id),
         ]);
 
@@ -367,7 +368,14 @@ export default function ISGBotCommandCenter() {
       setFlags((flagsResponse.data ?? []) as ComplianceFlagRecord[]);
       setAlerts((alertsResponse.data ?? []) as PredictiveAlertRecord[]);
       setMeetings((meetingsResponse.data ?? []) as BoardMeetingRecord[]);
-      setTasks((tasksResponse.data ?? []) as TaskRecord[]);
+      setTasks(
+        ((tasksResponse.data ?? []) as any[]).map((task) => ({
+          id: task.id,
+          status: task.status,
+          priority: task.priority,
+          deadline: task.due_date,
+        }))
+      );
       setSelectedCompanyId((current) =>
         current && companyRows.some((item) => item.id === current)
           ? current
@@ -740,7 +748,7 @@ export default function ISGBotCommandCenter() {
     return items.sort((a, b) => b.priorityScore - a.priorityScore).slice(0, 6);
   }, [selectedCompany, selectedCompanyFlags, selectedCompanyAlerts, selectedCompanyMeetings]);
 
-  const openTaskCount = tasks.filter((task) => task.status !== "Tamamlandı").length;
+  const openTaskCount = tasks.filter((task) => task.status !== "completed").length;
   const criticalFlagCount = flags.filter((flag) => flag.severity === "CRITICAL").length;
   const upcomingContractCount = companies.filter((company) => {
     const days = getDaysLeft(company.contract_end);
@@ -1105,28 +1113,28 @@ export default function ISGBotCommandCenter() {
     setCreatingTaskId(selectedAction.id);
 
     try {
-      const { error } = await supabase.from("capa_records").insert({
-        org_id: user.id,
-        user_id: user.id,
-        non_conformity: `[Bot] ${selectedAction.title} - ${selectedAction.companyName}`,
-        root_cause: selectedAction.legalReference,
-        corrective_action: `${selectedAction.detail}\n\nÖnerilen aksiyon: ${taskDraft.notes}`,
-        assigned_person: taskDraft.assignedPerson,
-        deadline: taskDraft.deadline,
-        status: "Açık",
-        priority: taskDraft.priority,
-        notes: `${selectedAction.companyName} için bot tarafından oluşturulan operasyon görevi.`,
+      const savedTask = await createOsgbTask(user.id, {
+        companyId: selectedAction.companyId || null,
+        title: `[Bot] ${selectedAction.title}`,
+        description: `${selectedAction.companyName}\n\n${selectedAction.detail}\n\nMevzuat: ${selectedAction.legalReference}\n\nÖnerilen aksiyon: ${taskDraft.notes}`,
+        assignedTo: taskDraft.assignedPerson,
+        dueDate: taskDraft.deadline,
+        priority:
+          taskDraft.priority === "Kritik"
+            ? "critical"
+            : taskDraft.priority === "Yüksek"
+              ? "high"
+              : "medium",
+        source: "bot",
       });
-
-      if (error) throw error;
 
       setTasks((prev) => [
         ...prev,
         {
-          id: `local-${selectedAction.id}`,
-          status: "Açık",
-          priority: taskDraft.priority,
-          deadline: taskDraft.deadline,
+          id: savedTask.id,
+          status: savedTask.status,
+          priority: savedTask.priority,
+          deadline: savedTask.due_date,
         },
       ]);
 
@@ -1455,6 +1463,3 @@ export default function ISGBotCommandCenter() {
     </>
   );
 }
-
-
-

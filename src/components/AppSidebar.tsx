@@ -193,6 +193,48 @@ export function AppSidebar() {
           icon: LayoutDashboard,
           badge: null,
         },
+        {
+          title: "Süre ve Kapasite",
+          url: "/osgb/capacity",
+          icon: TrendingUp,
+          badge: null,
+        },
+        {
+          title: "Uyarı Merkezi",
+          url: "/osgb/alerts",
+          icon: ShieldAlert,
+          badge: "NEW",
+        },
+        {
+          title: "Finans Yönetimi",
+          url: "/osgb/finance",
+          icon: FileText,
+          badge: null,
+        },
+        {
+          title: "Evrak Takibi",
+          url: "/osgb/documents",
+          icon: FileSearch,
+          badge: null,
+        },
+        {
+          title: "Görev Motoru",
+          url: "/osgb/tasks",
+          icon: ClipboardCheck,
+          badge: null,
+        },
+        {
+          title: "Operasyon Notları",
+          url: "/osgb/notes",
+          icon: BookOpen,
+          badge: null,
+        },
+        {
+          title: "Trend Analizi",
+          url: "/osgb/analytics",
+          icon: TrendingUp,
+          badge: null,
+        },
       ],
     },
     {

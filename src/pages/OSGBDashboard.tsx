@@ -13,6 +13,7 @@ import {
   ShieldCheck,
   Siren,
 } from "lucide-react";
+import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -36,6 +37,7 @@ import {
   type OsgbExpertLoad,
   type OsgbFlagRecord,
 } from "@/lib/osgbData";
+import { getOsgbOperationalSummary, type OsgbOperationalSummary } from "@/lib/osgbOperations";
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
@@ -262,10 +264,99 @@ function AlertPanels({ flags, alerts }: { flags: OsgbFlagRecord[]; alerts: OsgbA
   );
 }
 
+function OperationalTrendPanels({ operations }: { operations: OsgbOperationalSummary }) {
+  const navigate = useNavigate();
+  const hasFinanceTrend = operations.finance.monthlyTrend.some(
+    (item) => item.pendingAmount > 0 || item.paidAmount > 0 || item.overdueAmount > 0,
+  );
+  const hasDocumentTrend = operations.documents.monthlyTrend.some(
+    (item) => item.activeCount > 0 || item.warningCount > 0 || item.expiredCount > 0,
+  );
+
+  return (
+    <div className="grid gap-6 xl:grid-cols-2">
+      <Card
+        className="cursor-pointer border-slate-800 bg-slate-900/70 transition hover:border-cyan-500/30"
+        onClick={() => navigate("/osgb/analytics?view=finance")}
+      >
+        <CardHeader>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <CardTitle className="text-white">Finans trendi</CardTitle>
+              <CardDescription>Son 6 ayda bekleyen, ödenen ve geciken tahsilat hareketi.</CardDescription>
+            </div>
+            <ArrowRight className="h-4 w-4 text-slate-400" />
+          </div>
+        </CardHeader>
+        <CardContent>
+          {hasFinanceTrend ? (
+            <ResponsiveContainer width="100%" height={280}>
+              <LineChart data={operations.finance.monthlyTrend}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                <XAxis dataKey="month" stroke="#94a3b8" tick={{ fontSize: 11 }} />
+                <YAxis stroke="#94a3b8" tick={{ fontSize: 11 }} />
+                <Tooltip
+                  contentStyle={{ backgroundColor: "#0f172a", border: "1px solid #334155", borderRadius: "12px" }}
+                  labelStyle={{ color: "#f8fafc" }}
+                />
+                <Line type="monotone" dataKey="pendingAmount" name="Bekleyen" stroke="#facc15" strokeWidth={2} />
+                <Line type="monotone" dataKey="paidAmount" name="Ödendi" stroke="#22c55e" strokeWidth={2} />
+                <Line type="monotone" dataKey="overdueAmount" name="Geciken" stroke="#ef4444" strokeWidth={2} />
+              </LineChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="flex h-[280px] items-center justify-center text-sm text-slate-400">
+              Finans trendi oluşturacak veri bulunamadı.
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card
+        className="cursor-pointer border-slate-800 bg-slate-900/70 transition hover:border-cyan-500/30"
+        onClick={() => navigate("/osgb/analytics?view=documents")}
+      >
+        <CardHeader>
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <CardTitle className="text-white">Evrak trendi</CardTitle>
+              <CardDescription>Son 6 ayda aktif, yaklaşan ve süresi dolmuş evrak dağılımı.</CardDescription>
+            </div>
+            <ArrowRight className="h-4 w-4 text-slate-400" />
+          </div>
+        </CardHeader>
+        <CardContent>
+          {hasDocumentTrend ? (
+            <ResponsiveContainer width="100%" height={280}>
+              <BarChart data={operations.documents.monthlyTrend}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                <XAxis dataKey="month" stroke="#94a3b8" tick={{ fontSize: 11 }} />
+                <YAxis stroke="#94a3b8" tick={{ fontSize: 11 }} allowDecimals={false} />
+                <Tooltip
+                  contentStyle={{ backgroundColor: "#0f172a", border: "1px solid #334155", borderRadius: "12px" }}
+                  labelStyle={{ color: "#f8fafc" }}
+                />
+                <Bar dataKey="activeCount" name="Aktif" fill="#22c55e" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="warningCount" name="Yaklaşan" fill="#facc15" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="expiredCount" name="Süresi dolmuş" fill="#ef4444" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="flex h-[280px] items-center justify-center text-sm text-slate-400">
+              Evrak trendi oluşturacak veri bulunamadı.
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 export default function OSGBDashboard() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const [data, setData] = useState<OsgbDashboardData | null>(null);
+  const [operations, setOperations] = useState<OsgbOperationalSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -278,9 +369,10 @@ export default function OSGBDashboard() {
 
     if (!forceRefresh && cachedRaw) {
       try {
-        const cached = JSON.parse(cachedRaw) as { timestamp: number; data: OsgbDashboardData };
+        const cached = JSON.parse(cachedRaw) as { timestamp: number; data: OsgbDashboardData; operations?: OsgbOperationalSummary | null };
         if (Date.now() - cached.timestamp < CACHE_TTL_MS) {
           setData(cached.data);
+          setOperations(cached.operations ?? null);
           setLoading(false);
         }
       } catch {
@@ -295,10 +387,14 @@ export default function OSGBDashboard() {
         setLoading(true);
       }
 
-      const result = await getOsgbDashboardData(user.id);
+      const [result, operationalSummary] = await Promise.all([
+        getOsgbDashboardData(user.id),
+        getOsgbOperationalSummary(user.id),
+      ]);
       setData(result);
+      setOperations(operationalSummary);
       setError(null);
-      sessionStorage.setItem(cacheKey, JSON.stringify({ timestamp: Date.now(), data: result }));
+      sessionStorage.setItem(cacheKey, JSON.stringify({ timestamp: Date.now(), data: result, operations: operationalSummary }));
     } catch (err) {
       const message = err instanceof Error ? err.message : "OSGB dashboard verisi yüklenemedi.";
       setError(message);
@@ -393,6 +489,84 @@ export default function OSGBDashboard() {
               );
             })}
           </div>
+
+          {operations ? (
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <Card className="border-slate-800 bg-slate-900/70">
+                <CardHeader className="pb-3">
+                  <CardDescription>Bekleyen tahsilat</CardDescription>
+                  <CardTitle className="mt-2 text-2xl text-white">{operations.finance.pendingCount}</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  <p className="text-sm text-slate-400">{new Intl.NumberFormat("tr-TR", { style: "currency", currency: "TRY" }).format(operations.finance.pendingAmount)}</p>
+                  <Button variant="outline" size="sm" className="w-full justify-between" onClick={() => navigate("/osgb/finance?status=pending")}>
+                    Finans detayına git
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </Button>
+                </CardContent>
+              </Card>
+              <Card className="border-slate-800 bg-slate-900/70">
+                <CardHeader className="pb-3">
+                  <CardDescription>Geciken tahsilat</CardDescription>
+                  <CardTitle className="mt-2 text-2xl text-white">{operations.finance.overdueCount}</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  <p className="text-sm text-slate-400">{new Intl.NumberFormat("tr-TR", { style: "currency", currency: "TRY" }).format(operations.finance.overdueAmount)}</p>
+                  <Button variant="outline" size="sm" className="w-full justify-between" onClick={() => navigate("/osgb/finance?status=overdue")}>
+                    Geciken ödemeleri aç
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </Button>
+                </CardContent>
+              </Card>
+              <Card className="border-slate-800 bg-slate-900/70">
+                <CardHeader className="pb-3">
+                  <CardDescription>Yaklaşan evrak</CardDescription>
+                  <CardTitle className="mt-2 text-2xl text-white">{operations.documents.warningCount}</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  <p className="text-sm text-slate-400">{operations.documents.expiringSoonCount} kayıt yakın takip gerektiriyor</p>
+                  <Button variant="outline" size="sm" className="w-full justify-between" onClick={() => navigate("/osgb/documents?status=warning")}>
+                    Evrak detayına git
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </Button>
+                </CardContent>
+              </Card>
+              <Card className="border-slate-800 bg-slate-900/70">
+                <CardHeader className="pb-3">
+                  <CardDescription>Süresi dolmuş evrak</CardDescription>
+                  <CardTitle className="mt-2 text-2xl text-white">{operations.documents.expiredCount}</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  <p className="text-sm text-slate-400">{operations.documents.activeCount} aktif evrak kayıt altında</p>
+                  <Button variant="outline" size="sm" className="w-full justify-between" onClick={() => navigate("/osgb/documents?status=expired")}>
+                    Kritik evrakları aç
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </Button>
+                </CardContent>
+              </Card>
+            </div>
+          ) : null}
+
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <Button variant="outline" className="justify-between" onClick={() => navigate("/osgb/capacity")}>
+              Süre ve Kapasite
+              <ArrowRight className="ml-2 h-4 w-4" />
+            </Button>
+            <Button variant="outline" className="justify-between" onClick={() => navigate("/osgb/alerts")}>
+              Uyarı Merkezi
+              <ArrowRight className="ml-2 h-4 w-4" />
+            </Button>
+            <Button variant="outline" className="justify-between" onClick={() => navigate("/osgb/finance")}>
+              Finans Yönetimi
+              <ArrowRight className="ml-2 h-4 w-4" />
+            </Button>
+            <Button variant="outline" className="justify-between" onClick={() => navigate("/osgb/documents")}>
+              Evrak Takibi
+              <ArrowRight className="ml-2 h-4 w-4" />
+            </Button>
+          </div>
+
+          {operations ? <OperationalTrendPanels operations={operations} /> : null}
 
           <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
             <CompanyRiskList companies={data.companies} />

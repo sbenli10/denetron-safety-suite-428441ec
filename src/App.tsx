@@ -38,6 +38,13 @@ const CompanyManager = lazy(() => import("./pages/CompanyManager"));
 const AssignmentLetters = lazy(() => import("./pages/AssignmentLetters"));
 const OSGBModule = lazy(() => import("./pages/OSGBModule"));
 const OSGBDashboard = lazy(() => import("./pages/OSGBDashboard"));
+const OSGBCapacity = lazy(() => import("./pages/OSGBCapacity"));
+const OSGBAlerts = lazy(() => import("./pages/OSGBAlerts"));
+const OSGBFinance = lazy(() => import("./pages/OSGBFinance"));
+const OSGBDocuments = lazy(() => import("./pages/OSGBDocuments"));
+const OSGBTasks = lazy(() => import("./pages/OSGBTasks"));
+const OSGBNotes = lazy(() => import("./pages/OSGBNotes"));
+const OSGBAnalytics = lazy(() => import("./pages/OSGBAnalytics"));
 const CertificatesDashboard = lazy(() => import("./pages/CertificatesDashboard"));
 const CertificateStudio = lazy(() => import("./pages/CertificateStudio"));
 const CertificatesHistory = lazy(() => import("./pages/CertificatesHistory"));
@@ -201,6 +208,13 @@ const App = () => (
                           <Route path="/assignment-letters" element={<AssignmentLetters />} />
                           <Route path="/osgb" element={<OSGBModule />} />
                           <Route path="/osgb/dashboard" element={<OSGBDashboard />} />
+                          <Route path="/osgb/capacity" element={<OSGBCapacity />} />
+                          <Route path="/osgb/alerts" element={<OSGBAlerts />} />
+                          <Route path="/osgb/finance" element={<OSGBFinance />} />
+                          <Route path="/osgb/documents" element={<OSGBDocuments />} />
+                          <Route path="/osgb/tasks" element={<OSGBTasks />} />
+                          <Route path="/osgb/notes" element={<OSGBNotes />} />
+                          <Route path="/osgb/analytics" element={<OSGBAnalytics />} />
                           <Route path="/dashboard/certificates" element={<CertificatesDashboard />} />
                           <Route path="/dashboard/certificate-studio" element={<CertificateStudio />} />
                           <Route path="/dashboard/certificates/history" element={<CertificatesHistory />} />

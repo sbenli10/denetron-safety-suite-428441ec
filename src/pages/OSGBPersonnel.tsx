@@ -1,15 +1,21 @@
-import { useEffect, useMemo, useState } from "react";
+﻿import { useEffect, useMemo, useRef, useState } from "react";
+import * as XLSX from "xlsx";
 import {
   AlertTriangle,
   BadgeCheck,
   CalendarClock,
+  CheckCircle2,
+  Download,
+  FileSpreadsheet,
   Plus,
   RefreshCcw,
   Search,
   ShieldCheck,
   Stethoscope,
   Trash2,
+  Upload,
   UserCog,
+  XCircle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
@@ -69,6 +75,12 @@ type PersonnelFormState = {
   notes: string;
 };
 
+type ImportSummary = {
+  addedCount: number;
+  errorCount: number;
+  errors: string[];
+};
+
 const emptyForm: PersonnelFormState = {
   fullName: "",
   role: "igu",
@@ -110,13 +122,177 @@ const formatDate = (value: string | null) => {
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const getCacheKey = (userId: string) => `personnel:${userId}`;
 
+const expectedColumns = [
+  { key: "full_name", required: true, description: "Personelin ad soyadı" },
+  { key: "role", required: true, description: "igu, hekim veya dsp" },
+  { key: "monthly_capacity_minutes", required: true, description: "Aylık dakika kapasitesi" },
+  { key: "certificate_no", required: false, description: "Belge numarası" },
+  { key: "certificate_expiry_date", required: false, description: "YYYY-MM-DD formatında belge bitiş tarihi" },
+  { key: "expertise_areas", required: false, description: "Virgülle ayrılmış uzmanlık alanları" },
+  { key: "phone", required: false, description: "Telefon" },
+  { key: "email", required: false, description: "E-posta" },
+  { key: "is_active", required: false, description: "active veya passive" },
+  { key: "notes", required: false, description: "Serbest açıklama" },
+];
+
+const columnAliases: Record<string, string> = {
+  ad_soyad: "full_name",
+  adsoyad: "full_name",
+  full_name: "full_name",
+  fullname: "full_name",
+  isim: "full_name",
+  rol: "role",
+  role: "role",
+  belge_no: "certificate_no",
+  belge_numarasi: "certificate_no",
+  certificate_no: "certificate_no",
+  belge_gecerlilik_tarihi: "certificate_expiry_date",
+  belge_bitis_tarihi: "certificate_expiry_date",
+  certificate_expiry_date: "certificate_expiry_date",
+  uzmanlik_alanlari: "expertise_areas",
+  uzmanlik: "expertise_areas",
+  expertise_areas: "expertise_areas",
+  telefon: "phone",
+  phone: "phone",
+  eposta: "email",
+  email: "email",
+  aylik_kapasite: "monthly_capacity_minutes",
+  aylik_kapasite_dakika: "monthly_capacity_minutes",
+  monthly_capacity_minutes: "monthly_capacity_minutes",
+  durum: "is_active",
+  is_active: "is_active",
+  notlar: "notes",
+  notes: "notes",
+};
+
+const normalizeKey = (value: string) =>
+  value
+    .trim()
+    .toLocaleLowerCase("tr-TR")
+    .replace(/\s+/g, "_")
+    .replace(/[çÇ]/g, "c")
+    .replace(/[ğĞ]/g, "g")
+    .replace(/[ıİ]/g, "i")
+    .replace(/[öÖ]/g, "o")
+    .replace(/[şŞ]/g, "s")
+    .replace(/[üÜ]/g, "u");
+
+const normalizeRole = (value: string): OsgbPersonnelRecord["role"] | null => {
+  const normalized = normalizeKey(value);
+  if (normalized === "igu" || normalized === "is_guvenligi_uzmani") return "igu";
+  if (normalized === "hekim" || normalized === "isyeri_hekimi") return "hekim";
+  if (normalized === "dsp" || normalized === "diger_saglik_personeli") return "dsp";
+  return null;
+};
+
+const normalizeStatus = (value: string | undefined) => {
+  const normalized = normalizeKey(value || "");
+  if (["", "active", "aktif", "true", "1", "evet"].includes(normalized)) return true;
+  if (["passive", "pasif", "false", "0", "hayir"].includes(normalized)) return false;
+  return true;
+};
+
+const normalizeIdentityValue = (value: string | null | undefined) => normalizeKey(value || "");
+
+const isIsoDate = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value);
+
+const downloadPersonnelTemplate = () => {
+  const worksheet = XLSX.utils.json_to_sheet([
+    {
+      full_name: "Ahmet Yılmaz",
+      role: "igu",
+      monthly_capacity_minutes: 1800,
+      certificate_no: "IGU-12345",
+      certificate_expiry_date: "2027-12-31",
+      expertise_areas: "İnşaat, Üretim",
+      phone: "05551234567",
+      email: "ahmet@example.com",
+      is_active: "active",
+      notes: "A sınıfı uzman",
+    },
+  ]);
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, "OSGB Personel");
+  XLSX.writeFile(workbook, "osgb-personel-sablonu.xlsx");
+};
+
+const parsePersonnelExcel = async (file: File): Promise<OsgbPersonnelInput[]> => {
+  const buffer = await file.arrayBuffer();
+  const workbook = XLSX.read(buffer, { type: "array" });
+  const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(firstSheet, { defval: "" });
+
+  if (!rows.length) {
+    throw new Error("Dosyada veri bulunamadı.");
+  }
+
+  const parsedRows: OsgbPersonnelInput[] = [];
+  const errors: string[] = [];
+
+  rows.forEach((row, index) => {
+    const mapped: Record<string, string> = {};
+
+    Object.entries(row).forEach(([key, value]) => {
+      const normalizedColumn = columnAliases[normalizeKey(key)] || normalizeKey(key);
+      mapped[normalizedColumn] = String(value ?? "").trim();
+    });
+
+    const fullName = mapped.full_name;
+    const role = normalizeRole(mapped.role || "");
+    const monthlyCapacity = Number(mapped.monthly_capacity_minutes || 0);
+
+    if (!fullName) {
+      errors.push(`Satır ${index + 2}: full_name zorunlu.`);
+      return;
+    }
+
+    if (!role) {
+      errors.push(`Satır ${index + 2}: role alanı igu, hekim veya dsp olmalı.`);
+      return;
+    }
+
+    if (!monthlyCapacity || monthlyCapacity <= 0) {
+      errors.push(`Satır ${index + 2}: monthly_capacity_minutes sıfırdan büyük olmalı.`);
+      return;
+    }
+
+    if (mapped.certificate_expiry_date && !isIsoDate(mapped.certificate_expiry_date)) {
+      errors.push(`Satır ${index + 2}: certificate_expiry_date YYYY-MM-DD formatında olmalı.`);
+      return;
+    }
+
+    parsedRows.push({
+      fullName,
+      role,
+      certificateNo: mapped.certificate_no || null,
+      certificateExpiryDate: mapped.certificate_expiry_date || null,
+      expertiseAreas: mapped.expertise_areas
+        ? mapped.expertise_areas.split(",").map((item) => item.trim()).filter(Boolean)
+        : [],
+      phone: mapped.phone || null,
+      email: mapped.email || null,
+      monthlyCapacityMinutes: monthlyCapacity,
+      isActive: normalizeStatus(mapped.is_active),
+      notes: mapped.notes || null,
+    });
+  });
+
+  if (errors.length) {
+    throw new Error(errors.slice(0, 6).join("\n"));
+  }
+
+  return parsedRows;
+};
+
 export default function OSGBPersonnel() {
   const { user } = useAuth();
   const { canManage } = useAccessRole();
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [records, setRecords] = useState<OsgbPersonnelRecord[]>([]);
   const [assignments, setAssignments] = useState<OsgbAssignmentRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<OsgbPersonnelRecord | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -124,6 +300,8 @@ export default function OSGBPersonnel() {
   const [roleFilter, setRoleFilter] = useState<string>("ALL");
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const [form, setForm] = useState<PersonnelFormState>(emptyForm);
+  const [importSummary, setImportSummary] = useState<ImportSummary | null>(null);
+  const [summaryDialogOpen, setSummaryDialogOpen] = useState(false);
 
   const loadData = async (silent = false) => {
     if (!user?.id) return;
@@ -293,6 +471,82 @@ export default function OSGBPersonnel() {
     }
   };
 
+  const handleExcelImport = async (file: File) => {
+    if (!canManage) {
+      toast.error("Bu işlem için düzenleme yetkisi gerekiyor.");
+      return;
+    }
+    if (!user?.id) return;
+
+    setImporting(true);
+    try {
+      const rows = await parsePersonnelExcel(file);
+      const existingEmails = new Set(
+        records.map((record) => normalizeIdentityValue(record.email)).filter(Boolean),
+      );
+      const existingCertificateNos = new Set(
+        records.map((record) => normalizeIdentityValue(record.certificate_no)).filter(Boolean),
+      );
+      const batchEmails = new Set<string>();
+      const batchCertificateNos = new Set<string>();
+      const validRows: OsgbPersonnelInput[] = [];
+      const importErrors: string[] = [];
+
+      rows.forEach((row, index) => {
+        const emailKey = normalizeIdentityValue(row.email);
+        const certificateKey = normalizeIdentityValue(row.certificateNo);
+
+        if (emailKey && (existingEmails.has(emailKey) || batchEmails.has(emailKey))) {
+          importErrors.push(`Satır ${index + 2}: aynı e-posta ile mükerrer kayıt var (${row.email}).`);
+          return;
+        }
+
+        if (certificateKey && (existingCertificateNos.has(certificateKey) || batchCertificateNos.has(certificateKey))) {
+          importErrors.push(`Satır ${index + 2}: aynı belge no ile mükerrer kayıt var (${row.certificateNo}).`);
+          return;
+        }
+
+        if (emailKey) batchEmails.add(emailKey);
+        if (certificateKey) batchCertificateNos.add(certificateKey);
+        validRows.push(row);
+      });
+
+      const savedRows: OsgbPersonnelRecord[] = [];
+      for (const row of validRows) {
+        const saved = await upsertOsgbPersonnel(user.id, row);
+        savedRows.push(saved);
+      }
+
+      setRecords((prev) => [...savedRows, ...prev]);
+      setImportSummary({
+        addedCount: savedRows.length,
+        errorCount: importErrors.length,
+        errors: importErrors,
+      });
+      setSummaryDialogOpen(true);
+
+      if (savedRows.length) {
+        toast.success(`${savedRows.length} personel kaydı içe aktarıldı.`);
+      } else {
+        toast.error("İçe aktarma tamamlandı ancak geçerli kayıt bulunamadı.");
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Excel içe aktarma başarısız oldu.";
+      setImportSummary({
+        addedCount: 0,
+        errorCount: 1,
+        errors: message.split("\n"),
+      });
+      setSummaryDialogOpen(true);
+      toast.error("Excel içe aktarma başarısız oldu.");
+    } finally {
+      setImporting(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    }
+  };
+
   return (
     <div className="container mx-auto space-y-6 py-6">
       <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
@@ -309,7 +563,27 @@ export default function OSGBPersonnel() {
             </div>
           </div>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".xlsx,.xls,.csv"
+            className="hidden"
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) {
+                void handleExcelImport(file);
+              }
+            }}
+          />
+          <Button variant="outline" onClick={() => downloadPersonnelTemplate()}>
+            <Download className="mr-2 h-4 w-4" />
+            Excel şablonu indir
+          </Button>
+          <Button variant="outline" onClick={() => fileInputRef.current?.click()} disabled={!canManage || importing}>
+            <Upload className="mr-2 h-4 w-4" />
+            {importing ? "İçe aktarılıyor..." : "Excel ile yükle"}
+          </Button>
           <Button
             variant="outline"
             onClick={() =>
@@ -339,6 +613,48 @@ export default function OSGBPersonnel() {
           </Button>
         </div>
       </div>
+
+      <Card className="border-slate-800 bg-slate-950/70">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-white">
+            <FileSpreadsheet className="h-5 w-5 text-cyan-300" />
+            Excel ile toplu personel yükleme
+          </CardTitle>
+          <CardDescription>
+            Kullanıcı tek tek personel eklemek zorunda kalmadan şablona göre Excel yükleyebilir.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+          <div className="space-y-3 rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
+            <div className="text-sm font-medium text-white">Excel dosyasında olması gereken kolonlar</div>
+            <div className="space-y-2 text-sm text-slate-300">
+              {expectedColumns.map((column) => (
+                <div key={column.key} className="flex items-start gap-3 rounded-xl border border-slate-800 bg-slate-950/50 p-3">
+                  <Badge variant={column.required ? "default" : "outline"}>
+                    {column.required ? "Zorunlu" : "Opsiyonel"}
+                  </Badge>
+                  <div>
+                    <div className="font-mono text-xs text-cyan-200">{column.key}</div>
+                    <div className="mt-1 text-xs leading-5 text-slate-400">{column.description}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="space-y-3 rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
+            <div className="text-sm font-medium text-white">Kullanıcıya söylenecekler</div>
+            <div className="space-y-2 text-sm leading-6 text-slate-300">
+              <p>1. Önce <span className="font-medium text-white">Excel şablonu indir</span> butonuna bas.</p>
+              <p>2. İlk satırdaki kolon adlarını değiştirme.</p>
+              <p>3. <span className="font-mono text-cyan-200">role</span> alanına sadece <span className="font-mono text-cyan-200">igu</span>, <span className="font-mono text-cyan-200">hekim</span> veya <span className="font-mono text-cyan-200">dsp</span> yaz.</p>
+              <p>4. <span className="font-mono text-cyan-200">certificate_expiry_date</span> alanını <span className="font-mono text-cyan-200">YYYY-MM-DD</span> formatında gir.</p>
+              <p>5. <span className="font-mono text-cyan-200">expertise_areas</span> alanında birden fazla uzmanlık varsa virgülle ayır.</p>
+              <p>6. <span className="font-mono text-cyan-200">monthly_capacity_minutes</span> alanı sayı olmalı.</p>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
         <Card className="border-slate-800 bg-slate-950/70"><CardHeader className="pb-2"><CardDescription>Aktif personel</CardDescription><CardTitle className="text-3xl text-white">{summary.active}</CardTitle></CardHeader></Card>
@@ -544,6 +860,53 @@ export default function OSGBPersonnel() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={summaryDialogOpen} onOpenChange={setSummaryDialogOpen}>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>İçe aktarma özeti</DialogTitle>
+            <DialogDescription>
+              Yükleme tamamlandıktan sonra eklenen ve hatalı satır sayısı burada gösterilir.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/10 p-4">
+              <div className="mb-2 flex items-center gap-2 text-emerald-200">
+                <CheckCircle2 className="h-4 w-4" />
+                Başarılı kayıtlar
+              </div>
+              <div className="text-3xl font-bold text-white">{importSummary?.addedCount ?? 0}</div>
+            </div>
+            <div className="rounded-2xl border border-rose-500/20 bg-rose-500/10 p-4">
+              <div className="mb-2 flex items-center gap-2 text-rose-200">
+                <XCircle className="h-4 w-4" />
+                Hatalı satırlar
+              </div>
+              <div className="text-3xl font-bold text-white">{importSummary?.errorCount ?? 0}</div>
+            </div>
+          </div>
+
+          {importSummary?.errors.length ? (
+            <div className="space-y-2 rounded-2xl border border-slate-800 bg-slate-950/60 p-4">
+              <div className="text-sm font-medium text-white">Hata detayları</div>
+              <div className="space-y-2 text-sm text-slate-300">
+                {importSummary.errors.slice(0, 8).map((item) => (
+                  <div key={item} className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
+                    {item}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          <DialogFooter>
+            <Button onClick={() => setSummaryDialogOpen(false)}>Tamam</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
+
+

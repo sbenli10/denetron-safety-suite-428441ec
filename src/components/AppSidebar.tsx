@@ -257,6 +257,12 @@ export function AppSidebar() {
               icon: TrendingUp,
               badge: null,
             },
+            {
+              title: "Batch Logları",
+              url: "/osgb/batch-logs",
+              icon: History,
+              badge: null,
+            },
           ],
         },
       ],

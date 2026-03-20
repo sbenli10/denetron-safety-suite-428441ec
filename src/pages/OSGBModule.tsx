@@ -6,11 +6,14 @@ import {
   ArrowRight,
   BadgeCheck,
   Briefcase,
+  Clock3,
   Building2,
   ClipboardList,
   CreditCard,
   FileCheck,
+  Layers3,
   Link2,
+  LineChart,
   ShieldAlert,
   Users,
 } from "lucide-react";
@@ -53,14 +56,19 @@ const featureCards = [
   },
   {
     title: "Finans Yönetimi",
-    description: "Firma bazlı tahsilat, geciken ödemeler ve hizmet bazlı gelir görünümünü ilerleyen fazda ekleyin.",
+    description: "Firma bazlı tahsilatları, geciken ödemeleri, haftalık iş yükünü ve ödeme takvimini aynı ekranda yönetin.",
     icon: CreditCard,
-    badge: "Faz 2",
   },
   {
     title: "İSG-KATİP Entegrasyonu",
     description: "Mevcut entegrasyondan gelen firma, süre ve uyum verilerini operasyon panelinde doğrudan kullanın.",
     icon: Link2,
+  },
+  {
+    title: "Batch ve Görev Motoru",
+    description: "Günlük batch ile evrak ve belge yenileme görevlerini otomatik üretin, log geçmişini takip edin.",
+    icon: Clock3,
+    badge: "Otomasyon",
   },
 ];
 
@@ -89,6 +97,33 @@ const workflowSteps = [
   {
     title: "Operasyonu yönetin",
     description: "Firma takibi, atama yönetimi ve sonraki fazdaki finans/evrak modüllerine geçin.",
+  },
+];
+
+const launchCards = [
+  {
+    title: "Portföy Dashboard",
+    description: "Riskli firmalar, uzman yoğunluğu ve trendler",
+    icon: Layers3,
+    href: "/osgb/dashboard",
+  },
+  {
+    title: "Görevlendirme",
+    description: "Atama, kapasite ve mevzuat öneri motoru",
+    icon: Briefcase,
+    href: "/osgb/assignments",
+  },
+  {
+    title: "Finans ve Evrak",
+    description: "Tahsilat planı ve evrak yenileme takibi",
+    icon: CreditCard,
+    href: "/osgb/finance",
+  },
+  {
+    title: "Trend Analizi",
+    description: "Finans ve evrak trendlerine drill-down",
+    icon: LineChart,
+    href: "/osgb/analytics?view=finance",
   },
 ];
 
@@ -226,31 +261,57 @@ export default function OSGBModule() {
         </Card>
       </section>
 
+      <section className="space-y-4">
+        <div className="flex items-center gap-2 text-lg font-semibold text-white">
+          <BadgeCheck className="h-5 w-5 text-cyan-300" />
+          Hızlı başlat
+        </div>
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {launchCards.map((item) => {
+            const Icon = item.icon;
+            return (
+              <button
+                key={item.title}
+                type="button"
+                onClick={() => navigate(item.href)}
+                className="rounded-3xl border border-slate-800 bg-slate-900/70 p-5 text-left transition hover:border-cyan-500/30 hover:bg-slate-900"
+              >
+                <div className="mb-4 flex h-12 w-12 items-center justify-center rounded-2xl border border-cyan-500/20 bg-cyan-500/10 text-cyan-200">
+                  <Icon className="h-5 w-5" />
+                </div>
+                <div className="text-base font-semibold text-white">{item.title}</div>
+                <p className="mt-2 text-sm leading-6 text-slate-400">{item.description}</p>
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
       <Card className="border-slate-800 bg-slate-900/70">
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-white">
             <ClipboardList className="h-5 w-5 text-cyan-300" />
-            İlk paket kapsamı
+            Operasyon paketi kapsamı
           </CardTitle>
-          <CardDescription>Bu paket yeni tablo oluşturmadan, mevcut veriyi kullanarak çalışır.</CardDescription>
+          <CardDescription>OSGB modülü artık gerçek operasyon ekranları ve kendi veri tabloları ile çalışır.</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 md:grid-cols-3">
           <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4">
-            <div className="text-sm font-semibold text-white">Bu sürümde hazır</div>
+            <div className="text-sm font-semibold text-white">Canlı modüller</div>
             <p className="mt-2 text-sm leading-6 text-slate-400">
-              Tanıtım ekranı, gerçek dashboard, uzman yoğunluğu, firma risk görünümü, sözleşme ve açık takibi.
+              Dashboard, personel havuzu, görevlendirme, firma takibi, finans, evrak, görev motoru ve trend analizi hazır.
             </p>
           </div>
           <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4">
             <div className="text-sm font-semibold text-white">Mevcut veri kaynağı</div>
             <p className="mt-2 text-sm leading-6 text-slate-400">
-              `isgkatip_companies`, `isgkatip_compliance_flags` ve `isgkatip_predictive_alerts` tabloları kullanılır.
+              `isgkatip_companies`, `isgkatip_compliance_flags`, `isgkatip_predictive_alerts` ve OSGB operasyon tabloları birlikte kullanılır.
             </p>
           </div>
           <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4">
-            <div className="text-sm font-semibold text-white">Sonraki faz</div>
+            <div className="text-sm font-semibold text-white">Otomasyon katmanı</div>
             <p className="mt-2 text-sm leading-6 text-slate-400">
-              Finans, evrak takibi, görev atama ve operasyon notları için ayrı tablolar eklenebilir.
+              Günlük batch, batch log geçmişi, evrak yenileme görevleri ve belge bitiş otomasyonları aynı pakete dahil edildi.
             </p>
           </div>
         </CardContent>

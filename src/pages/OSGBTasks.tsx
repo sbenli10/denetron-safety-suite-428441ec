@@ -41,6 +41,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
+import { useAccessRole } from "@/hooks/useAccessRole";
+import { downloadCsv } from "@/lib/csvExport";
 import {
   createOsgbTask,
   deleteOsgbTask,
@@ -94,6 +96,7 @@ const badgeClass = {
 
 export default function OSGBTasks() {
   const { user } = useAuth();
+  const { canManage } = useAccessRole();
   const [records, setRecords] = useState<OsgbTaskRecord[]>([]);
   const [companies, setCompanies] = useState<OsgbCompanyOption[]>([]);
   const [loading, setLoading] = useState(true);
@@ -142,11 +145,19 @@ export default function OSGBTasks() {
   }), [records]);
 
   const openCreate = () => {
+    if (!canManage) {
+      toast.error("Bu işlem için düzenleme yetkisi gerekiyor.");
+      return;
+    }
     setForm(emptyForm);
     setDialogOpen(true);
   };
 
   const handleCreate = async () => {
+    if (!canManage) {
+      toast.error("Bu işlem için düzenleme yetkisi gerekiyor.");
+      return;
+    }
     if (!user?.id || !form.title) {
       toast.error("Görev başlığı zorunludur.");
       return;
@@ -176,6 +187,10 @@ export default function OSGBTasks() {
   };
 
   const handleStatusChange = async (id: string, status: OsgbTaskRecord["status"]) => {
+    if (!canManage) {
+      toast.error("Bu işlem için düzenleme yetkisi gerekiyor.");
+      return;
+    }
     try {
       const updated = await updateOsgbTaskStatus(id, status);
       setRecords((prev) => prev.map((item) => (item.id === id ? updated : item)));
@@ -186,6 +201,10 @@ export default function OSGBTasks() {
   };
 
   const handleDelete = async (id: string) => {
+    if (!canManage) {
+      toast.error("Bu işlem için düzenleme yetkisi gerekiyor.");
+      return;
+    }
     if (!confirm("Bu görevi silmek istiyor musunuz?")) return;
     try {
       await deleteOsgbTask(id);
@@ -211,11 +230,30 @@ export default function OSGBTasks() {
           </div>
         </div>
         <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={() =>
+              downloadCsv(
+                "osgb-gorevler.csv",
+                ["Firma", "Başlık", "Öncelik", "Durum", "Termin", "Atanan"],
+                filteredRecords.map((record) => [
+                  record.company?.company_name || "",
+                  record.title,
+                  priorityLabel[record.priority],
+                  statusLabel[record.status],
+                  record.due_date || "",
+                  record.assigned_to || "",
+                ]),
+              )
+            }
+          >
+            Dışa Aktar
+          </Button>
           <Button variant="outline" onClick={() => void loadData()}>
             <RefreshCcw className="mr-2 h-4 w-4" />
             Yenile
           </Button>
-          <Button onClick={openCreate}>
+          <Button onClick={openCreate} disabled={!canManage}>
             <Plus className="mr-2 h-4 w-4" />
             Yeni görev
           </Button>

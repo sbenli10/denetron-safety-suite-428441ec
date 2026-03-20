@@ -52,6 +52,9 @@ import {
   type OsgbPersonnelRecord,
   upsertOsgbPersonnel,
 } from "@/lib/osgbOperations";
+import { readOsgbPageCache, writeOsgbPageCache } from "@/lib/osgbPageCache";
+import { useAccessRole } from "@/hooks/useAccessRole";
+import { downloadCsv } from "@/lib/csvExport";
 
 type PersonnelFormState = {
   fullName: string;
@@ -104,8 +107,12 @@ const formatDate = (value: string | null) => {
   return date.toLocaleDateString("tr-TR");
 };
 
+const CACHE_TTL_MS = 5 * 60 * 1000;
+const getCacheKey = (userId: string) => `personnel:${userId}`;
+
 export default function OSGBPersonnel() {
   const { user } = useAuth();
+  const { canManage } = useAccessRole();
   const [records, setRecords] = useState<OsgbPersonnelRecord[]>([]);
   const [assignments, setAssignments] = useState<OsgbAssignmentRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -118,9 +125,9 @@ export default function OSGBPersonnel() {
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const [form, setForm] = useState<PersonnelFormState>(emptyForm);
 
-  const loadData = async () => {
+  const loadData = async (silent = false) => {
     if (!user?.id) return;
-    setLoading(true);
+    if (!silent) setLoading(true);
     try {
       const [personnelRows, assignmentRows] = await Promise.all([
         listOsgbPersonnel(user.id),
@@ -128,6 +135,10 @@ export default function OSGBPersonnel() {
       ]);
       setRecords(personnelRows);
       setAssignments(assignmentRows);
+      writeOsgbPageCache(getCacheKey(user.id), {
+        records: personnelRows,
+        assignments: assignmentRows,
+      });
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Personel havuzu yüklenemedi.");
@@ -137,6 +148,18 @@ export default function OSGBPersonnel() {
   };
 
   useEffect(() => {
+    if (!user?.id) return;
+    const cached = readOsgbPageCache<{ records: OsgbPersonnelRecord[]; assignments: OsgbAssignmentRecord[] }>(
+      getCacheKey(user.id),
+      CACHE_TTL_MS,
+    );
+    if (cached) {
+      setRecords(cached.records);
+      setAssignments(cached.assignments);
+      setLoading(false);
+      void loadData(true);
+      return;
+    }
     void loadData();
   }, [user?.id]);
 
@@ -187,6 +210,10 @@ export default function OSGBPersonnel() {
   }, [records]);
 
   const openCreate = () => {
+    if (!canManage) {
+      toast.error("Bu işlem için düzenleme yetkisi gerekiyor.");
+      return;
+    }
     setEditing(null);
     setForm(emptyForm);
     setDialogOpen(true);
@@ -210,6 +237,10 @@ export default function OSGBPersonnel() {
   };
 
   const handleSave = async () => {
+    if (!canManage) {
+      toast.error("Bu işlem için düzenleme yetkisi gerekiyor.");
+      return;
+    }
     if (!user?.id || !form.fullName || !form.monthlyCapacityMinutes) {
       toast.error("Ad soyad ve aylık kapasite zorunludur.");
       return;
@@ -247,6 +278,10 @@ export default function OSGBPersonnel() {
   };
 
   const handleDelete = async (id: string) => {
+    if (!canManage) {
+      toast.error("Bu işlem için düzenleme yetkisi gerekiyor.");
+      return;
+    }
     if (!confirm("Bu personeli havuzdan silmek istiyor musunuz?")) return;
     try {
       await deleteOsgbPersonnel(id);
@@ -275,11 +310,30 @@ export default function OSGBPersonnel() {
           </div>
         </div>
         <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={() =>
+              downloadCsv(
+                "osgb-personel.csv",
+                ["Ad Soyad", "Rol", "Belge No", "Belge Bitiş", "Uzmanlık", "Kapasite"],
+                filteredRecords.map((record) => [
+                  record.full_name,
+                  roleLabels[record.role],
+                  record.certificate_no || "",
+                  record.certificate_expiry_date || "",
+                  (record.expertise_areas || []).join(", "),
+                  record.monthly_capacity_minutes,
+                ]),
+              )
+            }
+          >
+            Dışa Aktar
+          </Button>
           <Button variant="outline" onClick={() => void loadData()}>
             <RefreshCcw className="mr-2 h-4 w-4" />
             Yenile
           </Button>
-          <Button onClick={openCreate}>
+          <Button onClick={openCreate} disabled={!canManage}>
             <Plus className="mr-2 h-4 w-4" />
             Personel ekle
           </Button>

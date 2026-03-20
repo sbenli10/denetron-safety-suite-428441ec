@@ -42,6 +42,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
+import { readOsgbPageCache, writeOsgbPageCache } from "@/lib/osgbPageCache";
+import { useAccessRole } from "@/hooks/useAccessRole";
+import { downloadCsv } from "@/lib/csvExport";
 import {
   deleteOsgbFinance,
   getOsgbCompanyOptions,
@@ -104,8 +107,12 @@ const formatDate = (value: string | null) => {
 const formatMoney = (value: number, currency: string) =>
   new Intl.NumberFormat("tr-TR", { style: "currency", currency }).format(value || 0);
 
+const CACHE_TTL_MS = 5 * 60 * 1000;
+const getCacheKey = (userId: string) => `finance:${userId}`;
+
 export default function OSGBFinance() {
   const { user } = useAuth();
+  const { canManage } = useAccessRole();
   const [searchParams] = useSearchParams();
   const [records, setRecords] = useState<OsgbFinanceRecord[]>([]);
   const [companies, setCompanies] = useState<OsgbCompanyOption[]>([]);
@@ -128,9 +135,9 @@ export default function OSGBFinance() {
     }
   }, [searchParams]);
 
-  const loadData = async () => {
+  const loadData = async (silent = false) => {
     if (!user?.id) return;
-    setLoading(true);
+    if (!silent) setLoading(true);
     try {
       const [financeRows, companyRows] = await Promise.all([
         listOsgbFinance(user.id),
@@ -140,6 +147,11 @@ export default function OSGBFinance() {
       setCompanies(companyRows);
       const summary = await getOsgbOperationalSummary(user.id);
       setCalendarItems(summary.finance.calendarItems);
+      writeOsgbPageCache(getCacheKey(user.id), {
+        records: financeRows,
+        companies: companyRows,
+        calendarItems: summary.finance.calendarItems,
+      });
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "OSGB finans kayıtları yüklenemedi.");
@@ -149,6 +161,20 @@ export default function OSGBFinance() {
   };
 
   useEffect(() => {
+    if (!user?.id) return;
+    const cached = readOsgbPageCache<{
+      records: OsgbFinanceRecord[];
+      companies: OsgbCompanyOption[];
+      calendarItems: OsgbFinanceCalendarItem[];
+    }>(getCacheKey(user.id), CACHE_TTL_MS);
+    if (cached) {
+      setRecords(cached.records);
+      setCompanies(cached.companies);
+      setCalendarItems(cached.calendarItems);
+      setLoading(false);
+      void loadData(true);
+      return;
+    }
     void loadData();
   }, [user?.id]);
 
@@ -221,6 +247,10 @@ export default function OSGBFinance() {
   }, [calendarItems]);
 
   const openCreate = () => {
+    if (!canManage) {
+      toast.error("Bu işlem için düzenleme yetkisi gerekiyor.");
+      return;
+    }
     setEditing(null);
     setForm(emptyForm);
     setDialogOpen(true);
@@ -253,8 +283,24 @@ export default function OSGBFinance() {
   };
 
   const handleSave = async () => {
+    if (!canManage) {
+      toast.error("Bu işlem için düzenleme yetkisi gerekiyor.");
+      return;
+    }
     if (!user?.id || !form.companyId || !form.amount) {
       toast.error("Firma ve tutar alanları zorunludur.");
+      return;
+    }
+    if (Number(form.amount) <= 0) {
+      toast.error("Tutar sıfırdan büyük olmalıdır.");
+      return;
+    }
+    if (form.invoiceDate && form.dueDate && new Date(form.invoiceDate) > new Date(form.dueDate)) {
+      toast.error("Vade tarihi fatura tarihinden önce olamaz.");
+      return;
+    }
+    if (form.status === "paid" && !form.paidAt) {
+      toast.error("Ödenen kayıt için ödeme tarihi girilmelidir.");
       return;
     }
 
@@ -289,6 +335,10 @@ export default function OSGBFinance() {
   };
 
   const handleDelete = async (id: string) => {
+    if (!canManage) {
+      toast.error("Bu işlem için düzenleme yetkisi gerekiyor.");
+      return;
+    }
     if (!confirm("Bu finans kaydını silmek istiyor musunuz?")) return;
     try {
       await deleteOsgbFinance(id);
@@ -318,11 +368,30 @@ export default function OSGBFinance() {
           </div>
         </div>
         <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={() =>
+              downloadCsv(
+                "osgb-finans.csv",
+                ["Firma", "Fatura No", "Hizmet Dönemi", "Vade", "Tutar", "Durum"],
+                filteredRecords.map((record) => [
+                  record.company?.company_name || "",
+                  record.invoice_no || "",
+                  record.service_period || "",
+                  record.due_date || "",
+                  record.amount,
+                  statusLabel[record.status],
+                ]),
+              )
+            }
+          >
+            Dışa Aktar
+          </Button>
           <Button variant="outline" onClick={() => void loadData()}>
             <RefreshCcw className="mr-2 h-4 w-4" />
             Yenile
           </Button>
-          <Button onClick={openCreate}>
+          <Button onClick={openCreate} disabled={!canManage}>
             <Plus className="mr-2 h-4 w-4" />
             Yeni kayıt
           </Button>

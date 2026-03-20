@@ -7,6 +7,7 @@ import { BrowserRouter, Navigate, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { AppLayout } from "@/components/AppLayout";
+import { OsgbAccessGate } from "@/components/OsgbAccessGate";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Suspense, lazy } from "react";
 import { Loader2 } from "lucide-react";
@@ -48,6 +49,7 @@ const OSGBDocuments = lazy(() => import("./pages/OSGBDocuments"));
 const OSGBTasks = lazy(() => import("./pages/OSGBTasks"));
 const OSGBNotes = lazy(() => import("./pages/OSGBNotes"));
 const OSGBAnalytics = lazy(() => import("./pages/OSGBAnalytics"));
+const OSGBBatchLogs = lazy(() => import("./pages/OSGBBatchLogs"));
 const CertificatesDashboard = lazy(() => import("./pages/CertificatesDashboard"));
 const CertificateStudio = lazy(() => import("./pages/CertificateStudio"));
 const CertificatesHistory = lazy(() => import("./pages/CertificatesHistory"));
@@ -209,18 +211,19 @@ const App = () => (
                           {/* ============================================ */}
                           <Route path="/companies" element={<CompanyManager />} />
                           <Route path="/assignment-letters" element={<AssignmentLetters />} />
-                          <Route path="/osgb" element={<OSGBModule />} />
-                          <Route path="/osgb/dashboard" element={<OSGBDashboard />} />
-                          <Route path="/osgb/personnel" element={<OSGBPersonnel />} />
-                          <Route path="/osgb/assignments" element={<OSGBAssignments />} />
-                          <Route path="/osgb/company-tracking" element={<OSGBCompanyTracking />} />
-                          <Route path="/osgb/capacity" element={<OSGBCapacity />} />
-                          <Route path="/osgb/alerts" element={<OSGBAlerts />} />
-                          <Route path="/osgb/finance" element={<OSGBFinance />} />
-                          <Route path="/osgb/documents" element={<OSGBDocuments />} />
-                          <Route path="/osgb/tasks" element={<OSGBTasks />} />
-                          <Route path="/osgb/notes" element={<OSGBNotes />} />
-                          <Route path="/osgb/analytics" element={<OSGBAnalytics />} />
+                          <Route path="/osgb" element={<OsgbAccessGate><OSGBModule /></OsgbAccessGate>} />
+                          <Route path="/osgb/dashboard" element={<OsgbAccessGate><OSGBDashboard /></OsgbAccessGate>} />
+                          <Route path="/osgb/personnel" element={<OsgbAccessGate><OSGBPersonnel /></OsgbAccessGate>} />
+                          <Route path="/osgb/assignments" element={<OsgbAccessGate><OSGBAssignments /></OsgbAccessGate>} />
+                          <Route path="/osgb/company-tracking" element={<OsgbAccessGate><OSGBCompanyTracking /></OsgbAccessGate>} />
+                          <Route path="/osgb/capacity" element={<OsgbAccessGate><OSGBCapacity /></OsgbAccessGate>} />
+                          <Route path="/osgb/alerts" element={<OsgbAccessGate><OSGBAlerts /></OsgbAccessGate>} />
+                          <Route path="/osgb/finance" element={<OsgbAccessGate><OSGBFinance /></OsgbAccessGate>} />
+                          <Route path="/osgb/documents" element={<OsgbAccessGate><OSGBDocuments /></OsgbAccessGate>} />
+                          <Route path="/osgb/tasks" element={<OsgbAccessGate><OSGBTasks /></OsgbAccessGate>} />
+                          <Route path="/osgb/notes" element={<OsgbAccessGate><OSGBNotes /></OsgbAccessGate>} />
+                          <Route path="/osgb/analytics" element={<OsgbAccessGate><OSGBAnalytics /></OsgbAccessGate>} />
+                          <Route path="/osgb/batch-logs" element={<OsgbAccessGate><OSGBBatchLogs /></OsgbAccessGate>} />
                           <Route path="/dashboard/certificates" element={<CertificatesDashboard />} />
                           <Route path="/dashboard/certificate-studio" element={<CertificateStudio />} />
                           <Route path="/dashboard/certificates/history" element={<CertificatesHistory />} />

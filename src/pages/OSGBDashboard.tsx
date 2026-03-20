@@ -1,47 +1,44 @@
 ﻿import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  AlertTriangle,
+  Activity,
+  AlarmClock,
   ArrowRight,
-  BadgeAlert,
+  BadgeCheck,
   Briefcase,
   Building2,
-  CalendarClock,
-  Clock3,
+  ClipboardList,
+  CreditCard,
+  FileCheck2,
+  FolderKanban,
+  Gauge,
   RefreshCcw,
+  ScrollText,
   ShieldAlert,
-  ShieldCheck,
-  Siren,
+  Sparkles,
+  Users,
+  Waypoints,
 } from "lucide-react";
-import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Progress } from "@/components/ui/progress";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { cn } from "@/lib/utils";
-import {
-  getOsgbDashboardData,
-  type OsgbAlertRecord,
-  type OsgbCompanyRecord,
-  type OsgbDashboardData,
-  type OsgbExpertLoad,
-  type OsgbFlagRecord,
-} from "@/lib/osgbData";
+import { readOsgbPageCache, writeOsgbPageCache } from "@/lib/osgbPageCache";
+import { getOsgbDashboardData, type OsgbDashboardData } from "@/lib/osgbData";
 import { getOsgbOperationalSummary, type OsgbOperationalSummary } from "@/lib/osgbOperations";
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
 const getCacheKey = (userId: string) => `osgb:dashboard:${userId}`;
+
+const formatCurrency = (value: number) =>
+  new Intl.NumberFormat("tr-TR", {
+    style: "currency",
+    currency: "TRY",
+    maximumFractionDigits: 0,
+  }).format(value || 0);
 
 const formatDate = (value: string | null) => {
   if (!value) return "-";
@@ -50,354 +47,106 @@ const formatDate = (value: string | null) => {
   return date.toLocaleDateString("tr-TR");
 };
 
-const getDaysUntil = (value: string | null) => {
-  if (!value) return null;
-  const target = new Date(value);
-  if (Number.isNaN(target.getTime())) return null;
-  return Math.floor((target.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+type DashboardSnapshot = {
+  data: OsgbDashboardData;
+  operations: OsgbOperationalSummary;
 };
 
-const normalizeSeverityClass = (severity: string) => {
-  const value = severity.toUpperCase();
-  if (value === "CRITICAL") return "bg-red-500/15 text-red-200 border-red-400/20";
-  if (value === "HIGH") return "bg-orange-500/15 text-orange-200 border-orange-400/20";
-  return "bg-yellow-500/15 text-yellow-200 border-yellow-400/20";
+type ModuleStatus = "good" | "warning" | "critical" | "info";
+
+type ModuleCard = {
+  title: string;
+  description: string;
+  href: string;
+  icon: React.ComponentType<{ className?: string }>;
+  badge?: string;
+  tone: string;
+  status: ModuleStatus;
+  statusLabel: string;
+  stats: Array<{ label: string; value: string }>;
+  lastActionLabel: string;
+  lastActionValue: string;
+  recommendedAction: string;
 };
 
-const complianceBadge = (status: string) => {
-  const value = status.toUpperCase();
-  if (value === "CRITICAL") return { label: "Kritik", className: "bg-red-500/15 text-red-200 border-red-400/20" };
-  if (value === "WARNING") return { label: "İzlenmeli", className: "bg-yellow-500/15 text-yellow-200 border-yellow-400/20" };
-  if (value === "COMPLIANT") return { label: "Uyumlu", className: "bg-emerald-500/15 text-emerald-200 border-emerald-400/20" };
-  return { label: "Bilinmiyor", className: "bg-slate-500/15 text-slate-200 border-slate-400/20" };
+const statusStyles: Record<ModuleStatus, string> = {
+  good: "border-emerald-400/20 bg-emerald-500/10 text-emerald-200",
+  warning: "border-amber-400/20 bg-amber-500/10 text-amber-200",
+  critical: "border-red-400/20 bg-red-500/10 text-red-200",
+  info: "border-cyan-400/20 bg-cyan-500/10 text-cyan-200",
 };
 
-const summaryCards = (summary: OsgbDashboardData["summary"]) => [
-  {
-    title: "Toplam firma",
-    value: summary.totalCompanies.toString(),
-    description: `${summary.totalEmployees.toLocaleString("tr-TR")} çalışan kapsanıyor`,
-    icon: Building2,
-  },
-  {
-    title: "Uyum kapsamı",
-    value: `%${summary.coverageRate}`,
-    description: `${summary.criticalCompanies} kritik firma`,
-    icon: ShieldCheck,
-  },
-  {
-    title: "Açık uygunsuzluk",
-    value: summary.openFlags.toString(),
-    description: `${summary.openAlerts} öngörüsel uyarı`,
-    icon: ShieldAlert,
-  },
-  {
-    title: "Sözleşme baskısı",
-    value: summary.expiringContracts.toString(),
-    description: `${summary.expiredContracts} süresi dolmuş kayıt`,
-    icon: CalendarClock,
-  },
-];
-
-function CompanyRiskList({ companies }: { companies: OsgbCompanyRecord[] }) {
-  const navigate = useNavigate();
-  const topCompanies = useMemo(() => companies.slice(0, 6), [companies]);
-
+function LoadingCatalog() {
   return (
-    <Card className="border-slate-800 bg-slate-900/70">
-      <CardHeader>
-        <CardTitle className="text-white">Riskli firma görünümü</CardTitle>
-        <CardDescription>Risk skoru, sözleşme baskısı ve dakika uyumuna göre önceliklendirilmiş liste.</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {topCompanies.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-slate-800 bg-slate-950/40 p-6 text-sm text-slate-400">
-            Portföy verisi bulunamadı.
+    <div className="container mx-auto space-y-5 py-5 sm:space-y-6 sm:py-6">
+      <div className="rounded-3xl border border-slate-800 bg-slate-900/70 p-4 sm:p-6">
+        <div className="grid gap-4 xl:grid-cols-[1.4fr_0.6fr]">
+          <div className="space-y-3 sm:space-y-4">
+            <div className="h-4 w-32 animate-pulse rounded bg-slate-800" />
+            <div className="h-10 w-full max-w-md animate-pulse rounded bg-slate-800" />
+            <div className="h-20 w-full animate-pulse rounded bg-slate-800" />
           </div>
-        ) : (
-          topCompanies.map((company) => {
-            const badge = complianceBadge(company.complianceStatus);
-            const daysLeft = getDaysUntil(company.contractEnd);
-            const coverage = company.requiredMinutes > 0 ? Math.min(100, Math.round((company.assignedMinutes / company.requiredMinutes) * 100)) : 0;
-
-            return (
-              <div key={company.id} className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                  <div className="space-y-3">
-                    <div className="flex flex-wrap items-center gap-2">
-                      <div className="text-base font-semibold text-white">{company.companyName}</div>
-                      <Badge className={cn("border", badge.className)}>{badge.label}</Badge>
-                      <Badge variant="outline">{company.hazardClass}</Badge>
-                      <Badge variant="secondary">Risk {company.riskScore}</Badge>
-                    </div>
-                    <div className="grid gap-2 text-sm text-slate-400 sm:grid-cols-2 xl:grid-cols-4">
-                      <div>Çalışan: <span className="text-slate-200">{company.employeeCount}</span></div>
-                      <div>Uzman: <span className="text-slate-200">{company.assignedPersonName || "Atanmamış"}</span></div>
-                      <div>Gerekli süre: <span className="text-slate-200">{company.requiredMinutes} dk</span></div>
-                      <div>Atanan süre: <span className="text-slate-200">{company.assignedMinutes} dk</span></div>
-                    </div>
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between text-xs text-slate-400">
-                        <span>Süre uyumu</span>
-                        <span>%{coverage}</span>
-                      </div>
-                      <Progress value={coverage} className="h-2 bg-slate-800" />
-                    </div>
-                  </div>
-                  <div className="flex min-w-[220px] flex-col items-start gap-2 lg:items-end">
-                    <div className="text-sm text-slate-400">
-                      Sözleşme bitişi: <span className="text-slate-200">{formatDate(company.contractEnd)}</span>
-                    </div>
-                    <div className="text-sm text-slate-400">
-                      {daysLeft === null
-                        ? "Tarih bulunamadı"
-                        : daysLeft < 0
-                          ? `${Math.abs(daysLeft)} gün önce doldu`
-                          : `${daysLeft} gün kaldı`}
-                    </div>
-                    <Button variant="outline" size="sm" onClick={() => navigate(`/isg-bot?tab=dashboard`)}>
-                      Bot görünümüne git
-                      <ArrowRight className="ml-2 h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            );
-          })
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function ExpertLoadTable({ loads }: { loads: OsgbExpertLoad[] }) {
-  return (
-    <Card className="border-slate-800 bg-slate-900/70">
-      <CardHeader>
-        <CardTitle className="text-white">Uzman yoğunluğu</CardTitle>
-        <CardDescription>Firma dağılımı, çalışan hacmi ve dakika yeterliliği aynı tabloda izlenir.</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <Table>
-          <TableHeader>
-            <TableRow className="border-slate-800 hover:bg-transparent">
-              <TableHead>Uzman</TableHead>
-              <TableHead>Firma</TableHead>
-              <TableHead>Çalışan</TableHead>
-              <TableHead>Atanan</TableHead>
-              <TableHead>Gerekli</TableHead>
-              <TableHead>Durum</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loads.length === 0 ? (
-              <TableRow>
-                <TableCell colSpan={6} className="py-10 text-center text-sm text-slate-400">
-                  Uzman yük verisi bulunamadı.
-                </TableCell>
-              </TableRow>
-            ) : (
-              loads.map((load) => (
-                <TableRow key={load.expertName} className="border-slate-800">
-                  <TableCell className="font-medium text-white">{load.expertName}</TableCell>
-                  <TableCell>{load.companyCount}</TableCell>
-                  <TableCell>{load.totalEmployees}</TableCell>
-                  <TableCell>{load.totalAssignedMinutes} dk</TableCell>
-                  <TableCell>{load.totalRequiredMinutes} dk</TableCell>
-                  <TableCell>
-                    <Badge className={cn("border", load.overloaded ? "bg-red-500/15 text-red-200 border-red-400/20" : "bg-emerald-500/15 text-emerald-200 border-emerald-400/20")}>
-                      {load.overloaded ? "Eksik kapasite" : "Uygun"}
-                    </Badge>
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </CardContent>
-    </Card>
-  );
-}
-
-function AlertPanels({ flags, alerts }: { flags: OsgbFlagRecord[]; alerts: OsgbAlertRecord[] }) {
-  return (
-    <div className="grid gap-6 xl:grid-cols-2">
-      <Card className="border-slate-800 bg-slate-900/70">
-        <CardHeader>
-          <CardTitle className="text-white">Açık uygunsuzluklar</CardTitle>
-          <CardDescription>İSG-KATİP uyum bayraklarından gelen açık kayıtlar.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {flags.slice(0, 6).map((flag) => (
-            <div key={flag.id} className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4">
-              <div className="mb-2 flex items-center gap-2">
-                <Badge className={cn("border", normalizeSeverityClass(flag.severity))}>{flag.severity}</Badge>
-                <span className="text-sm font-medium text-white">{flag.ruleName}</span>
-              </div>
-              <p className="text-sm leading-6 text-slate-400">{flag.message}</p>
-            </div>
-          ))}
-          {flags.length === 0 ? <div className="text-sm text-slate-400">Açık uygunsuzluk bulunamadı.</div> : null}
-        </CardContent>
-      </Card>
-
-      <Card className="border-slate-800 bg-slate-900/70">
-        <CardHeader>
-          <CardTitle className="text-white">Öngörüsel uyarılar</CardTitle>
-          <CardDescription>Yaklaşan risk ve sözleşme baskılarını işaretleyen aktif uyarılar.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {alerts.slice(0, 6).map((alert) => (
-            <div key={alert.id} className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4">
-              <div className="mb-2 flex items-center gap-2">
-                <Badge className={cn("border", normalizeSeverityClass(alert.severity))}>{alert.severity}</Badge>
-                <span className="text-sm font-medium text-white">{alert.alertType}</span>
-              </div>
-              <p className="text-sm leading-6 text-slate-400">{alert.message}</p>
-              <div className="mt-2 text-xs text-slate-500">Öngörü tarihi: {formatDate(alert.predictedDate)}</div>
-            </div>
-          ))}
-          {alerts.length === 0 ? <div className="text-sm text-slate-400">Aktif uyarı bulunamadı.</div> : null}
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-function OperationalTrendPanels({ operations }: { operations: OsgbOperationalSummary }) {
-  const navigate = useNavigate();
-  const hasFinanceTrend = operations.finance.monthlyTrend.some(
-    (item) => item.pendingAmount > 0 || item.paidAmount > 0 || item.overdueAmount > 0,
-  );
-  const hasDocumentTrend = operations.documents.monthlyTrend.some(
-    (item) => item.activeCount > 0 || item.warningCount > 0 || item.expiredCount > 0,
-  );
-
-  return (
-    <div className="grid gap-6 xl:grid-cols-2">
-      <Card
-        className="cursor-pointer border-slate-800 bg-slate-900/70 transition hover:border-cyan-500/30"
-        onClick={() => navigate("/osgb/analytics?view=finance")}
-      >
-        <CardHeader>
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <CardTitle className="text-white">Finans trendi</CardTitle>
-              <CardDescription>Son 6 ayda bekleyen, ödenen ve geciken tahsilat hareketi.</CardDescription>
-            </div>
-            <ArrowRight className="h-4 w-4 text-slate-400" />
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+            {Array.from({ length: 2 }).map((_, index) => (
+              <div key={index} className="h-24 animate-pulse rounded-2xl bg-slate-800" />
+            ))}
           </div>
-        </CardHeader>
-        <CardContent>
-          {hasFinanceTrend ? (
-            <ResponsiveContainer width="100%" height={280}>
-              <LineChart data={operations.finance.monthlyTrend}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                <XAxis dataKey="month" stroke="#94a3b8" tick={{ fontSize: 11 }} />
-                <YAxis stroke="#94a3b8" tick={{ fontSize: 11 }} />
-                <Tooltip
-                  contentStyle={{ backgroundColor: "#0f172a", border: "1px solid #334155", borderRadius: "12px" }}
-                  labelStyle={{ color: "#f8fafc" }}
-                />
-                <Line type="monotone" dataKey="pendingAmount" name="Bekleyen" stroke="#facc15" strokeWidth={2} />
-                <Line type="monotone" dataKey="paidAmount" name="Ödendi" stroke="#22c55e" strokeWidth={2} />
-                <Line type="monotone" dataKey="overdueAmount" name="Geciken" stroke="#ef4444" strokeWidth={2} />
-              </LineChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="flex h-[280px] items-center justify-center text-sm text-slate-400">
-              Finans trendi oluşturacak veri bulunamadı.
-            </div>
-          )}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
-      <Card
-        className="cursor-pointer border-slate-800 bg-slate-900/70 transition hover:border-cyan-500/30"
-        onClick={() => navigate("/osgb/analytics?view=documents")}
-      >
-        <CardHeader>
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <CardTitle className="text-white">Evrak trendi</CardTitle>
-              <CardDescription>Son 6 ayda aktif, yaklaşan ve süresi dolmuş evrak dağılımı.</CardDescription>
-            </div>
-            <ArrowRight className="h-4 w-4 text-slate-400" />
-          </div>
-        </CardHeader>
-        <CardContent>
-          {hasDocumentTrend ? (
-            <ResponsiveContainer width="100%" height={280}>
-              <BarChart data={operations.documents.monthlyTrend}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                <XAxis dataKey="month" stroke="#94a3b8" tick={{ fontSize: 11 }} />
-                <YAxis stroke="#94a3b8" tick={{ fontSize: 11 }} allowDecimals={false} />
-                <Tooltip
-                  contentStyle={{ backgroundColor: "#0f172a", border: "1px solid #334155", borderRadius: "12px" }}
-                  labelStyle={{ color: "#f8fafc" }}
-                />
-                <Bar dataKey="activeCount" name="Aktif" fill="#22c55e" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="warningCount" name="Yaklaşan" fill="#facc15" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="expiredCount" name="Süresi dolmuş" fill="#ef4444" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="flex h-[280px] items-center justify-center text-sm text-slate-400">
-              Evrak trendi oluşturacak veri bulunamadı.
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, index) => (
+          <div key={index} className="h-28 animate-pulse rounded-2xl border border-slate-800 bg-slate-900/70" />
+        ))}
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {Array.from({ length: 6 }).map((_, index) => (
+          <div key={index} className="h-72 animate-pulse rounded-2xl border border-slate-800 bg-slate-900/70" />
+        ))}
+      </div>
     </div>
   );
 }
 
 export default function OSGBDashboard() {
-  const { user } = useAuth();
   const navigate = useNavigate();
+  const { user } = useAuth();
+
   const [data, setData] = useState<OsgbDashboardData | null>(null);
   const [operations, setOperations] = useState<OsgbOperationalSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const loadDashboard = async (forceRefresh = false) => {
-    if (!user?.id) return;
+  const loadDashboard = async (force = false) => {
+    if (!user) return;
 
-    const cacheKey = getCacheKey(user.id);
-    const cachedRaw = sessionStorage.getItem(cacheKey);
-
-    if (!forceRefresh && cachedRaw) {
-      try {
-        const cached = JSON.parse(cachedRaw) as { timestamp: number; data: OsgbDashboardData; operations?: OsgbOperationalSummary | null };
-        if (Date.now() - cached.timestamp < CACHE_TTL_MS) {
-          setData(cached.data);
-          setOperations(cached.operations ?? null);
-          setLoading(false);
-        }
-      } catch {
-        sessionStorage.removeItem(cacheKey);
-      }
+    if (force) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
     }
 
     try {
-      if (forceRefresh) {
-        setRefreshing(true);
-      } else if (!data) {
-        setLoading(true);
-      }
-
-      const [result, operationalSummary] = await Promise.all([
+      const [dashboardData, operationalSummary] = await Promise.all([
         getOsgbDashboardData(user.id),
         getOsgbOperationalSummary(user.id),
       ]);
-      setData(result);
+
+      setData(dashboardData);
       setOperations(operationalSummary);
       setError(null);
-      sessionStorage.setItem(cacheKey, JSON.stringify({ timestamp: Date.now(), data: result, operations: operationalSummary }));
+
+      writeOsgbPageCache<DashboardSnapshot>(getCacheKey(user.id), {
+        data: dashboardData,
+        operations: operationalSummary,
+      });
     } catch (err) {
-      const message = err instanceof Error ? err.message : "OSGB dashboard verisi yüklenemedi.";
-      setError(message);
+      console.error("OSGB dashboard yükleme hatası:", err);
+      if (!data || !operations) {
+        setError("OSGB katalog verisi yüklenemedi. Sayfayı yenileyip tekrar deneyin.");
+      }
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -405,217 +154,525 @@ export default function OSGBDashboard() {
   };
 
   useEffect(() => {
-    void loadDashboard(false);
-  }, [user?.id]);
+    if (!user) return;
 
-  const cards = useMemo(() => (data ? summaryCards(data.summary) : []), [data]);
+    const cached = readOsgbPageCache<DashboardSnapshot>(getCacheKey(user.id), CACHE_TTL_MS);
+    if (cached) {
+      setData(cached.data);
+      setOperations(cached.operations);
+      setLoading(false);
+      void loadDashboard(true);
+      return;
+    }
 
-  if (loading && !data) {
+    void loadDashboard();
+  }, [user]);
+
+  const latestSyncDate = useMemo(() => {
+    if (!data?.companies.length) return null;
+    const lastSyncedValues = data.companies
+      .map((company) => company.lastSyncedAt)
+      .filter(Boolean) as string[];
+
+    if (!lastSyncedValues.length) return null;
+
+    return lastSyncedValues.sort((left, right) => new Date(right).getTime() - new Date(left).getTime())[0];
+  }, [data]);
+
+  const latestContractDate = useMemo(() => {
+    if (!data?.companies.length) return null;
+    const contractDates = data.companies
+      .map((company) => company.contractEnd)
+      .filter(Boolean) as string[];
+
+    if (!contractDates.length) return null;
+
+    return contractDates.sort((left, right) => new Date(left).getTime() - new Date(right).getTime())[0];
+  }, [data]);
+
+  const latestFlagDate = useMemo(() => {
+    if (!data?.flags.length) return null;
+    const dates = data.flags.map((flag) => flag.createdAt).filter(Boolean) as string[];
+    return dates.length ? dates.sort((left, right) => new Date(right).getTime() - new Date(left).getTime())[0] : null;
+  }, [data]);
+
+  const latestAlertDate = useMemo(() => {
+    if (!data?.alerts.length) return null;
+    const dates = data.alerts.map((alert) => alert.createdAt).filter(Boolean) as string[];
+    return dates.length ? dates.sort((left, right) => new Date(right).getTime() - new Date(left).getTime())[0] : null;
+  }, [data]);
+
+  const overviewCards = useMemo(() => {
+    if (!data || !operations) return [];
+
+    return [
+      {
+        title: "Portföy kapsamı",
+        value: `${data.summary.totalCompanies} firma`,
+        detail: `${data.summary.totalEmployees.toLocaleString("tr-TR")} çalışan`,
+      },
+      {
+        title: "Uyum ve risk",
+        value: `%${data.summary.coverageRate} süre uyumu`,
+        detail: `${data.summary.criticalCompanies} kritik firma`,
+      },
+      {
+        title: "Finans baskısı",
+        value: formatCurrency(operations.finance.overdueAmount),
+        detail: `${operations.finance.overdueCount} geciken tahsilat`,
+      },
+      {
+        title: "Evrak takibi",
+        value: `${operations.documents.warningCount + operations.documents.expiredCount} kayıt`,
+        detail: `${operations.documents.expiredCount} süresi dolmuş`,
+      },
+    ];
+  }, [data, operations]);
+
+  const featureCards = useMemo<ModuleCard[]>(() => {
+    if (!data || !operations) return [];
+
+    return [
+      {
+        title: "Personel Havuzu",
+        description: "Uzman, hekim ve DSP kadrosunu kapasite, belge geçerliliği ve uzmanlık alanlarıyla yönetin.",
+        href: "/osgb/personnel",
+        icon: Users,
+        tone: "from-cyan-500/15 to-blue-500/5",
+        status: latestSyncDate ? "good" : "info",
+        statusLabel: latestSyncDate ? "Senkron güncel" : "İzleme aktif",
+        stats: [
+          { label: "Uzman yükü", value: `${data.expertLoads.length} kişi` },
+          { label: "Kapsam", value: `${data.summary.totalCompanies} firma` },
+        ],
+        lastActionLabel: "Son işlem",
+        lastActionValue: formatDate(latestSyncDate),
+        recommendedAction: "Belge bitiş tarihlerini ve kapasite doluluklarını gözden geçir.",
+      },
+      {
+        title: "Personel Görevlendirme",
+        description: "Firma atamalarını yönetin, mevzuat önerisini görün ve mükerrer atamayı engelleyin.",
+        href: "/osgb/assignments",
+        icon: Briefcase,
+        badge: "Öneri Motoru",
+        tone: "from-indigo-500/15 to-blue-500/5",
+        status: data.summary.coverageRate >= 90 ? "good" : data.summary.coverageRate >= 70 ? "warning" : "critical",
+        statusLabel: data.summary.coverageRate >= 90 ? "Atama dengeli" : data.summary.coverageRate >= 70 ? "Süre açığı var" : "Kritik süre açığı",
+        stats: [
+          { label: "Toplam firma", value: `${data.summary.totalCompanies}` },
+          { label: "Süre uyumu", value: `%${data.summary.coverageRate}` },
+        ],
+        lastActionLabel: "Son sözleşme",
+        lastActionValue: formatDate(latestContractDate),
+        recommendedAction: "Eksik dakika olan firmalar için atama planını güncelle.",
+      },
+      {
+        title: "Firma Takibi",
+        description: "Her firmanın atama, evrak, finans, görev ve not görünümünü tek ekrandan izleyin.",
+        href: "/osgb/company-tracking",
+        icon: Building2,
+        tone: "from-emerald-500/15 to-green-500/5",
+        status: data.summary.criticalCompanies > 0 ? "warning" : "good",
+        statusLabel: data.summary.criticalCompanies > 0 ? "Kritik firma var" : "Portföy dengeli",
+        stats: [
+          { label: "Kritik firma", value: `${data.summary.criticalCompanies}` },
+          { label: "Sözleşme baskısı", value: `${data.summary.expiringContracts}` },
+        ],
+        lastActionLabel: "Son senkron",
+        lastActionValue: formatDate(latestSyncDate),
+        recommendedAction: "Kritik firmaları drawer üzerinden hızlı aksiyonla kapat.",
+      },
+      {
+        title: "Süre ve Kapasite",
+        description: "Gerekli süre, atanmış süre ve uzman doluluk oranlarını operasyonel olarak karşılaştırın.",
+        href: "/osgb/capacity",
+        icon: Gauge,
+        badge: "Canlı İzleme",
+        tone: "from-amber-500/15 to-orange-500/5",
+        status: data.expertLoads.some((item) => item.overloaded) ? "critical" : "good",
+        statusLabel: data.expertLoads.some((item) => item.overloaded) ? "Eksik kapasite" : "Kapasite uygun",
+        stats: [
+          { label: "Eksik kapasite", value: `${data.expertLoads.filter((item) => item.overloaded).length} uzman` },
+          { label: "Ortalama risk", value: `${data.summary.averageRiskScore}` },
+        ],
+        lastActionLabel: "Son kontrol",
+        lastActionValue: formatDate(latestSyncDate),
+        recommendedAction: "Aşırı yüklü uzmanlar için dakika dağılımını yeniden dengele.",
+      },
+      {
+        title: "Uyarı Merkezi",
+        description: "Sözleşme, uygunsuzluk ve öngörüsel risk uyarılarını önceliklendirip göreve dönüştürün.",
+        href: "/osgb/alerts",
+        icon: AlarmClock,
+        badge: "Aksiyon",
+        tone: "from-rose-500/15 to-red-500/5",
+        status: data.summary.openFlags + data.summary.openAlerts > 0 ? "critical" : "good",
+        statusLabel: data.summary.openFlags + data.summary.openAlerts > 0 ? "Açık uyarı var" : "Merkez temiz",
+        stats: [
+          { label: "Açık uygunsuzluk", value: `${data.summary.openFlags}` },
+          { label: "Öngörüsel uyarı", value: `${data.summary.openAlerts}` },
+        ],
+        lastActionLabel: "Son uyarı",
+        lastActionValue: formatDate(latestAlertDate || latestFlagDate),
+        recommendedAction: "Önce kritik severity kayıtlarını göreve çevir.",
+      },
+      {
+        title: "Finans Yönetimi",
+        description: "Tahsilatları, geciken ödemeleri, haftalık planı ve ödeme takvimini izleyin.",
+        href: "/osgb/finance",
+        icon: CreditCard,
+        tone: "from-violet-500/15 to-fuchsia-500/5",
+        status: operations.finance.overdueCount > 0 ? "warning" : "good",
+        statusLabel: operations.finance.overdueCount > 0 ? "Tahsilat baskısı var" : "Tahsilat dengeli",
+        stats: [
+          { label: "Bekleyen", value: formatCurrency(operations.finance.pendingAmount) },
+          { label: "Geciken", value: formatCurrency(operations.finance.overdueAmount) },
+        ],
+        lastActionLabel: "Takvim görünümü",
+        lastActionValue: `${operations.finance.calendarItems.length} kayıt`,
+        recommendedAction: "Geciken tahsilatları haftalık planda öncele.",
+      },
+      {
+        title: "Evrak Takibi",
+        description: "Yaklaşan ve süresi dolan evrakları görün, batch ve manuel görev üretimini yönetin.",
+        href: "/osgb/documents",
+        icon: FileCheck2,
+        tone: "from-sky-500/15 to-cyan-500/5",
+        status: operations.documents.expiredCount > 0 ? "critical" : operations.documents.warningCount > 0 ? "warning" : "good",
+        statusLabel: operations.documents.expiredCount > 0 ? "Süresi dolan evrak var" : operations.documents.warningCount > 0 ? "Yaklaşan evrak var" : "Evrak takibi temiz",
+        stats: [
+          { label: "Yaklaşan", value: `${operations.documents.warningCount}` },
+          { label: "Süresi dolmuş", value: `${operations.documents.expiredCount}` },
+        ],
+        lastActionLabel: "Son senkron",
+        lastActionValue: formatDate(latestSyncDate),
+        recommendedAction: "Warning ve expired kayıtlar için batch veya manuel görev üret.",
+      },
+      {
+        title: "Görev Motoru",
+        description: "Bot, uyarı merkezi ve batch tarafından üretilen operasyon görevlerini yönetin.",
+        href: "/osgb/tasks",
+        icon: ClipboardList,
+        tone: "from-blue-500/15 to-indigo-500/5",
+        status: data.summary.openFlags + data.summary.openAlerts > 10 ? "warning" : "info",
+        statusLabel: data.summary.openFlags + data.summary.openAlerts > 10 ? "Görev yükü artıyor" : "Görev akışı aktif",
+        stats: [
+          { label: "Potansiyel aksiyon", value: `${data.summary.openFlags + data.summary.openAlerts}` },
+          { label: "Evrak tetikleyici", value: `${operations.documents.warningCount + operations.documents.expiredCount}` },
+        ],
+        lastActionLabel: "Kaynak yükü",
+        lastActionValue: `${data.summary.openFlags + data.summary.openAlerts + operations.documents.warningCount + operations.documents.expiredCount} kayıt`,
+        recommendedAction: "Açık uyarıları görev listesine dönüştürüp sorumlu ata.",
+      },
+      {
+        title: "Operasyon Notları",
+        description: "Firma bazlı operasyon bilgisini kurumsal hafızaya dönüştürün ve ekip içi not akışı tutun.",
+        href: "/osgb/notes",
+        icon: ScrollText,
+        tone: "from-slate-500/15 to-slate-300/5",
+        status: "info",
+        statusLabel: "Kurumsal hafıza",
+        stats: [
+          { label: "Kullanım alanı", value: "Firma bazlı hafıza" },
+          { label: "Portföy", value: `${data.summary.totalCompanies} firma` },
+        ],
+        lastActionLabel: "Son senkron",
+        lastActionValue: formatDate(latestSyncDate),
+        recommendedAction: "Kritik firmalar için son saha notlarını güncelle.",
+      },
+      {
+        title: "Trend Analizi",
+        description: "Finans ve evrak trendlerini tarih aralığı filtresiyle inceleyin, drill-down raporlarına geçin.",
+        href: "/osgb/analytics?view=finance",
+        icon: Activity,
+        tone: "from-teal-500/15 to-cyan-500/5",
+        status: "info",
+        statusLabel: "Analiz hazır",
+        stats: [
+          { label: "Finans trend", value: `${operations.finance.monthlyTrend.length} ay` },
+          { label: "Evrak trend", value: `${operations.documents.monthlyTrend.length} ay` },
+        ],
+        lastActionLabel: "Analiz kapsamı",
+        lastActionValue: "Son 6 ay",
+        recommendedAction: "Sapma gösteren aylarda drill-down analizi aç.",
+      },
+      {
+        title: "Batch Logları",
+        description: "Günlük otomasyonun hangi kayıtlarda görev ürettiğini ve batch sonuçlarını denetleyin.",
+        href: "/osgb/batch-logs",
+        icon: FolderKanban,
+        badge: "Otomasyon",
+        tone: "from-lime-500/15 to-emerald-500/5",
+        status: operations.documents.warningCount + operations.documents.expiredCount > 0 ? "warning" : "info",
+        statusLabel: operations.documents.warningCount + operations.documents.expiredCount > 0 ? "Batch takip edilmeli" : "Otomasyon aktif",
+        stats: [
+          { label: "Batch kaydı", value: "Log ekranından izle" },
+          { label: "Çalışma tipi", value: "Günlük cron" },
+        ],
+        lastActionLabel: "Son tetikleme",
+        lastActionValue: formatDate(latestSyncDate),
+        recommendedAction: "Görev üreten batch sonuçlarını log ekranında doğrula.",
+      },
+    ];
+  }, [data, latestAlertDate, latestContractDate, latestFlagDate, latestSyncDate, operations]);
+
+  const quickStartCards = useMemo(() => {
+    if (!data || !operations) return [];
+
+    return [
+      {
+        title: "Bugün Öncelikli İşler",
+        description: "Kritik uyarılar, geciken tahsilatlar ve süresi dolan evraklar.",
+        href: "/osgb/alerts",
+        icon: ShieldAlert,
+        meta: `${data.summary.openFlags + data.summary.openAlerts} açık kayıt`,
+      },
+      {
+        title: "Operasyon Sağlık Skoru",
+        description: "Portföyün genel süre, finans ve evrak dengesini özet görün.",
+        href: "/osgb/capacity",
+        icon: Sparkles,
+        meta: `%${Math.max(0, Math.min(100, Math.round((data.summary.coverageRate + (100 - Math.min(100, data.summary.averageRiskScore))) / 2)))}`,
+      },
+      {
+        title: "Finans Planı",
+        description: "Tahsilat baskısı yüksek firmalara ve haftalık ödeme planına geçin.",
+        href: "/osgb/finance?status=overdue",
+        icon: Waypoints,
+        meta: `${operations.finance.overdueCount} geciken tahsilat`,
+      },
+    ];
+  }, [data, operations]);
+
+  if (loading && (!data || !operations)) {
+    return <LoadingCatalog />;
+  }
+
+  if (!data || !operations) {
     return (
-      <div className="container mx-auto space-y-6 py-6">
-        <div className="space-y-2">
-          <div className="h-8 w-64 animate-pulse rounded-lg bg-slate-800" />
-          <div className="h-4 w-96 animate-pulse rounded-lg bg-slate-900" />
-        </div>
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, index) => (
-            <div key={index} className="h-36 animate-pulse rounded-2xl border border-slate-800 bg-slate-900/70" />
-          ))}
-        </div>
-        <div className="grid gap-6 xl:grid-cols-2">
-          <div className="h-[380px] animate-pulse rounded-2xl border border-slate-800 bg-slate-900/70" />
-          <div className="h-[380px] animate-pulse rounded-2xl border border-slate-800 bg-slate-900/70" />
-        </div>
+      <div className="container mx-auto py-6">
+        <Alert variant="destructive">
+          <AlertTitle>OSGB kataloğu yüklenemedi</AlertTitle>
+          <AlertDescription>{error || "Veri okunamadı."}</AlertDescription>
+        </Alert>
       </div>
     );
   }
 
   return (
-    <div className="container mx-auto space-y-6 py-6">
-      <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
-        <div className="space-y-2">
-          <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-cyan-500/20 bg-cyan-500/10 text-cyan-200">
-              <Briefcase className="h-5 w-5" />
+    <div className="container mx-auto space-y-6 py-5 sm:space-y-8 sm:py-6">
+      <section className="overflow-hidden rounded-3xl border border-slate-800 bg-[radial-gradient(circle_at_top_left,_rgba(14,165,233,0.14),_transparent_35%),linear-gradient(180deg,rgba(15,23,42,0.96),rgba(15,23,42,0.86))] p-4 shadow-2xl shadow-slate-950/40 sm:p-6">
+        <div className="grid gap-5 xl:grid-cols-[1.35fr_0.65fr]">
+          <div className="space-y-4 sm:space-y-5">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+              <Badge className="border border-cyan-400/20 bg-cyan-500/10 text-cyan-200 hover:bg-cyan-500/10">
+                OSGB operasyon kataloğu
+              </Badge>
+              <Badge variant="outline">Son sözleşme: {formatDate(latestContractDate)}</Badge>
             </div>
-            <div>
-              <h1 className="text-3xl font-bold tracking-tight text-white">OSGB Dashboard</h1>
-              <p className="text-sm text-slate-400">
-                İSG-KATİP verisi ile çalışan portföy, kapasite ve uyum görünümü.
+
+            <div className="space-y-3">
+              <h1 className="text-2xl font-bold tracking-tight text-white sm:text-4xl">
+                OSGB modülündeki tüm operasyon ekranları tek katalogda
+              </h1>
+              <p className="max-w-3xl text-sm leading-6 text-slate-300 sm:text-base sm:leading-7">
+                Bu sayfa, OSGB modülünü kullanıcıya anlatan ana rehber ve hızlı başlat ekranıdır.
+                Firma, personel, atama, finans, evrak ve görev süreçlerini kart bazında açar.
+                Kullanıcı önce modülün ne iş yaptığını görür, sonra ilgili karta tıklayıp doğrudan o ekrana geçer.
               </p>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {quickStartCards.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <button
+                    key={item.title}
+                    type="button"
+                    onClick={() => navigate(item.href)}
+                    className="rounded-2xl border border-slate-800 bg-slate-950/50 p-3 text-left transition hover:border-cyan-500/30 hover:bg-slate-900 sm:p-4"
+                  >
+                    <div className="mb-3 flex items-center justify-between sm:mb-4">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-2xl border border-cyan-500/20 bg-cyan-500/10 text-cyan-200 sm:h-11 sm:w-11">
+                        <Icon className="h-5 w-5" />
+                      </div>
+                      <ArrowRight className="h-4 w-4 text-slate-500" />
+                    </div>
+                    <div className="text-sm font-semibold text-white sm:text-base">{item.title}</div>
+                    <div className="mt-2 text-xs leading-5 text-slate-400 sm:text-sm sm:leading-6">{item.description}</div>
+                    <div className="mt-3 text-xs font-medium text-cyan-200 sm:mt-4">{item.meta}</div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+            {overviewCards.map((item) => (
+              <Card key={item.title} className="border-slate-800 bg-slate-950/50">
+                <CardContent className="space-y-2 p-4 sm:p-5">
+                  <div className="text-[11px] uppercase tracking-[0.18em] text-slate-500">{item.title}</div>
+                  <div className="text-xl font-bold text-white sm:text-2xl">{item.value}</div>
+                  <div className="text-xs text-slate-400 sm:text-sm">{item.detail}</div>
+                </CardContent>
+              </Card>
+            ))}
+
+            <div className="flex flex-col gap-3 sm:flex-row xl:flex-col">
+              <Button className="flex-1" onClick={() => navigate("/osgb")}>
+                Modül Tanıtımı
+              </Button>
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => void loadDashboard(true)}
+                disabled={refreshing}
+              >
+                <RefreshCcw className={cn("mr-2 h-4 w-4", refreshing && "animate-spin")} />
+                Yenile
+              </Button>
             </div>
           </div>
         </div>
-
-        <div className="flex flex-wrap gap-2">
-          <Button variant="outline" onClick={() => navigate("/osgb")}>Modül Tanıtımı</Button>
-          <Button onClick={() => void loadDashboard(true)} disabled={refreshing}>
-            <RefreshCcw className={cn("mr-2 h-4 w-4", refreshing && "animate-spin")} />
-            Yenile
-          </Button>
-        </div>
-      </div>
+      </section>
 
       {error ? (
-        <Alert variant="destructive" className="border-red-500/20 bg-red-500/10 text-red-100">
-          <AlertTriangle className="h-4 w-4" />
-          <AlertTitle>Dashboard yüklenemedi</AlertTitle>
+        <Alert>
+          <AlertTitle>Arka planda yenileme sırasında sorun oluştu</AlertTitle>
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       ) : null}
 
-      {data ? (
-        <>
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            {cards.map((card) => {
-              const Icon = card.icon;
-              return (
-                <Card key={card.title} className="border-slate-800 bg-slate-900/70">
-                  <CardHeader className="pb-3">
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <CardDescription>{card.title}</CardDescription>
-                        <CardTitle className="mt-2 text-3xl text-white">{card.value}</CardTitle>
-                      </div>
-                      <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-cyan-500/20 bg-cyan-500/10 text-cyan-200">
-                        <Icon className="h-5 w-5" />
-                      </div>
+      <section className="space-y-4">
+        <div className="flex items-center gap-2 text-lg font-semibold text-white">
+          <BadgeCheck className="h-5 w-5 text-cyan-300" />
+          OSGB modül bileşenleri
+        </div>
+        <p className="text-sm leading-6 text-slate-400">
+          Her kart modülün bir operasyon alanını temsil eder. Kartın içindeki canlı sayı, durum rozeti,
+          son işlem tarihi ve önerilen aksiyon satırı kullanıcıya ekranın ne iş yaptığını hızlıca anlatır.
+        </p>
+
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {featureCards.map((card) => {
+            const Icon = card.icon;
+            return (
+              <Card
+                key={card.title}
+                className={`group border-slate-800 bg-gradient-to-br ${card.tone} bg-slate-900/70 transition hover:-translate-y-1 hover:border-cyan-500/30`}
+              >
+                <CardHeader className="space-y-3 p-4 pb-0 sm:p-5 sm:pb-0">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/10 bg-slate-950/40 text-cyan-200">
+                      <Icon className="h-5 w-5" />
                     </div>
-                  </CardHeader>
-                  <CardContent>
-                    <p className="text-sm text-slate-400">{card.description}</p>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
+                    <div className="flex flex-wrap justify-end gap-2">
+                      <Badge className={cn("border", statusStyles[card.status])}>{card.statusLabel}</Badge>
+                      {card.badge ? <Badge variant="outline">{card.badge}</Badge> : null}
+                    </div>
+                  </div>
+                  <div>
+                    <CardTitle className="text-lg text-white sm:text-xl">{card.title}</CardTitle>
+                    <CardDescription className="pt-2 text-xs leading-5 text-slate-300 sm:text-sm sm:leading-6">
+                      {card.description}
+                    </CardDescription>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4 p-4 pt-4 sm:p-5 sm:pt-5">
+                  <div className="grid gap-3 grid-cols-2">
+                    {card.stats.map((stat) => (
+                      <div key={stat.label} className="rounded-2xl border border-slate-800 bg-slate-950/45 p-3">
+                        <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500 sm:text-xs">{stat.label}</div>
+                        <div className="mt-2 text-xs font-semibold text-white sm:text-sm">{stat.value}</div>
+                      </div>
+                    ))}
+                  </div>
 
-          {operations ? (
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-              <Card className="border-slate-800 bg-slate-900/70">
-                <CardHeader className="pb-3">
-                  <CardDescription>Bekleyen tahsilat</CardDescription>
-                  <CardTitle className="mt-2 text-2xl text-white">{operations.finance.pendingCount}</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  <p className="text-sm text-slate-400">{new Intl.NumberFormat("tr-TR", { style: "currency", currency: "TRY" }).format(operations.finance.pendingAmount)}</p>
-                  <Button variant="outline" size="sm" className="w-full justify-between" onClick={() => navigate("/osgb/finance?status=pending")}>
-                    Finans detayına git
-                    <ArrowRight className="ml-2 h-4 w-4" />
+                  <div className="space-y-2 rounded-2xl border border-slate-800 bg-slate-950/35 p-3">
+                    <div className="text-[11px] uppercase tracking-[0.16em] text-slate-500">{card.lastActionLabel}</div>
+                    <div className="text-sm font-medium text-white">{card.lastActionValue}</div>
+                    <div className="text-xs leading-5 text-slate-400">Önerilen aksiyon: {card.recommendedAction}</div>
+                  </div>
+
+                  <Button className="w-full justify-between" onClick={() => navigate(card.href)}>
+                    Ekranı Aç
+                    <ArrowRight className="h-4 w-4 transition group-hover:translate-x-0.5" />
                   </Button>
                 </CardContent>
               </Card>
-              <Card className="border-slate-800 bg-slate-900/70">
-                <CardHeader className="pb-3">
-                  <CardDescription>Geciken tahsilat</CardDescription>
-                  <CardTitle className="mt-2 text-2xl text-white">{operations.finance.overdueCount}</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  <p className="text-sm text-slate-400">{new Intl.NumberFormat("tr-TR", { style: "currency", currency: "TRY" }).format(operations.finance.overdueAmount)}</p>
-                  <Button variant="outline" size="sm" className="w-full justify-between" onClick={() => navigate("/osgb/finance?status=overdue")}>
-                    Geciken ödemeleri aç
-                    <ArrowRight className="ml-2 h-4 w-4" />
-                  </Button>
-                </CardContent>
-              </Card>
-              <Card className="border-slate-800 bg-slate-900/70">
-                <CardHeader className="pb-3">
-                  <CardDescription>Yaklaşan evrak</CardDescription>
-                  <CardTitle className="mt-2 text-2xl text-white">{operations.documents.warningCount}</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  <p className="text-sm text-slate-400">{operations.documents.expiringSoonCount} kayıt yakın takip gerektiriyor</p>
-                  <Button variant="outline" size="sm" className="w-full justify-between" onClick={() => navigate("/osgb/documents?status=warning")}>
-                    Evrak detayına git
-                    <ArrowRight className="ml-2 h-4 w-4" />
-                  </Button>
-                </CardContent>
-              </Card>
-              <Card className="border-slate-800 bg-slate-900/70">
-                <CardHeader className="pb-3">
-                  <CardDescription>Süresi dolmuş evrak</CardDescription>
-                  <CardTitle className="mt-2 text-2xl text-white">{operations.documents.expiredCount}</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-2">
-                  <p className="text-sm text-slate-400">{operations.documents.activeCount} aktif evrak kayıt altında</p>
-                  <Button variant="outline" size="sm" className="w-full justify-between" onClick={() => navigate("/osgb/documents?status=expired")}>
-                    Kritik evrakları aç
-                    <ArrowRight className="ml-2 h-4 w-4" />
-                  </Button>
-                </CardContent>
-              </Card>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="grid gap-4 xl:grid-cols-[1fr_1fr]">
+        <Card className="border-slate-800 bg-slate-900/70">
+          <CardHeader>
+            <CardTitle className="text-white">Kullanıcı bu sayfayı nasıl kullanır?</CardTitle>
+            <CardDescription>Özellikle yeni kullanıcı için başlangıç akışı.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {[
+              "Önce portföy özetini kontrol eder ve hangi alanda baskı olduğunu görür.",
+              "İhtiyacına göre Personel, Atama, Evrak veya Finans kartını açar.",
+              "Uyarı Merkezi ve Görev Motoru ile aksiyon gerektiren kayıtları işler.",
+              "Trend Analizi ve Batch Logları ile operasyonun arka planını denetler.",
+            ].map((item, index) => (
+              <div key={item} className="flex gap-4 rounded-2xl border border-slate-800 bg-slate-950/40 p-4">
+                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-cyan-500/20 bg-cyan-500/10 text-sm font-semibold text-cyan-200">
+                  {index + 1}
+                </div>
+                <p className="text-sm leading-6 text-slate-300">{item}</p>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+
+        <Card className="border-slate-800 bg-slate-900/70">
+          <CardHeader>
+            <CardTitle className="text-white">Canlı operasyon özeti</CardTitle>
+            <CardDescription>Bu katalog sayfası aynı zamanda günlük yönlendirme ekranı gibi davranır.</CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4">
+              <div className="mb-2 flex items-center gap-2 text-sm font-medium text-cyan-200">
+                <ShieldAlert className="h-4 w-4" />
+                Kritik firma
+              </div>
+              <div className="text-2xl font-bold text-white">{data.summary.criticalCompanies}</div>
+              <div className="mt-2 text-sm text-slate-400">Bugün öncelik verilmesi gereken portföy kayıtları.</div>
             </div>
-          ) : null}
-
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <Button variant="outline" className="justify-between" onClick={() => navigate("/osgb/capacity")}>
-              Süre ve Kapasite
-              <ArrowRight className="ml-2 h-4 w-4" />
-            </Button>
-            <Button variant="outline" className="justify-between" onClick={() => navigate("/osgb/alerts")}>
-              Uyarı Merkezi
-              <ArrowRight className="ml-2 h-4 w-4" />
-            </Button>
-            <Button variant="outline" className="justify-between" onClick={() => navigate("/osgb/finance")}>
-              Finans Yönetimi
-              <ArrowRight className="ml-2 h-4 w-4" />
-            </Button>
-            <Button variant="outline" className="justify-between" onClick={() => navigate("/osgb/documents")}>
-              Evrak Takibi
-              <ArrowRight className="ml-2 h-4 w-4" />
-            </Button>
-          </div>
-
-          {operations ? <OperationalTrendPanels operations={operations} /> : null}
-
-          <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
-            <CompanyRiskList companies={data.companies} />
-
-            <Card className="border-slate-800 bg-slate-900/70">
-              <CardHeader>
-                <CardTitle className="text-white">Portföy radar</CardTitle>
-                <CardDescription>Kritik alanlar için yönetim düzeyi hızlı özet.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4">
-                  <div className="mb-2 flex items-center gap-2 text-white">
-                    <BadgeAlert className="h-4 w-4 text-red-300" />
-                    En kritik konu
-                  </div>
-                  <p className="text-sm leading-6 text-slate-400">
-                    {data.summary.criticalCompanies > 0
-                      ? `${data.summary.criticalCompanies} firma kritik seviyede. Açık uygunsuzluklar ve süre uyumsuzluğu öncelikli.`
-                      : "Kritik firma görünmüyor. Uyarı ve sözleşme baskısını izlemeye devam edin."}
-                  </p>
-                </div>
-                <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4">
-                  <div className="mb-2 flex items-center gap-2 text-white">
-                    <Clock3 className="h-4 w-4 text-amber-300" />
-                    Sözleşme baskısı
-                  </div>
-                  <p className="text-sm leading-6 text-slate-400">
-                    {data.summary.expiringContracts > 0 || data.summary.expiredContracts > 0
-                      ? `${data.summary.expiringContracts} sözleşme 30 gün içinde sona eriyor, ${data.summary.expiredContracts} kayıt ise süresi dolmuş durumda.`
-                      : "Yakın dönemde sözleşme baskısı görünmüyor."}
-                  </p>
-                </div>
-                <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4">
-                  <div className="mb-2 flex items-center gap-2 text-white">
-                    <Siren className="h-4 w-4 text-cyan-300" />
-                    Operasyon önerisi
-                  </div>
-                  <p className="text-sm leading-6 text-slate-400">
-                    Önce kritik firmalarda asgari süre uyumunu kapatın, sonra açık kurul ve sözleşme kayıtlarını temizleyin.
-                  </p>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-
-          <ExpertLoadTable loads={data.expertLoads} />
-          <AlertPanels flags={data.flags} alerts={data.alerts} />
-        </>
-      ) : null}
+            <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4">
+              <div className="mb-2 flex items-center gap-2 text-sm font-medium text-cyan-200">
+                <FileCheck2 className="h-4 w-4" />
+                Evrak baskısı
+              </div>
+              <div className="text-2xl font-bold text-white">
+                {operations.documents.warningCount + operations.documents.expiredCount}
+              </div>
+              <div className="mt-2 text-sm text-slate-400">Yaklaşan veya süresi dolan evrakların toplamı.</div>
+            </div>
+            <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4">
+              <div className="mb-2 flex items-center gap-2 text-sm font-medium text-cyan-200">
+                <CreditCard className="h-4 w-4" />
+                Tahsilat riski
+              </div>
+              <div className="text-2xl font-bold text-white">{formatCurrency(operations.finance.overdueAmount)}</div>
+              <div className="mt-2 text-sm text-slate-400">Gecikmiş finans kayıtları ve nakit akışı baskısı.</div>
+            </div>
+            <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4">
+              <div className="mb-2 flex items-center gap-2 text-sm font-medium text-cyan-200">
+                <ClipboardList className="h-4 w-4" />
+                Aksiyon yükü
+              </div>
+              <div className="text-2xl font-bold text-white">
+                {data.summary.openFlags + data.summary.openAlerts + operations.documents.warningCount + operations.documents.expiredCount}
+              </div>
+              <div className="mt-2 text-sm text-slate-400">Uygunsuzluk, uyarı ve evrak baskısından türeyen operasyon hacmi.</div>
+            </div>
+          </CardContent>
+        </Card>
+      </section>
     </div>
   );
 }

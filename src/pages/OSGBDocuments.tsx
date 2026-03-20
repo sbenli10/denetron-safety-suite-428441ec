@@ -52,6 +52,9 @@ import {
   type OsgbDocumentRecord,
   upsertOsgbDocument,
 } from "@/lib/osgbOperations";
+import { readOsgbPageCache, writeOsgbPageCache } from "@/lib/osgbPageCache";
+import { useAccessRole } from "@/hooks/useAccessRole";
+import { downloadCsv } from "@/lib/csvExport";
 
 type DocumentFormState = {
   companyId: string;
@@ -96,8 +99,12 @@ const formatDate = (value: string | null) => {
   return date.toLocaleDateString("tr-TR");
 };
 
+const CACHE_TTL_MS = 5 * 60 * 1000;
+const getCacheKey = (userId: string) => `documents:${userId}`;
+
 export default function OSGBDocuments() {
   const { user } = useAuth();
+  const { canManage } = useAccessRole();
   const [searchParams] = useSearchParams();
   const [records, setRecords] = useState<OsgbDocumentRecord[]>([]);
   const [companies, setCompanies] = useState<OsgbCompanyOption[]>([]);
@@ -120,9 +127,9 @@ export default function OSGBDocuments() {
     }
   }, [searchParams]);
 
-  const loadData = async () => {
+  const loadData = async (silent = false) => {
     if (!user?.id) return;
-    setLoading(true);
+    if (!silent) setLoading(true);
     try {
       const [documentRows, companyRows] = await Promise.all([
         listOsgbDocuments(user.id),
@@ -130,6 +137,10 @@ export default function OSGBDocuments() {
       ]);
       setRecords(documentRows);
       setCompanies(companyRows);
+      writeOsgbPageCache(getCacheKey(user.id), {
+        records: documentRows,
+        companies: companyRows,
+      });
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "OSGB evrak kayıtları yüklenemedi.");
@@ -139,6 +150,18 @@ export default function OSGBDocuments() {
   };
 
   useEffect(() => {
+    if (!user?.id) return;
+    const cached = readOsgbPageCache<{
+      records: OsgbDocumentRecord[];
+      companies: OsgbCompanyOption[];
+    }>(getCacheKey(user.id), CACHE_TTL_MS);
+    if (cached) {
+      setRecords(cached.records);
+      setCompanies(cached.companies);
+      setLoading(false);
+      void loadData(true);
+      return;
+    }
     void loadData();
   }, [user?.id]);
 
@@ -159,6 +182,10 @@ export default function OSGBDocuments() {
   }, [records, search, statusFilter, companyFilter]);
 
   const openCreate = () => {
+    if (!canManage) {
+      toast.error("Bu işlem için düzenleme yetkisi gerekiyor.");
+      return;
+    }
     setEditing(null);
     setForm(emptyForm);
     setDialogOpen(true);
@@ -180,8 +207,20 @@ export default function OSGBDocuments() {
   };
 
   const handleSave = async () => {
+    if (!canManage) {
+      toast.error("Bu işlem için düzenleme yetkisi gerekiyor.");
+      return;
+    }
     if (!user?.id || !form.companyId || !form.documentName) {
       toast.error("Firma ve doküman adı zorunludur.");
+      return;
+    }
+    if (form.issueDate && form.expiryDate && new Date(form.issueDate) > new Date(form.expiryDate)) {
+      toast.error("Geçerlilik tarihi düzenlenme tarihinden önce olamaz.");
+      return;
+    }
+    if (form.status === "expired" && form.expiryDate && new Date(form.expiryDate) > new Date()) {
+      toast.error("Durum süresi dolmuş ise bitiş tarihi geçmişte olmalıdır.");
       return;
     }
 
@@ -211,6 +250,10 @@ export default function OSGBDocuments() {
   };
 
   const handleDelete = async (id: string) => {
+    if (!canManage) {
+      toast.error("Bu işlem için düzenleme yetkisi gerekiyor.");
+      return;
+    }
     if (!confirm("Bu evrak kaydını silmek istiyor musunuz?")) return;
     try {
       await deleteOsgbDocument(id);
@@ -222,6 +265,10 @@ export default function OSGBDocuments() {
   };
 
   const handleGenerateTasks = async () => {
+    if (!canManage) {
+      toast.error("Bu işlem için düzenleme yetkisi gerekiyor.");
+      return;
+    }
     if (!user?.id) return;
     setCreatingTasks(true);
     try {
@@ -254,14 +301,32 @@ export default function OSGBDocuments() {
           </div>
         </div>
         <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={() =>
+              downloadCsv(
+                "osgb-evraklar.csv",
+                ["Firma", "Tür", "Doküman", "Bitiş", "Durum"],
+                filteredRecords.map((record) => [
+                  record.company?.company_name || "",
+                  record.document_type,
+                  record.document_name,
+                  record.expiry_date || "",
+                  statusLabel[record.status],
+                ]),
+              )
+            }
+          >
+            Dışa Aktar
+          </Button>
           <Button variant="outline" onClick={() => void loadData()}>
             <RefreshCcw className="mr-2 h-4 w-4" />
             Yenile
           </Button>
-          <Button variant="outline" onClick={() => void handleGenerateTasks()} disabled={creatingTasks}>
+          <Button variant="outline" onClick={() => void handleGenerateTasks()} disabled={creatingTasks || !canManage}>
             {creatingTasks ? "Üretiliyor..." : "Yaklaşan evraklardan görev üret"}
           </Button>
-          <Button onClick={openCreate}>
+          <Button onClick={openCreate} disabled={!canManage}>
             <Plus className="mr-2 h-4 w-4" />
             Yeni evrak
           </Button>

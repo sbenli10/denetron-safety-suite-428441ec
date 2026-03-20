@@ -41,6 +41,8 @@ import {
   type OsgbNoteRecord,
   upsertOsgbNote,
 } from "@/lib/osgbOperations";
+import { useAccessRole } from "@/hooks/useAccessRole";
+import { downloadCsv } from "@/lib/csvExport";
 
 type NoteFormState = {
   companyId: string;
@@ -66,6 +68,7 @@ const typeLabel: Record<OsgbNoteRecord["note_type"], string> = {
 
 export default function OSGBNotes() {
   const { user } = useAuth();
+  const { canManage } = useAccessRole();
   const [records, setRecords] = useState<OsgbNoteRecord[]>([]);
   const [companies, setCompanies] = useState<OsgbCompanyOption[]>([]);
   const [loading, setLoading] = useState(true);
@@ -111,6 +114,10 @@ export default function OSGBNotes() {
   }, [records, search, typeFilter, companyFilter]);
 
   const openCreate = () => {
+    if (!canManage) {
+      toast.error("Bu işlem için düzenleme yetkisi gerekiyor.");
+      return;
+    }
     setEditing(null);
     setForm(emptyForm);
     setDialogOpen(true);
@@ -128,6 +135,10 @@ export default function OSGBNotes() {
   };
 
   const handleSave = async () => {
+    if (!canManage) {
+      toast.error("Bu işlem için düzenleme yetkisi gerekiyor.");
+      return;
+    }
     if (!user?.id || !form.note.trim()) {
       toast.error("Not içeriği zorunludur.");
       return;
@@ -155,6 +166,10 @@ export default function OSGBNotes() {
   };
 
   const handleDelete = async (id: string) => {
+    if (!canManage) {
+      toast.error("Bu işlem için düzenleme yetkisi gerekiyor.");
+      return;
+    }
     if (!confirm("Bu notu silmek istiyor musunuz?")) return;
     try {
       await deleteOsgbNote(id);
@@ -180,11 +195,29 @@ export default function OSGBNotes() {
           </div>
         </div>
         <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={() =>
+              downloadCsv(
+                "osgb-notlar.csv",
+                ["Firma", "Başlık", "Tür", "Not", "Güncelleme"],
+                filteredRecords.map((record) => [
+                  record.company?.company_name || "",
+                  record.title || "",
+                  typeLabel[record.note_type],
+                  record.note,
+                  record.updated_at,
+                ]),
+              )
+            }
+          >
+            Dışa Aktar
+          </Button>
           <Button variant="outline" onClick={() => void loadData()}>
             <RefreshCcw className="mr-2 h-4 w-4" />
             Yenile
           </Button>
-          <Button onClick={openCreate}>
+          <Button onClick={openCreate} disabled={!canManage}>
             <Plus className="mr-2 h-4 w-4" />
             Yeni not
           </Button>

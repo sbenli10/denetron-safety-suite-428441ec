@@ -34,6 +34,22 @@ type ExistingTaskRow = {
   related_document_id: string | null;
   status: string;
   title: string;
+  source: string;
+};
+
+type PersonnelRecord = {
+  id: string;
+  user_id: string;
+  full_name: string;
+  role: "igu" | "hekim" | "dsp";
+  certificate_expiry_date: string | null;
+  is_active: boolean;
+};
+
+const roleLabel = (role: PersonnelRecord["role"]) => {
+  if (role === "igu") return "İGU";
+  if (role === "hekim") return "İşyeri Hekimi";
+  return "DSP";
 };
 
 serve(async (req) => {
@@ -81,11 +97,19 @@ serve(async (req) => {
 
     const { data: existingTasks, error: taskError } = await supabase
       .from("osgb_tasks")
-      .select("id,user_id,related_document_id,status,title")
+      .select("id,user_id,related_document_id,status,title,source")
       .in("user_id", userIds.length > 0 ? userIds : ["00000000-0000-0000-0000-000000000000"])
       .neq("status", "cancelled");
 
     if (taskError) throw taskError;
+
+    const { data: personnelRows, error: personnelError } = await supabase
+      .from("osgb_personnel")
+      .select("id,user_id,full_name,role,certificate_expiry_date,is_active")
+      .eq("is_active", true)
+      .not("certificate_expiry_date", "is", null);
+
+    if (personnelError) throw personnelError;
 
     let created = 0;
     let skipped = 0;
@@ -126,9 +150,53 @@ serve(async (req) => {
       currentStats.created += 1;
     }
 
+    const now = Date.now();
+    const horizon = now + 1000 * 60 * 60 * 24 * 45;
+    const actionablePersonnel = (personnelRows ?? []) as PersonnelRecord[];
+
+    for (const person of actionablePersonnel) {
+      if (!person.certificate_expiry_date) continue;
+      const expiry = new Date(person.certificate_expiry_date).getTime();
+      if (Number.isNaN(expiry) || expiry > horizon) continue;
+
+      const currentStats = perUserStats.get(person.user_id) ?? { processed: 0, created: 0, skipped: 0 };
+      currentStats.processed += 1;
+      perUserStats.set(person.user_id, currentStats);
+
+      const title = `Belge yenileme: ${person.full_name}`;
+      const duplicate = ((existingTasks ?? []) as ExistingTaskRow[]).some(
+        (task) =>
+          task.user_id === person.user_id &&
+          task.source === "personnel_certificate" &&
+          task.title === title &&
+          task.status !== "completed",
+      );
+
+      if (duplicate) {
+        skipped += 1;
+        currentStats.skipped += 1;
+        continue;
+      }
+
+      const { error: insertError } = await supabase.from("osgb_tasks").insert({
+        user_id: person.user_id,
+        title,
+        description: `${person.full_name} için ${roleLabel(person.role)} belgesinin geçerlilik tarihi ${person.certificate_expiry_date}. Yenileme süreci başlatılmalı.`,
+        priority: expiry < now ? "critical" : "high",
+        status: "open",
+        due_date: person.certificate_expiry_date,
+        assigned_to: person.full_name,
+        source: "personnel_certificate",
+      });
+
+      if (insertError) throw insertError;
+      created += 1;
+      currentStats.created += 1;
+    }
+
     const userLogRows = Array.from(perUserStats.entries()).map(([userId, stats]) => ({
       user_id: userId,
-      batch_type: "document_daily_batch",
+      batch_type: "osgb_daily_batch",
       run_source: "cron",
       status: "success",
       processed_count: stats.processed,
@@ -155,7 +223,7 @@ serve(async (req) => {
         const supabase = createClient(supabaseUrl, serviceRoleKey);
         await supabase.from("osgb_batch_logs").insert({
           user_id: null,
-          batch_type: "document_daily_batch",
+          batch_type: "osgb_daily_batch",
           run_source: "cron",
           status: "error",
           processed_count: 0,

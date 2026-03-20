@@ -5,6 +5,9 @@ export interface OsgbCompanyOption {
   companyName: string;
   hazardClass: string;
   contractEnd: string | null;
+  employeeCount?: number;
+  requiredMinutes?: number;
+  assignedMinutes?: number;
 }
 
 export interface OsgbPersonnelRecord {
@@ -111,6 +114,19 @@ export interface OsgbBatchLogRecord {
   skipped_count: number;
   error_message: string | null;
   created_at: string;
+}
+
+export interface OsgbAssignmentRecommendation {
+  role: OsgbAssignmentRecord["assigned_role"];
+  hazardClass: string;
+  employeeCount: number;
+  perEmployeeMinutes: number;
+  recommendedMinutes: number;
+  currentAssignedMinutes: number;
+  projectedCoverageRatio: number;
+  remainingGapMinutes: number;
+  legalReference: string;
+  summary: string;
 }
 
 export interface OsgbTaskInput {
@@ -257,10 +273,44 @@ export interface OsgbOperationalSummary {
 const assignmentDuplicateMessage =
   "Bu firmada zaten aktif bir personel görevlendirmesi var. Mükerrer atama engellendi.";
 
+const normalizeHazardClass = (value?: string | null) => {
+  const normalized = (value || "").toLocaleLowerCase("tr-TR");
+  if (normalized.includes("çok")) return "cok_tehlikeli";
+  if (normalized.includes("tehlikeli")) return "tehlikeli";
+  return "az_tehlikeli";
+};
+
+const assignmentRecommendationMatrix: Record<
+  OsgbAssignmentRecord["assigned_role"],
+  Record<"az_tehlikeli" | "tehlikeli" | "cok_tehlikeli", number>
+> = {
+  igu: {
+    az_tehlikeli: 10,
+    tehlikeli: 20,
+    cok_tehlikeli: 40,
+  },
+  hekim: {
+    az_tehlikeli: 5,
+    tehlikeli: 10,
+    cok_tehlikeli: 15,
+  },
+  dsp: {
+    az_tehlikeli: 0,
+    tehlikeli: 10,
+    cok_tehlikeli: 15,
+  },
+};
+
+const assignmentLegalReference: Record<OsgbAssignmentRecord["assigned_role"], string> = {
+  igu: "6331 sayılı Kanun ve iş güvenliği uzmanı görevlendirme süreleri",
+  hekim: "6331 sayılı Kanun ve işyeri hekimi görevlendirme süreleri",
+  dsp: "6331 sayılı Kanun ve diğer sağlık personeli görevlendirme süreleri",
+};
+
 export const getOsgbCompanyOptions = async (userId: string): Promise<OsgbCompanyOption[]> => {
   const { data, error } = await supabase
     .from("isgkatip_companies")
-    .select("id, company_name, hazard_class, contract_end")
+    .select("id, company_name, hazard_class, contract_end, employee_count, required_minutes, assigned_minutes")
     .eq("org_id", userId)
     .eq("is_deleted", false)
     .order("company_name", { ascending: true });
@@ -272,6 +322,9 @@ export const getOsgbCompanyOptions = async (userId: string): Promise<OsgbCompany
     companyName: item.company_name,
     hazardClass: item.hazard_class || "Bilinmiyor",
     contractEnd: item.contract_end || null,
+    employeeCount: item.employee_count || 0,
+    requiredMinutes: item.required_minutes || 0,
+    assignedMinutes: item.assigned_minutes || 0,
   }));
 };
 
@@ -676,6 +729,58 @@ export const listOsgbTasks = async (userId: string): Promise<OsgbTaskRecord[]> =
   return (data ?? []) as OsgbTaskRecord[];
 };
 
+export const listOsgbBatchLogs = async (userId: string): Promise<OsgbBatchLogRecord[]> => {
+  const { data, error } = await supabase
+    .from("osgb_batch_logs")
+    .select("*")
+    .or(`user_id.eq.${userId},user_id.is.null`)
+    .order("created_at", { ascending: false })
+    .limit(200);
+
+  if (error) throw error;
+  return (data ?? []) as OsgbBatchLogRecord[];
+};
+
+export const getAssignmentRecommendation = (
+  company: OsgbCompanyOption | null | undefined,
+  role: OsgbAssignmentRecord["assigned_role"],
+  currentAssignedMinutes = 0,
+): OsgbAssignmentRecommendation | null => {
+  if (!company) return null;
+
+  const hazardKey = normalizeHazardClass(company.hazardClass) as "az_tehlikeli" | "tehlikeli" | "cok_tehlikeli";
+  const perEmployeeMinutes = assignmentRecommendationMatrix[role][hazardKey];
+  const employeeCount = company.employeeCount || 0;
+  const recommendedMinutes = perEmployeeMinutes * employeeCount;
+  const remainingGapMinutes = Math.max(0, recommendedMinutes - currentAssignedMinutes);
+  const projectedCoverageRatio = recommendedMinutes > 0
+    ? Math.min(100, Math.round((currentAssignedMinutes / recommendedMinutes) * 100))
+    : 100;
+
+  const roleName =
+    role === "igu"
+      ? "İSG uzmanı"
+      : role === "hekim"
+        ? "işyeri hekimi"
+        : "DSP";
+
+  return {
+    role,
+    hazardClass: company.hazardClass,
+    employeeCount,
+    perEmployeeMinutes,
+    recommendedMinutes,
+    currentAssignedMinutes,
+    projectedCoverageRatio,
+    remainingGapMinutes,
+    legalReference: assignmentLegalReference[role],
+    summary:
+      recommendedMinutes > 0
+        ? `${company.companyName} için ${employeeCount} çalışan ve ${company.hazardClass} sınıfına göre ${roleName} önerisi ${recommendedMinutes} dk/ay.`
+        : `${company.companyName} için seçili rol bazında zorunlu süre önerisi tanımlı değil.`,
+  };
+};
+
 export const createOsgbTask = async (userId: string, input: OsgbTaskInput) => {
   const payload = {
     user_id: userId,
@@ -739,6 +844,62 @@ export const createUpcomingDocumentTasks = async (userId: string, documents: Osg
   }
 
   return { created, skipped };
+};
+
+export const createExpiringPersonnelCertificateTasks = async (
+  userId: string,
+  personnelRecords: OsgbPersonnelRecord[],
+) => {
+  const now = Date.now();
+  const horizon = now + 1000 * 60 * 60 * 24 * 45;
+  const actionablePersonnel = personnelRecords.filter((record) => {
+    if (!record.is_active || !record.certificate_expiry_date) return false;
+    const expiry = new Date(record.certificate_expiry_date).getTime();
+    if (Number.isNaN(expiry)) return false;
+    return expiry <= horizon;
+  });
+
+  if (actionablePersonnel.length === 0) {
+    return { created: 0, skipped: 0 };
+  }
+
+  const existingTasks = await listOsgbTasks(userId);
+  let created = 0;
+  let skipped = 0;
+
+  for (const person of actionablePersonnel) {
+    const title = `Belge yenileme: ${person.full_name}`;
+    const duplicate = existingTasks.some(
+      (task) =>
+        task.source === "personnel_certificate" &&
+        task.title === title &&
+        task.status !== "cancelled" &&
+        task.status !== "completed",
+    );
+
+    if (duplicate) {
+      skipped += 1;
+      continue;
+    }
+
+    await createOsgbTask(userId, {
+      title,
+      description: `${person.full_name} için ${roleLabelsForTasks(person.role)} belgesinin geçerlilik tarihi ${person.certificate_expiry_date}. Yenileme süreci başlatılmalı.`,
+      priority: new Date(person.certificate_expiry_date).getTime() < now ? "critical" : "high",
+      dueDate: person.certificate_expiry_date,
+      assignedTo: person.full_name,
+      source: "personnel_certificate",
+    });
+    created += 1;
+  }
+
+  return { created, skipped };
+};
+
+const roleLabelsForTasks = (role: OsgbPersonnelRecord["role"]) => {
+  if (role === "igu") return "İGU";
+  if (role === "hekim") return "İşyeri Hekimi";
+  return "DSP";
 };
 
 export const updateOsgbTaskStatus = async (id: string, status: OsgbTaskRecord["status"]) => {

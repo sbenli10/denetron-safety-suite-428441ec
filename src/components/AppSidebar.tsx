@@ -266,7 +266,6 @@ export function AppSidebar() {
       icon: Award,
       items: [
         { title: "Sertifika Merkezi", url: "/dashboard/certificates", icon: Award, badge: "NEW" },
-        { title: "Sertifika Tasarım Stüdyosu", url: "/dashboard/certificate-studio", icon: PencilRuler, badge: "Pro" },
         { title: "Sertifika Geçmişi", url: "/dashboard/certificates/history", icon: History, badge: null },
         {
           title: "İSG Kütüphanesi",

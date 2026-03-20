@@ -1,5 +1,5 @@
-﻿import { useCallback, useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+﻿import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   Building2,
   Download,
@@ -232,6 +232,7 @@ function readStudioPreset(): CertificateFormValues | null {
 }
 
 export default function CertificatesDashboard() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [form, setForm] = useState<CertificateFormValues>(() => readStudioPreset() || defaultForm);
   const [participants, setParticipants] = useState<CertificateParticipantInput[]>([]);
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -248,6 +249,8 @@ export default function CertificatesDashboard() {
   const [employeeLoadState, setEmployeeLoadState] = useState<"idle" | "loaded" | "empty">("idle");
   const [employeeLoadMessage, setEmployeeLoadMessage] = useState("");
   const [trainerNamesInput, setTrainerNamesInput] = useState(defaultForm.trainer_names.join(", "));
+  const studioSectionRef = useRef<HTMLDivElement | null>(null);
+  const currentTab = searchParams.get("tab") === "templates" ? "templates" : "production";
 
   const completedItems = useMemo(
     () => jobItems.filter((item) => item.status === "completed" && item.pdf_path),
@@ -317,6 +320,12 @@ export default function CertificatesDashboard() {
       setSelectedPdfParticipantId(completedItems[0].participant_id);
     }
   }, [completedItems, selectedPdfParticipantId]);
+
+  useEffect(() => {
+    if (currentTab === "templates") {
+      studioSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [currentTab]);
 
   async function bootstrap() {
     setLoading(true);
@@ -620,8 +629,8 @@ export default function CertificatesDashboard() {
     <div className="space-y-6">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-foreground">Sertifika Üretim Merkezi</h1>
-          <p className="text-sm text-muted-foreground mt-1">Toplu sertifika üretimi, premium tema seçimi ve worker tabanlı ZIP teslim akışı.</p>
+          <h1 className="text-3xl font-bold text-foreground">Sertifika Merkezi</h1>
+          <p className="text-sm text-muted-foreground mt-1">Toplu sertifika üretimi ve tasarım şablonları tek merkezden yönetilir.</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Badge variant="secondary" className="px-3 py-1">10.000 kayıt hedefi</Badge>
@@ -631,6 +640,27 @@ export default function CertificatesDashboard() {
             <Link to="/dashboard/certificates/history"><History className="h-4 w-4" /> Geçmiş İşler</Link>
           </Button>
         </div>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <Button
+          type="button"
+          variant={currentTab === "production" ? "default" : "outline"}
+          className="gap-2"
+          onClick={() => setSearchParams({})}
+        >
+          <Award className="h-4 w-4" />
+          Sertifika Üret
+        </Button>
+        <Button
+          type="button"
+          variant={currentTab === "templates" ? "default" : "outline"}
+          className="gap-2"
+          onClick={() => setSearchParams({ tab: "templates" })}
+        >
+          <Palette className="h-4 w-4" />
+          Tasarım Şablonları
+        </Button>
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[1.05fr_1.25fr]">
@@ -701,10 +731,10 @@ export default function CertificatesDashboard() {
             </CardContent>
           </Card>
 
-          <Card>
+          <Card ref={studioSectionRef} className={currentTab === "templates" ? "border-primary/40 shadow-lg shadow-primary/10" : undefined}>
             <CardHeader>
-              <CardTitle className="flex items-center gap-2"><Palette className="h-5 w-5 text-primary" /> Sertifika Tasarım Stüdyosu</CardTitle>
-              <CardDescription>Tasarım özelleştirme artık ayrı bir premium modül sayfasında yer alıyor. Buradan üretim akışını bozmadan detaylı tema çalışmasına geçebilirsin.</CardDescription>
+              <CardTitle className="flex items-center gap-2"><Palette className="h-5 w-5 text-primary" /> Tasarım Şablonları</CardTitle>
+              <CardDescription>Tema seçimi ve gelişmiş tasarım ayarları sertifika üretim akışının içinden yönetilir.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid gap-4 md:grid-cols-3">
@@ -721,9 +751,9 @@ export default function CertificatesDashboard() {
                 ))}
               </div>
               <div className="rounded-2xl border bg-secondary/20 p-4">
-                <p className="text-sm font-semibold">Ayrı premium modül hazır</p>
+                <p className="text-sm font-semibold">Gelişmiş tasarım görünümü</p>
                 <p className="mt-2 text-sm text-muted-foreground">
-                  Renk paleti, ikinci logo, mühür, özel başlık, açıklama, imza görselleri ve canlı stüdyo önizlemesi için bağımsız sayfayı kullanabilirsin.
+                  Renk paleti, ikinci logo, mühür, özel başlık, açıklama, imza görselleri ve canlı stüdyo önizlemesi için bu alanı kullanın.
                 </p>
                 <div className="mt-4 flex flex-wrap gap-2">
                   <Badge variant="secondary">Canlı önizleme</Badge>
@@ -731,8 +761,8 @@ export default function CertificatesDashboard() {
                   <Badge variant="secondary">İmza görseli</Badge>
                   <Badge variant="secondary">Premium hazırlık</Badge>
                 </div>
-                <Button asChild className="mt-4 gap-2">
-                  <Link to="/dashboard/certificate-studio"><Palette className="h-4 w-4" /> Stüdyoyu Aç</Link>
+                <Button type="button" className="mt-4 gap-2" onClick={() => setSearchParams({ tab: "templates" })}>
+                  <Palette className="h-4 w-4" /> Şablon alanına odaklan
                 </Button>
               </div>
             </CardContent>

@@ -50,7 +50,6 @@ const OSGBTasks = lazy(() => import("./pages/OSGBTasks"));
 const OSGBNotes = lazy(() => import("./pages/OSGBNotes"));
 const OSGBAnalytics = lazy(() => import("./pages/OSGBAnalytics"));
 const CertificatesDashboard = lazy(() => import("./pages/CertificatesDashboard"));
-const CertificateStudio = lazy(() => import("./pages/CertificateStudio"));
 const CertificatesHistory = lazy(() => import("./pages/CertificatesHistory"));
 const CertificateJobDetail = lazy(() => import("./pages/CertificateJobDetail"));
 const CertificateVerifyPage = lazy(() => import("./pages/CertificateVerifyPage"));
@@ -223,7 +222,7 @@ const App = () => (
                           <Route path="/osgb/notes" element={<OsgbAccessGate><OSGBNotes /></OsgbAccessGate>} />
                           <Route path="/osgb/analytics" element={<OsgbAccessGate><OSGBAnalytics /></OsgbAccessGate>} />
                           <Route path="/dashboard/certificates" element={<CertificatesDashboard />} />
-                          <Route path="/dashboard/certificate-studio" element={<CertificateStudio />} />
+                          <Route path="/dashboard/certificate-studio" element={<Navigate to="/dashboard/certificates?tab=templates" replace />} />
                           <Route path="/dashboard/certificates/history" element={<CertificatesHistory />} />
                           <Route path="/dashboard/certificates/:id" element={<CertificateJobDetail />} />
                           <Route path="/dashboard/profil" element={<Navigate to="/profile" replace />} />

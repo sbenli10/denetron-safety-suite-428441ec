@@ -65,8 +65,8 @@ const featureCards = [
     icon: Link2,
   },
   {
-    title: "Batch ve Görev Motoru",
-    description: "Günlük batch ile evrak ve belge yenileme görevlerini otomatik üretin, log geçmişini takip edin.",
+    title: "Görev ve Otomasyon",
+    description: "Evrak ve belge yenileme görevlerini otomatik üretin, operasyon görevlerini merkezi olarak yönetin.",
     icon: Clock3,
     badge: "Otomasyon",
   },
@@ -309,9 +309,9 @@ export default function OSGBModule() {
             </p>
           </div>
           <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4">
-            <div className="text-sm font-semibold text-white">Otomasyon katmanı</div>
+            <div className="text-sm font-semibold text-white">Otomasyon desteği</div>
             <p className="mt-2 text-sm leading-6 text-slate-400">
-              Günlük batch, batch log geçmişi, evrak yenileme görevleri ve belge bitiş otomasyonları aynı pakete dahil edildi.
+              Evrak yenileme görevleri ve belge bitiş otomasyonları operasyon akışını destekler.
             </p>
           </div>
         </CardContent>

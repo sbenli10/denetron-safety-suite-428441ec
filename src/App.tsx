@@ -49,7 +49,6 @@ const OSGBDocuments = lazy(() => import("./pages/OSGBDocuments"));
 const OSGBTasks = lazy(() => import("./pages/OSGBTasks"));
 const OSGBNotes = lazy(() => import("./pages/OSGBNotes"));
 const OSGBAnalytics = lazy(() => import("./pages/OSGBAnalytics"));
-const OSGBBatchLogs = lazy(() => import("./pages/OSGBBatchLogs"));
 const CertificatesDashboard = lazy(() => import("./pages/CertificatesDashboard"));
 const CertificateStudio = lazy(() => import("./pages/CertificateStudio"));
 const CertificatesHistory = lazy(() => import("./pages/CertificatesHistory"));
@@ -223,7 +222,6 @@ const App = () => (
                           <Route path="/osgb/tasks" element={<OsgbAccessGate><OSGBTasks /></OsgbAccessGate>} />
                           <Route path="/osgb/notes" element={<OsgbAccessGate><OSGBNotes /></OsgbAccessGate>} />
                           <Route path="/osgb/analytics" element={<OsgbAccessGate><OSGBAnalytics /></OsgbAccessGate>} />
-                          <Route path="/osgb/batch-logs" element={<OsgbAccessGate><OSGBBatchLogs /></OsgbAccessGate>} />
                           <Route path="/dashboard/certificates" element={<CertificatesDashboard />} />
                           <Route path="/dashboard/certificate-studio" element={<CertificateStudio />} />
                           <Route path="/dashboard/certificates/history" element={<CertificatesHistory />} />

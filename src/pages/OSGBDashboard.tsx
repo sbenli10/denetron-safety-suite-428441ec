@@ -10,7 +10,6 @@ import {
   ClipboardList,
   CreditCard,
   FileCheck2,
-  FolderKanban,
   Gauge,
   RefreshCcw,
   ScrollText,
@@ -396,23 +395,6 @@ export default function OSGBDashboard() {
         lastActionValue: "Son 6 ay",
         recommendedAction: "Sapma gösteren aylarda drill-down analizi aç.",
       },
-      {
-        title: "Batch Logları",
-        description: "Günlük otomasyonun hangi kayıtlarda görev ürettiğini ve batch sonuçlarını denetleyin.",
-        href: "/osgb/batch-logs",
-        icon: FolderKanban,
-        badge: "Otomasyon",
-        tone: "from-lime-500/15 to-emerald-500/5",
-        status: operations.documents.warningCount + operations.documents.expiredCount > 0 ? "warning" : "info",
-        statusLabel: operations.documents.warningCount + operations.documents.expiredCount > 0 ? "Batch takip edilmeli" : "Otomasyon aktif",
-        stats: [
-          { label: "Batch kaydı", value: "Log ekranından izle" },
-          { label: "Çalışma tipi", value: "Günlük cron" },
-        ],
-        lastActionLabel: "Son tetikleme",
-        lastActionValue: formatDate(latestSyncDate),
-        recommendedAction: "Görev üreten batch sonuçlarını log ekranında doğrula.",
-      },
     ];
   }, [data, latestAlertDate, latestContractDate, latestFlagDate, latestSyncDate, operations]);
 
@@ -616,7 +598,7 @@ export default function OSGBDashboard() {
               "Önce portföy özetini kontrol eder ve hangi alanda baskı olduğunu görür.",
               "İhtiyacına göre Personel, Atama, Evrak veya Finans kartını açar.",
               "Uyarı Merkezi ve Görev Motoru ile aksiyon gerektiren kayıtları işler.",
-              "Trend Analizi ve Batch Logları ile operasyonun arka planını denetler.",
+              "Trend Analizi ile finans ve evrak hareketlerini denetler.",
             ].map((item, index) => (
               <div key={item} className="flex gap-4 rounded-2xl border border-slate-800 bg-slate-950/40 p-4">
                 <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-cyan-500/20 bg-cyan-500/10 text-sm font-semibold text-cyan-200">

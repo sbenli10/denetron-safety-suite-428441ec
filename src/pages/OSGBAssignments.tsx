@@ -82,13 +82,13 @@ const emptyForm: AssignmentFormState = {
 const statusLabel: Record<OsgbAssignmentRecord["status"], string> = {
   active: "Aktif",
   passive: "Pasif",
-  completed: "TamamlandÄ±",
-  cancelled: "Ä°ptal",
+  completed: "Tamamlandı",
+  cancelled: "İptal",
 };
 
 const roleLabel: Record<OsgbAssignmentRecord["assigned_role"], string> = {
-  igu: "Ä°GU",
-  hekim: "Ä°ÅŸyeri Hekimi",
+  igu: "İGU",
+  hekim: "İşyeri Hekimi",
   dsp: "DSP",
 };
 
@@ -143,7 +143,7 @@ export default function OSGBAssignments() {
       });
       setError(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Personel gÃ¶revlendirme verisi yÃ¼klenemedi.");
+      setError(err instanceof Error ? err.message : "Personel görevlendirme verisi yüklenemedi.");
     } finally {
       setLoading(false);
     }
@@ -258,7 +258,7 @@ export default function OSGBAssignments() {
 
   const openCreate = () => {
     if (!canManage) {
-      toast.error("Bu iÅŸlem iÃ§in dÃ¼zenleme yetkisi gerekiyor.");
+      toast.error("Bu işlem için düzenleme yetkisi gerekiyor.");
       return;
     }
     setEditing(null);
@@ -268,7 +268,7 @@ export default function OSGBAssignments() {
 
   const openEdit = (record: OsgbAssignmentRecord) => {
     if (!canManage) {
-      toast.error("Bu iÅŸlem iÃ§in dÃ¼zenleme yetkisi gerekiyor.");
+      toast.error("Bu işlem için düzenleme yetkisi gerekiyor.");
       return;
     }
     setEditing(record);
@@ -287,23 +287,23 @@ export default function OSGBAssignments() {
 
   const handleSave = async () => {
     if (!canManage) {
-      toast.error("Bu iÅŸlem iÃ§in dÃ¼zenleme yetkisi gerekiyor.");
+      toast.error("Bu işlem için düzenleme yetkisi gerekiyor.");
       return;
     }
     if (!user?.id || !form.companyId || !form.personnelId || !form.assignedMinutes) {
-      toast.error("Firma, personel ve dakika alanlarÄ± zorunludur.");
+      toast.error("Firma, personel ve dakika alanları zorunludur.");
       return;
     }
     if (Number(form.assignedMinutes) <= 0) {
-      toast.error("Atanan dakika sÄ±fÄ±rdan bÃ¼yÃ¼k olmalÄ±dÄ±r.");
+      toast.error("Atanan dakika sıfırdan büyük olmalıdır.");
       return;
     }
     if (form.startDate && form.endDate && new Date(form.startDate) > new Date(form.endDate)) {
-      toast.error("BitiÅŸ tarihi baÅŸlangÄ±Ã§ tarihinden Ã¶nce olamaz.");
+      toast.error("Bitiş tarihi başlangıç tarihinden önce olamaz.");
       return;
     }
     if (livePersonnelCapacity?.exceeded) {
-      toast.error("SeÃ§ilen personelin kapasitesi aÅŸÄ±lÄ±yor.");
+      toast.error("Seçilen personelin kapasitesi aşılıyor.");
       return;
     }
 
@@ -324,9 +324,9 @@ export default function OSGBAssignments() {
       setDialogOpen(false);
       setEditing(null);
       setForm(emptyForm);
-      toast.success(editing ? "GÃ¶revlendirme gÃ¼ncellendi." : "Personel firmaya atandÄ±.");
+      toast.success(editing ? "Görevlendirme güncellendi." : "Personel firmaya atandı.");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "GÃ¶revlendirme kaydÄ± kaydedilemedi.");
+      toast.error(err instanceof Error ? err.message : "Görevlendirme kaydı kaydedilemedi.");
     } finally {
       setSaving(false);
     }
@@ -334,16 +334,16 @@ export default function OSGBAssignments() {
 
   const handleDelete = async (id: string) => {
     if (!canManage) {
-      toast.error("Bu iÅŸlem iÃ§in dÃ¼zenleme yetkisi gerekiyor.");
+      toast.error("Bu işlem için düzenleme yetkisi gerekiyor.");
       return;
     }
-    if (!confirm("Bu gÃ¶revlendirmeyi silmek istiyor musunuz?")) return;
+    if (!confirm("Bu görevlendirmeyi silmek istiyor musunuz?")) return;
     try {
       await deleteOsgbAssignment(id);
       setRecords((prev) => prev.filter((item) => item.id !== id));
-      toast.success("GÃ¶revlendirme silindi.");
+      toast.success("Görevlendirme silindi.");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "GÃ¶revlendirme silinemedi.");
+      toast.error(err instanceof Error ? err.message : "Görevlendirme silinemedi.");
     }
   };
 
@@ -356,9 +356,9 @@ export default function OSGBAssignments() {
               <Briefcase className="h-5 w-5" />
             </div>
             <div>
-              <h1 className="text-3xl font-bold tracking-tight text-white">OSGB Personel GÃ¶revlendirme</h1>
+              <h1 className="text-3xl font-bold tracking-tight text-white">OSGB Personel Görevlendirme</h1>
               <p className="text-sm text-slate-400">
-                Her firmaya tek aktif atama kuralÄ± ile personel gÃ¶revlendirin. MÃ¼kerrer aktif atamalar hem uygulamada hem veritabanÄ±nda engellenir.
+                Her firmaya tek aktif atama kuralı ile personel görevlendirin. Mükerrer aktif atamalar hem uygulamada hem veritabanında engellenir.
               </p>
             </div>
           </div>
@@ -370,27 +370,27 @@ export default function OSGBAssignments() {
           </Button>
           <Button onClick={openCreate} disabled={!canManage}>
             <Plus className="mr-2 h-4 w-4" />
-            GÃ¶revlendirme oluÅŸtur
+            Görevlendirme oluştur
           </Button>
         </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
-        <Card className="border-slate-800 bg-slate-950/70"><CardHeader className="pb-2"><CardDescription>Aktif atama</CardDescription><CardTitle className="text-3xl text-white">{summary.active}</CardTitle></CardHeader><CardContent className="text-xs text-slate-400">Åžu an aktif durumda olan firma atamalarÄ±.</CardContent></Card>
-        <Card className="border-slate-800 bg-slate-950/70"><CardHeader className="pb-2"><CardDescription>Toplam kayÄ±t</CardDescription><CardTitle className="text-3xl text-white">{summary.total}</CardTitle></CardHeader><CardContent className="text-xs text-slate-400">Aktif, pasif, tamamlanan ve iptal edilen tÃ¼m kayÄ±tlar.</CardContent></Card>
-        <Card className="border-slate-800 bg-slate-950/70"><CardHeader className="pb-2"><CardDescription>AtanmamÄ±ÅŸ firma</CardDescription><CardTitle className="text-3xl text-white">{summary.unassignedCompanies}</CardTitle></CardHeader><CardContent className="text-xs text-slate-400">HenÃ¼z aktif personel atanmamÄ±ÅŸ firma sayÄ±sÄ±.</CardContent></Card>
+        <Card className="border-slate-800 bg-slate-950/70"><CardHeader className="pb-2"><CardDescription>Aktif atama</CardDescription><CardTitle className="text-3xl text-white">{summary.active}</CardTitle></CardHeader><CardContent className="text-xs text-slate-400">Şu an aktif durumda olan firma atamaları.</CardContent></Card>
+        <Card className="border-slate-800 bg-slate-950/70"><CardHeader className="pb-2"><CardDescription>Toplam kayıt</CardDescription><CardTitle className="text-3xl text-white">{summary.total}</CardTitle></CardHeader><CardContent className="text-xs text-slate-400">Aktif, pasif, tamamlanan ve iptal edilen tüm kayıtlar.</CardContent></Card>
+        <Card className="border-slate-800 bg-slate-950/70"><CardHeader className="pb-2"><CardDescription>Atanmamış firma</CardDescription><CardTitle className="text-3xl text-white">{summary.unassignedCompanies}</CardTitle></CardHeader><CardContent className="text-xs text-slate-400">Henüz aktif personel atanmamış firma sayısı.</CardContent></Card>
       </div>
 
       <Alert>
         <ShieldBan className="h-4 w-4" />
-        <AlertTitle>MÃ¼kerrer atama engeli aktif</AlertTitle>
-        <AlertDescription>Bir firmada aynÄ± anda yalnÄ±zca bir aktif personel gÃ¶revlendirmesi olabilir. Yeni aktif kayÄ±t eklenmeye Ã§alÄ±ÅŸÄ±lÄ±rsa iÅŸlem reddedilir.</AlertDescription>
+        <AlertTitle>Mükerrer atama engeli aktif</AlertTitle>
+        <AlertDescription>Bir firmada aynı anda yalnızca bir aktif personel görevlendirmesi olabilir. Yeni aktif kayıt eklenmeye çalışılırsa işlem reddedilir.</AlertDescription>
       </Alert>
 
       {error ? (
         <Alert variant="destructive">
           <AlertTriangle className="h-4 w-4" />
-          <AlertTitle>GÃ¶revlendirme verisi yÃ¼klenemedi</AlertTitle>
+          <AlertTitle>Görevlendirme verisi yüklenemedi</AlertTitle>
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       ) : null}
@@ -398,7 +398,7 @@ export default function OSGBAssignments() {
       <Card className="border-slate-800 bg-slate-950/70">
         <CardHeader className="pb-4">
           <CardTitle className="text-white">Filtreler</CardTitle>
-          <CardDescription>Firma gÃ¶revlendirmelerini hÄ±zlÄ±ca bulun ve yÃ¶netin.</CardDescription>
+          <CardDescription>Firma görevlendirmelerini hızlıca bulun ve yönetin.</CardDescription>
         </CardHeader>
         <CardContent className="grid gap-3 md:grid-cols-[1fr_220px]">
           <div className="space-y-2">
@@ -411,13 +411,13 @@ export default function OSGBAssignments() {
           <div className="space-y-2">
             <Label>Durum</Label>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger><SelectValue placeholder="TÃ¼m durumlar" /></SelectTrigger>
+              <SelectTrigger><SelectValue placeholder="Tüm durumlar" /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="ALL">TÃ¼m durumlar</SelectItem>
+                <SelectItem value="ALL">Tüm durumlar</SelectItem>
                 <SelectItem value="active">Aktif</SelectItem>
                 <SelectItem value="passive">Pasif</SelectItem>
-                <SelectItem value="completed">TamamlandÄ±</SelectItem>
-                <SelectItem value="cancelled">Ä°ptal</SelectItem>
+                <SelectItem value="completed">Tamamlandı</SelectItem>
+                <SelectItem value="cancelled">İptal</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -427,11 +427,11 @@ export default function OSGBAssignments() {
       <Card className="border-slate-800 bg-slate-950/70">
         <CardHeader>
           <CardTitle className="text-white">Atama listesi</CardTitle>
-          <CardDescription>Firma baÅŸÄ±na tek aktif atama standardÄ± ile yÃ¶netilen atamalar.</CardDescription>
+          <CardDescription>Firma başına tek aktif atama standardı ile yönetilen atamalar.</CardDescription>
         </CardHeader>
         <CardContent>
           {loading ? (
-            <div className="py-12 text-center text-sm text-slate-400">GÃ¶revlendirme kayÄ±tlarÄ± yÃ¼kleniyor...</div>
+            <div className="py-12 text-center text-sm text-slate-400">Görevlendirme kayıtları yükleniyor...</div>
           ) : (
             <Table>
               <TableHeader>
@@ -439,10 +439,10 @@ export default function OSGBAssignments() {
                   <TableHead>Firma</TableHead>
                   <TableHead>Personel</TableHead>
                   <TableHead>Rol</TableHead>
-                  <TableHead>Atanan sÃ¼re</TableHead>
-                  <TableHead>Tarih aralÄ±ÄŸÄ±</TableHead>
+                  <TableHead>Atanan süre</TableHead>
+                  <TableHead>Tarih aralığı</TableHead>
                   <TableHead>Durum</TableHead>
-                  <TableHead className="text-right">Ä°ÅŸlem</TableHead>
+                  <TableHead className="text-right">İşlem</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -461,7 +461,7 @@ export default function OSGBAssignments() {
                     <TableCell><Badge className={statusClass[record.status]}>{statusLabel[record.status]}</Badge></TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
-                        <Button size="sm" variant="outline" onClick={() => openEdit(record)}>DÃ¼zenle</Button>
+                        <Button size="sm" variant="outline" onClick={() => openEdit(record)}>Düzenle</Button>
                         <Button size="sm" variant="ghost" className="text-rose-300 hover:text-rose-200" onClick={() => void handleDelete(record.id)}>
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -478,51 +478,51 @@ export default function OSGBAssignments() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>{editing ? "GÃ¶revlendirme dÃ¼zenle" : "Yeni gÃ¶revlendirme oluÅŸtur"}</DialogTitle>
-            <DialogDescription>Firma, personel ve dakika bilgilerini girin. Bir firmada tek aktif assignment kuralÄ± uygulanÄ±r.</DialogDescription>
+            <DialogTitle>{editing ? "Görevlendirme düzenle" : "Yeni görevlendirme oluştur"}</DialogTitle>
+            <DialogDescription>Firma, personel ve dakika bilgilerini girin. Bir firmada tek aktif görevlendirme kuralı uygulanır.</DialogDescription>
           </DialogHeader>
           <div className="grid gap-4 py-2 md:grid-cols-2">
             <div className="space-y-2">
               <Label>Firma</Label>
               <Select value={form.companyId} onValueChange={(value) => setForm((prev) => ({ ...prev, companyId: value }))}>
-                <SelectTrigger><SelectValue placeholder="Firma seÃ§in" /></SelectTrigger>
+                <SelectTrigger><SelectValue placeholder="Firma seçin" /></SelectTrigger>
                 <SelectContent>{companies.map((company) => <SelectItem key={company.id} value={company.id}>{company.companyName}</SelectItem>)}</SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
               <Label>Personel</Label>
               <Select value={form.personnelId} onValueChange={(value) => setForm((prev) => ({ ...prev, personnelId: value }))}>
-                <SelectTrigger><SelectValue placeholder="Personel seÃ§in" /></SelectTrigger>
-                <SelectContent>{personnel.map((item) => <SelectItem key={item.id} value={item.id}>{item.full_name} â€¢ {item.role.toUpperCase()}</SelectItem>)}</SelectContent>
+                <SelectTrigger><SelectValue placeholder="Personel seçin" /></SelectTrigger>
+                <SelectContent>{personnel.map((item) => <SelectItem key={item.id} value={item.id}>{item.full_name} • {item.role.toUpperCase()}</SelectItem>)}</SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>GÃ¶revlendirme rolÃ¼</Label>
+              <Label>Görevlendirme rolü</Label>
               <Select value={form.assignedRole} onValueChange={(value) => setForm((prev) => ({ ...prev, assignedRole: value as AssignmentFormState["assignedRole"] }))}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="igu">Ä°GU</SelectItem>
-                  <SelectItem value="hekim">Ä°ÅŸyeri Hekimi</SelectItem>
+                  <SelectItem value="igu">İGU</SelectItem>
+                  <SelectItem value="hekim">İşyeri Hekimi</SelectItem>
                   <SelectItem value="dsp">DSP</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">
-              <Label>Atanan sÃ¼re (dk)</Label>
+              <Label>Atanan süre (dk)</Label>
               <Input type="number" min="0" value={form.assignedMinutes} onChange={(e) => setForm((prev) => ({ ...prev, assignedMinutes: e.target.value }))} />
             </div>
             {regulationRecommendation ? (
               <div className="space-y-2 md:col-span-2">
                 <Alert>
                   <AlertTriangle className="h-4 w-4" />
-                  <AlertTitle>Mevzuat Ã¶neri motoru</AlertTitle>
+                  <AlertTitle>Mevzuat öneri motoru</AlertTitle>
                   <AlertDescription className="space-y-2">
                     <div>{regulationRecommendation.summary}</div>
                     <div className="text-xs text-slate-400">
-                      KiÅŸi baÅŸÄ± Ã¶neri: {regulationRecommendation.perEmployeeMinutes} dk â€¢ Toplam Ã¶neri: {regulationRecommendation.recommendedMinutes} dk â€¢ Mevcut aktif toplam: {regulationRecommendation.currentAssignedMinutes} dk
+                      Kişi başı öneri: {regulationRecommendation.perEmployeeMinutes} dk • Toplam öneri: {regulationRecommendation.recommendedMinutes} dk • Mevcut aktif toplam: {regulationRecommendation.currentAssignedMinutes} dk
                     </div>
                     <div className="text-xs text-slate-400">
-                      Kalan mevzuat aÃ§Ä±ÄŸÄ±: {regulationRecommendation.remainingGapMinutes} dk â€¢ Dayanak: {regulationRecommendation.legalReference}
+                      Kalan mevzuat açığı: {regulationRecommendation.remainingGapMinutes} dk • Dayanak: {regulationRecommendation.legalReference}
                     </div>
                     <Button
                       type="button"
@@ -539,7 +539,7 @@ export default function OSGBAssignments() {
                         }))
                       }
                     >
-                      Ã–nerilen dakikayÄ± uygula
+                      Önerilen dakikayı uygula
                     </Button>
                   </AlertDescription>
                 </Alert>
@@ -549,9 +549,9 @@ export default function OSGBAssignments() {
               <div className="space-y-2 md:col-span-2">
                 <Alert variant={liveCompanyRequirement.stillInsufficient ? "destructive" : "default"}>
                   <Gauge className="h-4 w-4" />
-                  <AlertTitle>{liveCompanyRequirement.selected.companyName} iÃ§in gerekli sÃ¼re karÅŸÄ±laÅŸtÄ±rmasÄ±</AlertTitle>
+                  <AlertTitle>{liveCompanyRequirement.selected.companyName} için gerekli süre karşılaştırması</AlertTitle>
                   <AlertDescription>
-                    Gerekli: {liveCompanyRequirement.required} dk â€¢ Mevcut aktif atama: {liveCompanyRequirement.currentAssigned} dk â€¢ Bu kayÄ±tla toplam: {liveCompanyRequirement.totalProjected} dk â€¢ Kalan fark: {liveCompanyRequirement.gap} dk
+                    Gerekli: {liveCompanyRequirement.required} dk • Mevcut aktif atama: {liveCompanyRequirement.currentAssigned} dk • Bu kayıtla toplam: {liveCompanyRequirement.totalProjected} dk • Kalan fark: {liveCompanyRequirement.gap} dk
                   </AlertDescription>
                 </Alert>
               </div>
@@ -560,19 +560,19 @@ export default function OSGBAssignments() {
               <div className="space-y-2 md:col-span-2">
                 <Alert variant={livePersonnelCapacity.exceeded ? "destructive" : "default"}>
                   <Gauge className="h-4 w-4" />
-                  <AlertTitle>{livePersonnelCapacity.selected.full_name} iÃ§in canlÄ± kapasite gÃ¶rÃ¼nÃ¼mÃ¼</AlertTitle>
+                  <AlertTitle>{livePersonnelCapacity.selected.full_name} için canlı kapasite görünümü</AlertTitle>
                   <AlertDescription>
-                    Mevcut yÃ¼k: {livePersonnelCapacity.currentAssigned} dk â€¢ Bu atama ile toplam: {livePersonnelCapacity.totalProjected} dk / {livePersonnelCapacity.selected.monthly_capacity_minutes} dk â€¢ Kalan: {livePersonnelCapacity.remaining} dk
+                    Mevcut yük: {livePersonnelCapacity.currentAssigned} dk • Bu atama ile toplam: {livePersonnelCapacity.totalProjected} dk / {livePersonnelCapacity.selected.monthly_capacity_minutes} dk • Kalan: {livePersonnelCapacity.remaining} dk
                   </AlertDescription>
                 </Alert>
               </div>
             ) : null}
             <div className="space-y-2">
-              <Label>BaÅŸlangÄ±Ã§ tarihi</Label>
+              <Label>Başlangıç tarihi</Label>
               <Input type="date" value={form.startDate} onChange={(e) => setForm((prev) => ({ ...prev, startDate: e.target.value }))} />
             </div>
             <div className="space-y-2">
-              <Label>BitiÅŸ tarihi</Label>
+              <Label>Bitiş tarihi</Label>
               <Input type="date" value={form.endDate} onChange={(e) => setForm((prev) => ({ ...prev, endDate: e.target.value }))} />
             </div>
             <div className="space-y-2">
@@ -582,8 +582,8 @@ export default function OSGBAssignments() {
                 <SelectContent>
                   <SelectItem value="active">Aktif</SelectItem>
                   <SelectItem value="passive">Pasif</SelectItem>
-                  <SelectItem value="completed">TamamlandÄ±</SelectItem>
-                  <SelectItem value="cancelled">Ä°ptal</SelectItem>
+                  <SelectItem value="completed">Tamamlandı</SelectItem>
+                  <SelectItem value="cancelled">İptal</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -593,9 +593,9 @@ export default function OSGBAssignments() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>VazgeÃ§</Button>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>Vazgeç</Button>
             <Button onClick={() => void handleSave()} disabled={saving || livePersonnelCapacity?.exceeded}>
-              {saving ? "Kaydediliyor..." : editing ? "GÃ¼ncelle" : "Kaydet"}
+              {saving ? "Kaydediliyor..." : editing ? "Güncelle" : "Kaydet"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -603,4 +603,6 @@ export default function OSGBAssignments() {
     </div>
   );
 }
+
+
 

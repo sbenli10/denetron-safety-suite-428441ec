@@ -41,6 +41,20 @@ export type IncidentActionStatus =
   | "in_progress"
   | "completed"
   | "cancelled";
+export type IncidentRootCauseCategory =
+  | "human_error"
+  | "unsafe_condition"
+  | "training_gap"
+  | "process_gap"
+  | "equipment_failure"
+  | "environmental_factor"
+  | "contractor_issue"
+  | "other";
+export type IncidentClosureDecision =
+  | "monitor_only"
+  | "training_action"
+  | "process_revision"
+  | "capa_required";
 
 interface IncidentCompanyRelation {
   company_name: string | null;
@@ -64,8 +78,15 @@ interface IncidentReportRow {
   reported_by: string | null;
   witness_info: string | null;
   accident_category: string | null;
+  root_cause_category: IncidentRootCauseCategory | null;
   lost_time_days: number | null;
   requires_notification: boolean | null;
+  closure_summary: string | null;
+  closure_decision: IncidentClosureDecision | null;
+  closure_notes: string | null;
+  closed_at: string | null;
+  closed_by: string | null;
+  capa_record_id: string | null;
   created_at: string;
   updated_at: string;
   company?: IncidentCompanyRelation | IncidentCompanyRelation[] | null;
@@ -113,8 +134,15 @@ export interface IncidentReportRecord {
   reported_by: string | null;
   witness_info: string | null;
   accident_category: string | null;
+  root_cause_category: IncidentRootCauseCategory | null;
   lost_time_days: number;
   requires_notification: boolean;
+  closure_summary: string | null;
+  closure_decision: IncidentClosureDecision | null;
+  closure_notes: string | null;
+  closed_at: string | null;
+  closed_by: string | null;
+  capa_record_id: string | null;
   created_at: string;
   updated_at: string;
   company?: IncidentCompanyRelation | null;
@@ -160,8 +188,15 @@ export interface IncidentFormInput {
   reportedBy?: string | null;
   witnessInfo?: string | null;
   accidentCategory?: string | null;
+  rootCauseCategory?: IncidentRootCauseCategory | null;
   lostTimeDays?: number;
   requiresNotification?: boolean;
+  closureSummary?: string | null;
+  closureDecision?: IncidentClosureDecision | null;
+  closureNotes?: string | null;
+  closedAt?: string | null;
+  closedBy?: string | null;
+  capaRecordId?: string | null;
 }
 
 export interface IncidentActionInput {
@@ -170,6 +205,14 @@ export interface IncidentActionInput {
   dueDate?: string | null;
   status?: IncidentActionStatus;
   notes?: string | null;
+}
+
+export interface IncidentClosureInput {
+  status: "closed";
+  closureSummary: string;
+  closureDecision: IncidentClosureDecision;
+  closureNotes?: string | null;
+  createCapa?: boolean;
 }
 
 const ensureIncidentReportRow = (row: unknown): IncidentReportRow =>
@@ -206,8 +249,15 @@ const mapIncident = (row: IncidentReportRow): IncidentReportRecord => ({
   reported_by: row.reported_by,
   witness_info: row.witness_info,
   accident_category: row.accident_category,
+  root_cause_category: row.root_cause_category,
   lost_time_days: Number(row.lost_time_days ?? 0),
   requires_notification: Boolean(row.requires_notification),
+  closure_summary: row.closure_summary,
+  closure_decision: row.closure_decision,
+  closure_notes: row.closure_notes,
+  closed_at: row.closed_at,
+  closed_by: row.closed_by,
+  capa_record_id: row.capa_record_id,
   created_at: row.created_at,
   updated_at: row.updated_at,
   company: normalizeCompany(row.company),
@@ -276,8 +326,15 @@ export const upsertIncidentReport = async (
     reported_by: input.reportedBy?.trim() || null,
     witness_info: input.witnessInfo?.trim() || null,
     accident_category: input.accidentCategory?.trim() || null,
+    root_cause_category: input.rootCauseCategory || null,
     lost_time_days: input.lostTimeDays ?? 0,
     requires_notification: Boolean(input.requiresNotification),
+    closure_summary: input.status === "closed" ? input.closureSummary?.trim() || null : null,
+    closure_decision: input.status === "closed" ? input.closureDecision || null : null,
+    closure_notes: input.status === "closed" ? input.closureNotes?.trim() || null : null,
+    closed_at: input.status === "closed" ? input.closedAt || new Date().toISOString() : null,
+    closed_by: input.status === "closed" ? input.closedBy || userId : null,
+    capa_record_id: input.capaRecordId || null,
   };
 
   const query = reportId
@@ -405,6 +462,132 @@ export const upsertIncidentAction = async (
 export const deleteIncidentAction = async (id: string): Promise<void> => {
   const { error } = await db.from("incident_actions").delete().eq("id", id);
   if (error) throw error;
+};
+
+export const updateIncidentActionStatus = async (
+  actionId: string,
+  status: IncidentActionStatus,
+): Promise<IncidentActionRecord> => {
+  const { data, error } = await db
+    .from("incident_actions")
+    .update({ status })
+    .eq("id", actionId)
+    .select("*")
+    .single();
+
+  if (error) throw error;
+  return mapAction(ensureIncidentActionRow(data));
+};
+
+const getOrganizationId = async (userId: string): Promise<string> => {
+  const { data: profile, error } = await supabase
+    .from("profiles")
+    .select("organization_id")
+    .eq("id", userId)
+    .maybeSingle();
+
+  if (error) throw error;
+  return profile?.organization_id || userId;
+};
+
+export const createIncidentCapaRecord = async (
+  userId: string,
+  incident: IncidentReportRecord,
+): Promise<string> => {
+  const orgId = await getOrganizationId(userId);
+
+  const { data, error } = await supabase
+    .from("capa_records")
+    .insert({
+      org_id: orgId,
+      user_id: userId,
+      non_conformity: `[${incident.incident_type === "work_accident" ? "İş Kazası" : "Ramak Kala"}] ${incident.title}`,
+      root_cause: incident.root_cause || "Incident kaydından otomatik oluşturuldu.",
+      corrective_action:
+        incident.corrective_action ||
+        incident.immediate_action ||
+        "Düzeltici faaliyet planı incident kaydı üzerinden netleştirilecektir.",
+      assigned_person: incident.reported_by || incident.affected_person || "Atanmadı",
+      deadline: new Date(
+        Date.now() +
+          (incident.severity === "critical"
+            ? 3
+            : incident.severity === "high"
+              ? 5
+              : 7) *
+            24 *
+            60 *
+            60 *
+            1000,
+      )
+        .toISOString()
+        .slice(0, 10),
+      status: "Açık",
+      priority:
+        incident.severity === "critical"
+          ? "Kritik"
+          : incident.severity === "high"
+            ? "Yüksek"
+            : incident.severity === "medium"
+              ? "Orta"
+              : "Düşük",
+      notes: [
+        `Incident kaydı: ${incident.title}`,
+        `Olay tarihi: ${new Date(incident.incident_date).toLocaleDateString("tr-TR")}`,
+        incident.location ? `Lokasyon: ${incident.location}` : null,
+        incident.company?.company_name ? `Firma: ${incident.company.company_name}` : null,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    })
+    .select("id")
+    .single();
+
+  if (error) throw error;
+  return data.id;
+};
+
+export const closeIncidentReport = async (
+  userId: string,
+  incident: IncidentReportRecord,
+  input: IncidentClosureInput,
+): Promise<IncidentReportRecord> => {
+  let capaRecordId = incident.capa_record_id;
+
+  if (input.createCapa && !capaRecordId) {
+    capaRecordId = await createIncidentCapaRecord(userId, incident);
+  }
+
+  return upsertIncidentReport(
+    userId,
+    {
+      companyId: incident.company_id,
+      incidentType: incident.incident_type,
+      title: incident.title,
+      description: incident.description,
+      incidentDate: incident.incident_date,
+      location: incident.location,
+      affectedPerson: incident.affected_person,
+      severity: incident.severity,
+      rootCause: incident.root_cause,
+      immediateAction: incident.immediate_action,
+      correctiveAction: incident.corrective_action,
+      status: "closed",
+      reportedBy: incident.reported_by,
+      witnessInfo: incident.witness_info,
+      accidentCategory: incident.accident_category,
+      rootCauseCategory: incident.root_cause_category,
+      lostTimeDays: incident.lost_time_days,
+      requiresNotification: incident.requires_notification,
+      closureSummary: input.closureSummary,
+      closureDecision: input.closureDecision,
+      closureNotes: input.closureNotes,
+      closedAt: new Date().toISOString(),
+      closedBy: userId,
+      capaRecordId,
+    },
+    incident.id,
+  );
 };
 
 export const createIncidentTask = async (

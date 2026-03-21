@@ -1,10 +1,12 @@
 ﻿import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
+  CheckCheck,
   ClipboardPlus,
   Download,
   Eye,
   FileUp,
+  Lock,
   Plus,
   RefreshCcw,
   Search,
@@ -17,6 +19,8 @@ import { useAccessRole } from "@/hooks/useAccessRole";
 import { downloadCsv } from "@/lib/csvExport";
 import { readOsgbPageCache, writeOsgbPageCache } from "@/lib/osgbPageCache";
 import {
+  closeIncidentReport,
+  createIncidentCapaRecord,
   createIncidentTask,
   deleteIncidentAction,
   deleteIncidentAttachment,
@@ -26,13 +30,16 @@ import {
   listIncidentActions,
   listIncidentAttachments,
   listIncidentReports,
+  type IncidentClosureDecision,
   type IncidentActionInput,
   type IncidentActionRecord,
   type IncidentFormInput,
+  type IncidentRootCauseCategory,
   type IncidentReportRecord,
   type IncidentSeverity,
   type IncidentStatus,
   type IncidentType,
+  updateIncidentActionStatus,
   upsertIncidentAction,
   upsertIncidentReport,
   uploadIncidentAttachment,
@@ -92,6 +99,7 @@ type IncidentFormState = {
   reportedBy: string;
   witnessInfo: string;
   accidentCategory: string;
+  rootCauseCategory: IncidentRootCauseCategory;
   lostTimeDays: string;
   requiresNotification: boolean;
 };
@@ -101,6 +109,13 @@ type IncidentActionFormState = {
   ownerName: string;
   dueDate: string;
   notes: string;
+};
+
+type IncidentCloseFormState = {
+  closureSummary: string;
+  closureDecision: IncidentClosureDecision;
+  closureNotes: string;
+  createCapa: boolean;
 };
 
 const emptyIncidentForm: IncidentFormState = {
@@ -119,6 +134,7 @@ const emptyIncidentForm: IncidentFormState = {
   reportedBy: "",
   witnessInfo: "",
   accidentCategory: "",
+  rootCauseCategory: "other",
   lostTimeDays: "0",
   requiresNotification: false,
 };
@@ -128,6 +144,13 @@ const emptyActionForm: IncidentActionFormState = {
   ownerName: "",
   dueDate: "",
   notes: "",
+};
+
+const emptyCloseForm: IncidentCloseFormState = {
+  closureSummary: "",
+  closureDecision: "monitor_only",
+  closureNotes: "",
+  createCapa: false,
 };
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
@@ -158,6 +181,31 @@ const severityClass: Record<IncidentSeverity, string> = {
   critical: "border-red-400/20 bg-red-500/15 text-red-200",
 };
 
+const actionStatusLabel: Record<IncidentActionRecord["status"], string> = {
+  open: "Açık",
+  in_progress: "Devam ediyor",
+  completed: "Tamamlandı",
+  cancelled: "İptal edildi",
+};
+
+const rootCauseCategoryLabel: Record<IncidentRootCauseCategory, string> = {
+  human_error: "İnsan hatası",
+  unsafe_condition: "Güvensiz durum",
+  training_gap: "Eğitim eksikliği",
+  process_gap: "Proses açığı",
+  equipment_failure: "Ekipman arızası",
+  environmental_factor: "Çevresel etken",
+  contractor_issue: "Taşeron kaynaklı",
+  other: "Diğer",
+};
+
+const closureDecisionLabel: Record<IncidentClosureDecision, string> = {
+  monitor_only: "İzleme ile kapat",
+  training_action: "Eğitim aksiyonu ile kapat",
+  process_revision: "Proses revizyonu ile kapat",
+  capa_required: "DÖF zorunlu",
+};
+
 const getCacheKey = (userId: string) => `incident-management:${userId}`;
 
 const formatDate = (value: string | null) =>
@@ -165,7 +213,7 @@ const formatDate = (value: string | null) =>
 
 export default function IncidentManagement() {
   const { user } = useAuth();
-  const { canManage } = useAccessRole();
+  const { role, canManage, isViewer } = useAccessRole();
 
   const [records, setRecords] = useState<IncidentReportRecord[]>([]);
   const [companies, setCompanies] = useState<OsgbCompanyOption[]>([]);
@@ -179,19 +227,26 @@ export default function IncidentManagement() {
   const [uploadingFile, setUploadingFile] = useState(false);
   const [taskCreating, setTaskCreating] = useState(false);
   const [actionSaving, setActionSaving] = useState(false);
+  const [closeSaving, setCloseSaving] = useState(false);
+  const [capaCreating, setCapaCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [closeDialogOpen, setCloseDialogOpen] = useState(false);
   const [editing, setEditing] = useState<IncidentReportRecord | null>(null);
   const [selected, setSelected] = useState<IncidentReportRecord | null>(null);
   const [form, setForm] = useState<IncidentFormState>(emptyIncidentForm);
   const [actionForm, setActionForm] =
     useState<IncidentActionFormState>(emptyActionForm);
+  const [closeForm, setCloseForm] = useState<IncidentCloseFormState>(emptyCloseForm);
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<IncidentType | "ALL">("ALL");
   const [statusFilter, setStatusFilter] = useState<IncidentStatus | "ALL">(
     "ALL",
   );
+  const canDelete = role === "admin" || role === "inspector";
+  const canClose = role === "admin" || role === "inspector";
+  const canCreateCapa = role === "admin" || role === "inspector";
 
   const loadData = async (silent = false) => {
     if (!user?.id) return;
@@ -236,6 +291,14 @@ export default function IncidentManagement() {
 
     void loadData();
   }, [user?.id]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    writeOsgbPageCache(getCacheKey(user.id), {
+      incidentRows: records,
+      companyRows: companies,
+    });
+  }, [companies, records, user?.id]);
 
   const filteredRecords = useMemo(() => {
     const query = search.trim().toLocaleLowerCase("tr-TR");
@@ -296,6 +359,52 @@ export default function IncidentManagement() {
     [records],
   );
 
+  const reporting = useMemo(() => {
+    const closed = records.filter((item) => item.status === "closed");
+    const linkedCapa = records.filter((item) => item.capa_record_id).length;
+    const rootCauseBreakdown = Object.entries(
+      records.reduce<Record<string, number>>((acc, item) => {
+        const key = item.root_cause_category || "other";
+        acc[key] = (acc[key] || 0) + 1;
+        return acc;
+      }, {}),
+    )
+      .map(([key, count]) => ({
+        key: key as IncidentRootCauseCategory,
+        label: rootCauseCategoryLabel[key as IncidentRootCauseCategory] || "Diğer",
+        count,
+      }))
+      .sort((left, right) => right.count - left.count)
+      .slice(0, 5);
+
+    const closureDecisionBreakdown = Object.entries(
+      closed.reduce<Record<string, number>>((acc, item) => {
+        const key = item.closure_decision || "monitor_only";
+        acc[key] = (acc[key] || 0) + 1;
+        return acc;
+      }, {}),
+    )
+      .map(([key, count]) => ({
+        key: key as IncidentClosureDecision,
+        label: closureDecisionLabel[key as IncidentClosureDecision] || "İzleme ile kapat",
+        count,
+      }))
+      .sort((left, right) => right.count - left.count);
+
+    return {
+      closedCount: closed.length,
+      openCount: records.length - closed.length,
+      linkedCapa,
+      pendingReview: records.filter(
+        (item) =>
+          item.status !== "closed" &&
+          (item.severity === "high" || item.severity === "critical"),
+      ).length,
+      rootCauseBreakdown,
+      closureDecisionBreakdown,
+    };
+  }, [records]);
+
   const resetIncidentForm = () => {
     setForm(emptyIncidentForm);
     setEditing(null);
@@ -303,6 +412,10 @@ export default function IncidentManagement() {
 
   const resetActionForm = () => {
     setActionForm(emptyActionForm);
+  };
+
+  const resetCloseForm = () => {
+    setCloseForm(emptyCloseForm);
   };
 
   const openCreate = () => {
@@ -338,6 +451,7 @@ export default function IncidentManagement() {
       reportedBy: record.reported_by || "",
       witnessInfo: record.witness_info || "",
       accidentCategory: record.accident_category || "",
+      rootCauseCategory: record.root_cause_category || "other",
       lostTimeDays: String(record.lost_time_days ?? 0),
       requiresNotification: record.requires_notification,
     });
@@ -349,6 +463,12 @@ export default function IncidentManagement() {
     setDetailOpen(true);
     setDetailLoading(true);
     resetActionForm();
+    setCloseForm({
+      closureSummary: record.closure_summary || "",
+      closureDecision: record.closure_decision || "monitor_only",
+      closureNotes: record.closure_notes || "",
+      createCapa: !record.capa_record_id,
+    });
 
     try {
       const [attachmentRows, actionRows] = await Promise.all([
@@ -405,6 +525,7 @@ export default function IncidentManagement() {
         reportedBy: form.reportedBy,
         witnessInfo: form.witnessInfo,
         accidentCategory: form.accidentCategory,
+        rootCauseCategory: form.rootCauseCategory,
         lostTimeDays,
         requiresNotification: form.requiresNotification,
       };
@@ -434,8 +555,8 @@ export default function IncidentManagement() {
   };
 
   const handleDelete = async (record: IncidentReportRecord) => {
-    if (!canManage) {
-      toast.error("Bu işlem için düzenleme yetkisi gerekiyor.");
+    if (!canDelete) {
+      toast.error("Bu işlem için silme yetkisi gerekiyor.");
       return;
     }
 
@@ -491,6 +612,11 @@ export default function IncidentManagement() {
   };
 
   const handleAttachmentDelete = async (attachmentId: string) => {
+    if (!canManage) {
+      toast.error("Bu işlem için düzenleme yetkisi gerekiyor.");
+      return;
+    }
+
     const attachment = attachments.find((item) => item.id === attachmentId);
     if (!attachment) return;
 
@@ -522,6 +648,67 @@ export default function IncidentManagement() {
       );
     } finally {
       setTaskCreating(false);
+    }
+  };
+
+  const handleCreateCapa = async () => {
+    if (!user?.id || !selected) return;
+    if (!canCreateCapa) {
+      toast.error("Bu işlem için DÖF oluşturma yetkisi gerekiyor.");
+      return;
+    }
+    if (selected.capa_record_id) {
+      toast.info("Bu olay için zaten bağlı bir DÖF kaydı bulunuyor.");
+      return;
+    }
+
+    setCapaCreating(true);
+    try {
+      const capaRecordId = await createIncidentCapaRecord(user.id, selected);
+      const updated = {
+        ...selected,
+        capa_record_id: capaRecordId,
+      };
+      const saved = await upsertIncidentReport(
+        user.id,
+        {
+          companyId: updated.company_id,
+          incidentType: updated.incident_type,
+          title: updated.title,
+          description: updated.description,
+          incidentDate: updated.incident_date,
+          location: updated.location,
+          affectedPerson: updated.affected_person,
+          severity: updated.severity,
+          rootCause: updated.root_cause,
+          immediateAction: updated.immediate_action,
+          correctiveAction: updated.corrective_action,
+          status: updated.status,
+          reportedBy: updated.reported_by,
+          witnessInfo: updated.witness_info,
+          accidentCategory: updated.accident_category,
+          rootCauseCategory: updated.root_cause_category || "other",
+          lostTimeDays: updated.lost_time_days,
+          requiresNotification: updated.requires_notification,
+          closureSummary: updated.closure_summary,
+          closureDecision: updated.closure_decision,
+          closureNotes: updated.closure_notes,
+          closedAt: updated.closed_at,
+          closedBy: updated.closed_by,
+          capaRecordId,
+        },
+        updated.id,
+      );
+
+      setSelected(saved);
+      setRecords((prev) => prev.map((item) => (item.id === saved.id ? saved : item)));
+      toast.success("Incident kaydından otomatik DÖF oluşturuldu.");
+    } catch (capaError) {
+      toast.error(
+        capaError instanceof Error ? capaError.message : "DÖF kaydı oluşturulamadı.",
+      );
+    } finally {
+      setCapaCreating(false);
     }
   };
 
@@ -577,6 +764,91 @@ export default function IncidentManagement() {
           ? deleteError.message
           : "Aksiyon silinemedi.",
       );
+    }
+  };
+
+  const handleActionStatusChange = async (
+    actionId: string,
+    status: IncidentActionRecord["status"],
+  ) => {
+    if (!canManage) {
+      toast.error("Bu işlem için düzenleme yetkisi gerekiyor.");
+      return;
+    }
+
+    try {
+      const saved = await updateIncidentActionStatus(actionId, status);
+      setActions((prev) => prev.map((item) => (item.id === actionId ? saved : item)));
+      toast.success("Aksiyon durumu güncellendi.");
+    } catch (statusError) {
+      toast.error(
+        statusError instanceof Error
+          ? statusError.message
+          : "Aksiyon durumu güncellenemedi.",
+      );
+    }
+  };
+
+  const openCloseWorkflow = () => {
+    if (!selected) return;
+    if (!canClose) {
+      toast.error("Bu işlem için olay kapatma yetkisi gerekiyor.");
+      return;
+    }
+
+    setCloseForm({
+      closureSummary: selected.closure_summary || "",
+      closureDecision: selected.closure_decision || "monitor_only",
+      closureNotes: selected.closure_notes || "",
+      createCapa:
+        !selected.capa_record_id &&
+        (selected.severity === "high" ||
+          selected.severity === "critical" ||
+          selected.status === "action_required"),
+    });
+    setCloseDialogOpen(true);
+  };
+
+  const handleCloseIncident = async () => {
+    if (!user?.id || !selected) return;
+    if (!canClose) {
+      toast.error("Bu işlem için olay kapatma yetkisi gerekiyor.");
+      return;
+    }
+    if (!closeForm.closureSummary.trim()) {
+      toast.error("Kapatma özeti zorunludur.");
+      return;
+    }
+
+    const incompleteActions = actions.filter(
+      (item) => item.status !== "completed" && item.status !== "cancelled",
+    ).length;
+    if (incompleteActions > 0) {
+      toast.error("Açık aksiyonlar tamamlanmadan olay kapatılamaz.");
+      return;
+    }
+
+    setCloseSaving(true);
+    try {
+      const saved = await closeIncidentReport(user.id, selected, {
+        status: "closed",
+        closureSummary: closeForm.closureSummary,
+        closureDecision: closeForm.closureDecision,
+        closureNotes: closeForm.closureNotes,
+        createCapa:
+          closeForm.createCapa || closeForm.closureDecision === "capa_required",
+      });
+
+      setSelected(saved);
+      setRecords((prev) => prev.map((item) => (item.id === saved.id ? saved : item)));
+      setCloseDialogOpen(false);
+      toast.success("Olay kapatıldı.");
+    } catch (closeError) {
+      toast.error(
+        closeError instanceof Error ? closeError.message : "Olay kapatılamadı.",
+      );
+    } finally {
+      setCloseSaving(false);
     }
   };
 
@@ -668,6 +940,90 @@ export default function IncidentManagement() {
               {summary.criticalOpen}
             </CardTitle>
           </CardHeader>
+        </Card>
+      </div>
+
+      {isViewer && (
+        <Alert className="border-slate-700 bg-slate-900/60 text-slate-100">
+          <Lock className="h-4 w-4" />
+          <AlertTitle>Görüntüleme yetkisi</AlertTitle>
+          <AlertDescription>
+            Bu rolde kayıtları inceleyebilirsiniz. Yeni kayıt, silme, olay kapatma
+            ve DÖF oluşturma işlemleri kapalıdır.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+        <Card className="border-slate-800 bg-slate-950/60">
+          <CardHeader className="pb-4">
+            <CardTitle className="text-white">İleri Raporlama Özeti</CardTitle>
+            <CardDescription>
+              Kapanış kalitesi, DÖF bağlantısı ve açık inceleme yükünü tek blokta görün.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-4">
+              <p className="text-xs uppercase tracking-wide text-slate-500">Kapatılan olay</p>
+              <p className="mt-2 text-3xl font-semibold text-white">{reporting.closedCount}</p>
+            </div>
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-4">
+              <p className="text-xs uppercase tracking-wide text-slate-500">Açık olay</p>
+              <p className="mt-2 text-3xl font-semibold text-white">{reporting.openCount}</p>
+            </div>
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-4">
+              <p className="text-xs uppercase tracking-wide text-slate-500">Bağlı DÖF</p>
+              <p className="mt-2 text-3xl font-semibold text-white">{reporting.linkedCapa}</p>
+            </div>
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-4">
+              <p className="text-xs uppercase tracking-wide text-slate-500">Üst seviye açık inceleme</p>
+              <p className="mt-2 text-3xl font-semibold text-white">{reporting.pendingReview}</p>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-slate-800 bg-slate-950/60">
+          <CardHeader className="pb-4">
+            <CardTitle className="text-white">Kök Neden Analizi</CardTitle>
+            <CardDescription>
+              En sık tekrar eden neden kümeleri ve kapanış karar dağılımı.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              {reporting.rootCauseBreakdown.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-slate-800 px-4 py-6 text-sm text-slate-400">
+                  Henüz kök neden kategorisi birikmedi.
+                </div>
+              ) : (
+                reporting.rootCauseBreakdown.map((item) => (
+                  <div
+                    key={item.key}
+                    className="flex items-center justify-between rounded-xl border border-slate-800 bg-slate-900/50 px-4 py-3"
+                  >
+                    <span className="text-sm text-slate-200">{item.label}</span>
+                    <Badge variant="outline" className="border-slate-700 text-slate-100">
+                      {item.count}
+                    </Badge>
+                  </div>
+                ))
+              )}
+            </div>
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-4">
+              <p className="text-xs uppercase tracking-wide text-slate-500">Kapanış kararı dağılımı</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {reporting.closureDecisionBreakdown.length === 0 ? (
+                  <span className="text-sm text-slate-400">Henüz kapatılmış olay yok.</span>
+                ) : (
+                  reporting.closureDecisionBreakdown.map((item) => (
+                    <Badge key={item.key} variant="outline" className="border-slate-700 text-slate-200">
+                      {item.label}: {item.count}
+                    </Badge>
+                  ))
+                )}
+              </div>
+            </div>
+          </CardContent>
         </Card>
       </div>
 
@@ -886,6 +1242,11 @@ export default function IncidentManagement() {
                                 Bildirim gerekli
                               </Badge>
                             )}
+                            {record.capa_record_id && (
+                              <Badge className="border-emerald-500/20 bg-emerald-500/10 text-emerald-200">
+                                DÖF bağlı
+                              </Badge>
+                            )}
                           </div>
                         </TableCell>
                         <TableCell>
@@ -916,19 +1277,22 @@ export default function IncidentManagement() {
                               size="sm"
                               className="gap-2"
                               onClick={() => openEdit(record)}
+                              disabled={!canManage}
                             >
                               <ClipboardPlus className="h-4 w-4" />
                               Düzenle
                             </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="gap-2 text-red-300"
-                              onClick={() => void handleDelete(record)}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                              Sil
-                            </Button>
+                            {canDelete && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="gap-2 text-red-300"
+                                onClick={() => void handleDelete(record)}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                                Sil
+                              </Button>
+                            )}
                           </div>
                         </TableCell>
                       </TableRow>
@@ -1086,11 +1450,13 @@ export default function IncidentManagement() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {Object.entries(statusLabel).map(([value, label]) => (
-                    <SelectItem key={value} value={value}>
-                      {label}
-                    </SelectItem>
-                  ))}
+                  {Object.entries(statusLabel)
+                    .filter(([value]) => value !== "closed")
+                    .map(([value, label]) => (
+                      <SelectItem key={value} value={value}>
+                        {label}
+                      </SelectItem>
+                    ))}
                 </SelectContent>
               </Select>
             </div>
@@ -1174,6 +1540,30 @@ export default function IncidentManagement() {
             </div>
 
             <div className="space-y-2 md:col-span-2">
+              <Label>Kök neden kategorisi</Label>
+              <Select
+                value={form.rootCauseCategory}
+                onValueChange={(value) =>
+                  setForm((prev) => ({
+                    ...prev,
+                    rootCauseCategory: value as IncidentRootCauseCategory,
+                  }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(rootCauseCategoryLabel).map(([value, label]) => (
+                    <SelectItem key={value} value={value}>
+                      {label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2 md:col-span-2">
               <Label>İlk / acil müdahale</Label>
               <Textarea
                 value={form.immediateAction}
@@ -1251,6 +1641,7 @@ export default function IncidentManagement() {
             setAttachments([]);
             setActions([]);
             resetActionForm();
+            resetCloseForm();
           }
         }}
       >
@@ -1319,6 +1710,21 @@ export default function IncidentManagement() {
                   <TabsTrigger value="attachments" className="rounded-lg px-4 py-2">Dosyalar</TabsTrigger>
                 </TabsList>
                 <div className="flex flex-wrap gap-2">
+                  {canCreateCapa && (
+                    <Button
+                      variant="outline"
+                      className="gap-2"
+                      onClick={() => void handleCreateCapa()}
+                      disabled={capaCreating || Boolean(selected.capa_record_id)}
+                    >
+                      <CheckCheck className="h-4 w-4" />
+                      {selected.capa_record_id
+                        ? "DÖF bağlı"
+                        : capaCreating
+                          ? "DÖF açılıyor..."
+                          : "Otomatik DÖF aç"}
+                    </Button>
+                  )}
                   <Button
                     className="gap-2"
                     onClick={() => void handleCreateTask()}
@@ -1334,10 +1740,21 @@ export default function IncidentManagement() {
                       setDetailOpen(false);
                       openEdit(selected);
                     }}
+                    disabled={!canManage}
                   >
                     <Eye className="h-4 w-4" />
                     Kaydı düzenle
                   </Button>
+                  {canClose && selected.status !== "closed" && (
+                    <Button
+                      variant="outline"
+                      className="gap-2"
+                      onClick={openCloseWorkflow}
+                    >
+                      <Lock className="h-4 w-4" />
+                      Olayı kapat
+                    </Button>
+                  )}
                 </div>
               </div>
 
@@ -1374,6 +1791,10 @@ export default function IncidentManagement() {
                         <p className="mt-2">{selected.witness_info || "-"}</p>
                       </div>
                       <div className="sm:col-span-2">
+                        <p className="text-xs uppercase tracking-wide text-slate-500">Kök neden kategorisi</p>
+                        <p className="mt-2">{rootCauseCategoryLabel[selected.root_cause_category || "other"]}</p>
+                      </div>
+                      <div className="sm:col-span-2">
                         <p className="text-xs uppercase tracking-wide text-slate-500">Kök neden</p>
                         <p className="mt-2 whitespace-pre-wrap">{selected.root_cause || "-"}</p>
                       </div>
@@ -1381,6 +1802,38 @@ export default function IncidentManagement() {
                         <p className="text-xs uppercase tracking-wide text-slate-500">Düzeltici / önleyici aksiyon</p>
                         <p className="mt-2 whitespace-pre-wrap">{selected.corrective_action || "-"}</p>
                       </div>
+                      <div>
+                        <p className="text-xs uppercase tracking-wide text-slate-500">Bağlı DÖF</p>
+                        <p className="mt-2">{selected.capa_record_id ? "Oluşturuldu" : "Yok"}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs uppercase tracking-wide text-slate-500">Kapanış durumu</p>
+                        <p className="mt-2">{selected.status === "closed" ? "Kapatıldı" : "Açık"}</p>
+                      </div>
+                      {selected.status === "closed" && (
+                        <>
+                          <div className="sm:col-span-2">
+                            <p className="text-xs uppercase tracking-wide text-slate-500">Kapatma özeti</p>
+                            <p className="mt-2 whitespace-pre-wrap">{selected.closure_summary || "-"}</p>
+                          </div>
+                          <div>
+                            <p className="text-xs uppercase tracking-wide text-slate-500">Kapanış kararı</p>
+                            <p className="mt-2">
+                              {selected.closure_decision
+                                ? closureDecisionLabel[selected.closure_decision]
+                                : "-"}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-xs uppercase tracking-wide text-slate-500">Kapanış tarihi</p>
+                            <p className="mt-2">{formatDate(selected.closed_at)}</p>
+                          </div>
+                          <div className="sm:col-span-2">
+                            <p className="text-xs uppercase tracking-wide text-slate-500">Kapanış notları</p>
+                            <p className="mt-2 whitespace-pre-wrap">{selected.closure_notes || "-"}</p>
+                          </div>
+                        </>
+                      )}
                     </CardContent>
                   </Card>
                 </div>
@@ -1437,7 +1890,7 @@ export default function IncidentManagement() {
                       />
                       <Button
                         onClick={() => void handleActionSave()}
-                        disabled={actionSaving}
+                        disabled={actionSaving || !canManage}
                         className="w-full"
                       >
                         {actionSaving ? "Ekleniyor..." : "Aksiyon ekle"}
@@ -1474,15 +1927,35 @@ export default function IncidentManagement() {
                                 <p className="text-sm text-slate-500">{action.notes || "Açıklama yok"}</p>
                               </div>
                               <div className="flex items-center gap-2">
-                                <Badge variant="outline">{action.status}</Badge>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="text-red-300"
-                                  onClick={() => void handleActionDelete(action.id)}
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
+                                <Badge variant="outline">{actionStatusLabel[action.status]}</Badge>
+                                {canManage && action.status !== "completed" && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => void handleActionStatusChange(action.id, "completed")}
+                                  >
+                                    Tamamla
+                                  </Button>
+                                )}
+                                {canManage && action.status === "open" && (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => void handleActionStatusChange(action.id, "in_progress")}
+                                  >
+                                    Başlat
+                                  </Button>
+                                )}
+                                {canDelete && (
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="text-red-300"
+                                    onClick={() => void handleActionDelete(action.id)}
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                )}
                               </div>
                             </div>
                           </div>
@@ -1505,21 +1978,23 @@ export default function IncidentManagement() {
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    <label className="inline-flex">
-                      <input
-                        type="file"
-                        className="hidden"
-                        onChange={(event) => {
-                          const file = event.target.files?.[0];
-                          if (!file) return;
-                          void handleAttachmentUpload(file);
-                          event.target.value = "";
-                        }}
-                      />
-                      <Button type="button" variant="outline" className="gap-2" asChild>
-                        <span>{uploadingFile ? "Yükleniyor..." : "Dosya Ekle"}</span>
-                      </Button>
-                    </label>
+                    {canManage && (
+                      <label className="inline-flex">
+                        <input
+                          type="file"
+                          className="hidden"
+                          onChange={(event) => {
+                            const file = event.target.files?.[0];
+                            if (!file) return;
+                            void handleAttachmentUpload(file);
+                            event.target.value = "";
+                          }}
+                        />
+                        <Button type="button" variant="outline" className="gap-2" asChild>
+                          <span>{uploadingFile ? "Yükleniyor..." : "Dosya Ekle"}</span>
+                        </Button>
+                      </label>
+                    )}
 
                     <div className="space-y-3">
                       {attachments.length === 0 ? (
@@ -1548,14 +2023,16 @@ export default function IncidentManagement() {
                               >
                                 İndir
                               </Button>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="text-red-300"
-                                onClick={() => void handleAttachmentDelete(attachment.id)}
-                              >
-                                Sil
-                              </Button>
+                              {canManage && (
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="text-red-300"
+                                  onClick={() => void handleAttachmentDelete(attachment.id)}
+                                >
+                                  Sil
+                                </Button>
+                              )}
                             </div>
                           </div>
                         ))
@@ -1566,6 +2043,104 @@ export default function IncidentManagement() {
               </TabsContent>
             </Tabs>
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={closeDialogOpen} onOpenChange={setCloseDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Olay Kapatma Workflow'u</DialogTitle>
+            <DialogDescription>
+              Olay ancak kapatma özeti tamamlanıp açık aksiyonlar kapatıldıktan sonra kapanır.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="rounded-2xl border border-slate-800 bg-slate-950/50 p-4 text-sm text-slate-300">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="outline" className="border-slate-700 text-slate-100">
+                  {selected ? typeLabel[selected.incident_type] : "Olay"}
+                </Badge>
+                {selected && <Badge className={severityClass[selected.severity]}>{severityLabel[selected.severity]}</Badge>}
+              </div>
+              <p className="mt-3 font-medium text-white">{selected?.title || "Olay seçilmedi"}</p>
+              <p className="mt-1 text-slate-400">
+                Açık aksiyon sayısı:{" "}
+                {actions.filter((item) => item.status !== "completed" && item.status !== "cancelled").length}
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Kapatma özeti</Label>
+              <Textarea
+                value={closeForm.closureSummary}
+                onChange={(event) =>
+                  setCloseForm((prev) => ({ ...prev, closureSummary: event.target.value }))
+                }
+                className="min-h-24"
+                placeholder="Olayın nasıl sonuçlandığını, hangi adımların tamamlandığını yazın."
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label>Kapanış kararı</Label>
+              <Select
+                value={closeForm.closureDecision}
+                onValueChange={(value) =>
+                  setCloseForm((prev) => ({
+                    ...prev,
+                    closureDecision: value as IncidentClosureDecision,
+                    createCapa:
+                      value === "capa_required" ? true : prev.createCapa,
+                  }))
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(closureDecisionLabel).map(([value, label]) => (
+                    <SelectItem key={value} value={value}>
+                      {label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Kapanış notları</Label>
+              <Textarea
+                value={closeForm.closureNotes}
+                onChange={(event) =>
+                  setCloseForm((prev) => ({ ...prev, closureNotes: event.target.value }))
+                }
+                className="min-h-20"
+                placeholder="Denetim, eğitim, proses değişikliği veya izleme notlarını girin."
+              />
+            </div>
+
+            <label className="flex items-center gap-3 rounded-xl border border-slate-800 px-4 py-3 text-sm text-slate-300">
+              <input
+                type="checkbox"
+                checked={closeForm.createCapa || closeForm.closureDecision === "capa_required"}
+                disabled={closeForm.closureDecision === "capa_required"}
+                onChange={(event) =>
+                  setCloseForm((prev) => ({ ...prev, createCapa: event.target.checked }))
+                }
+              />
+              Kapatırken incident kaydından otomatik DÖF aç
+            </label>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCloseDialogOpen(false)}>
+              Vazgeç
+            </Button>
+            <Button onClick={() => void handleCloseIncident()} disabled={closeSaving}>
+              {closeSaving ? "Kapatılıyor..." : "Olayı kapat"}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

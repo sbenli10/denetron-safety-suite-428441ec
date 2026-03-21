@@ -73,6 +73,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 
 type IncidentFormState = {
@@ -267,6 +268,29 @@ export default function IncidentManagement() {
         .length,
       criticalOpen: records.filter(
         (item) => item.severity === "critical" && item.status !== "closed",
+      ).length,
+    }),
+    [records],
+  );
+
+  const operationalInsights = useMemo(
+    () => ({
+      requiresNotification: records.filter((item) => item.requires_notification)
+        .length,
+      actionPending: records.filter((item) => item.status === "action_required")
+        .length,
+      thisMonth: records.filter((item) => {
+        const incidentDate = new Date(item.incident_date);
+        const now = new Date();
+        return (
+          incidentDate.getMonth() === now.getMonth() &&
+          incidentDate.getFullYear() === now.getFullYear()
+        );
+      }).length,
+      unresolvedHighRisk: records.filter(
+        (item) =>
+          (item.severity === "high" || item.severity === "critical") &&
+          item.status !== "closed",
       ).length,
     }),
     [records],
@@ -647,6 +671,92 @@ export default function IncidentManagement() {
         </Card>
       </div>
 
+      <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+        <Card className="border-slate-800 bg-slate-950/60">
+          <CardHeader className="pb-4">
+            <CardTitle className="text-white">Operasyon Odağı</CardTitle>
+            <CardDescription>
+              Kullanıcının ilk bakışta müdahale etmesi gereken olay kümeleri.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-3 md:grid-cols-2">
+            <div className="rounded-2xl border border-amber-500/15 bg-amber-500/5 p-4">
+              <p className="text-xs uppercase tracking-wide text-amber-300/80">
+                Resmi bildirim
+              </p>
+              <p className="mt-2 text-3xl font-semibold text-white">
+                {operationalInsights.requiresNotification}
+              </p>
+              <p className="mt-2 text-sm text-slate-400">
+                Bildirim veya ilave takip gerektiren kayıt sayısı.
+              </p>
+            </div>
+            <div className="rounded-2xl border border-orange-500/15 bg-orange-500/5 p-4">
+              <p className="text-xs uppercase tracking-wide text-orange-300/80">
+                Aksiyon bekleyen
+              </p>
+              <p className="mt-2 text-3xl font-semibold text-white">
+                {operationalInsights.actionPending}
+              </p>
+              <p className="mt-2 text-sm text-slate-400">
+                Kök neden çalışması veya aksiyon planı bekleyen olaylar.
+              </p>
+            </div>
+            <div className="rounded-2xl border border-sky-500/15 bg-sky-500/5 p-4">
+              <p className="text-xs uppercase tracking-wide text-sky-300/80">
+                Bu ay açılan
+              </p>
+              <p className="mt-2 text-3xl font-semibold text-white">
+                {operationalInsights.thisMonth}
+              </p>
+              <p className="mt-2 text-sm text-slate-400">
+                İçinde bulunulan ayda sisteme alınan kayıtlar.
+              </p>
+            </div>
+            <div className="rounded-2xl border border-red-500/15 bg-red-500/5 p-4">
+              <p className="text-xs uppercase tracking-wide text-red-300/80">
+                Açık yüksek risk
+              </p>
+              <p className="mt-2 text-3xl font-semibold text-white">
+                {operationalInsights.unresolvedHighRisk}
+              </p>
+              <p className="mt-2 text-sm text-slate-400">
+                Yüksek veya kritik seviyede kapanmamış olaylar.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="border-slate-800 bg-slate-950/60">
+          <CardHeader className="pb-4">
+            <CardTitle className="text-white">Önerilen Kullanım</CardTitle>
+            <CardDescription>
+              Bu modülün günlük operasyon akışındaki kısa kullanım sırası.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3 text-sm text-slate-300">
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-4">
+              <p className="font-medium text-white">1. Olayı kayda alın</p>
+              <p className="mt-1 text-slate-400">
+                Olay tipi, tarih, lokasyon, etkilenen kişi ve ilk müdahaleyi girin.
+              </p>
+            </div>
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-4">
+              <p className="font-medium text-white">2. Kök nedeni netleştirin</p>
+              <p className="mt-1 text-slate-400">
+                Olay açıklaması, kategori ve düzeltici/önleyici aksiyon alanlarını doldurun.
+              </p>
+            </div>
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/50 p-4">
+              <p className="font-medium text-white">3. Göreve dönüştürün</p>
+              <p className="mt-1 text-slate-400">
+                Detay ekranından OSGB görevi üretin, aksiyon planı ekleyin ve dosyaları yükleyin.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
       {error && (
         <Alert className="border-red-500/20 bg-red-500/10 text-red-100">
           <AlertTriangle className="h-4 w-4" />
@@ -720,7 +830,7 @@ export default function IncidentManagement() {
                   <TableRow>
                     <TableHead>Tür</TableHead>
                     <TableHead>Başlık</TableHead>
-                    <TableHead>Firma</TableHead>
+                    <TableHead>Firma ve Kişi</TableHead>
                     <TableHead>Şiddet</TableHead>
                     <TableHead>Durum</TableHead>
                     <TableHead>Olay Tarihi</TableHead>
@@ -752,15 +862,44 @@ export default function IncidentManagement() {
                           </div>
                         </TableCell>
                         <TableCell>
-                          {record.company?.company_name || "-"}
+                          <div>
+                            <p className="font-medium text-white">
+                              {record.company?.company_name || "-"}
+                            </p>
+                            <p className="text-xs text-slate-400">
+                              {record.affected_person || "Kişi belirtilmedi"}
+                            </p>
+                          </div>
                         </TableCell>
                         <TableCell>
                           <Badge className={severityClass[record.severity]}>
                             {severityLabel[record.severity]}
                           </Badge>
                         </TableCell>
-                        <TableCell>{statusLabel[record.status]}</TableCell>
-                        <TableCell>{formatDate(record.incident_date)}</TableCell>
+                        <TableCell>
+                          <div className="space-y-2">
+                            <Badge variant="outline" className="border-slate-700 text-slate-200">
+                              {statusLabel[record.status]}
+                            </Badge>
+                            {record.requires_notification && (
+                              <Badge className="border-amber-500/20 bg-amber-500/10 text-amber-200">
+                                Bildirim gerekli
+                              </Badge>
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div>
+                            <p className="font-medium text-white">
+                              {formatDate(record.incident_date)}
+                            </p>
+                            <p className="text-xs text-slate-400">
+                              {record.lost_time_days > 0
+                                ? `${record.lost_time_days} gün kayıp`
+                                : "Kayıp gün yok"}
+                            </p>
+                          </div>
+                        </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-2">
                             <Button
@@ -1122,227 +1261,139 @@ export default function IncidentManagement() {
               Dosya, aksiyon ve görev bağlantıları bu ekrandan yönetilir.
             </DialogDescription>
           </DialogHeader>
-
           {!selected || detailLoading ? (
             <div className="rounded-xl border border-slate-800 bg-slate-950/40 p-8 text-sm text-slate-400">
               Detaylar yükleniyor...
             </div>
           ) : (
-            <div className="grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
-              <div className="space-y-6">
-                <Card className="border-slate-800 bg-slate-950/40">
-                  <CardHeader>
-                    <CardTitle className="text-white">Olay Özeti</CardTitle>
-                    <CardDescription>
-                      {formatDate(selected.incident_date)} •{" "}
-                      {selected.company?.company_name || "Firma seçilmedi"}
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="grid gap-4 text-sm text-slate-300 md:grid-cols-2">
-                    <div>
-                      <p className="text-xs uppercase tracking-wide text-slate-500">
-                        Tür
-                      </p>
-                      <p className="mt-1">{typeLabel[selected.incident_type]}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs uppercase tracking-wide text-slate-500">
-                        Şiddet
-                      </p>
-                      <div className="mt-1">
-                        <Badge className={severityClass[selected.severity]}>
-                          {severityLabel[selected.severity]}
+            <Tabs defaultValue="summary" className="space-y-5">
+              <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-5">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="space-y-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge className="border-slate-700 bg-slate-900 text-slate-100">
+                        {typeLabel[selected.incident_type]}
+                      </Badge>
+                      <Badge className={severityClass[selected.severity]}>
+                        {severityLabel[selected.severity]}
+                      </Badge>
+                      <Badge variant="outline" className="border-slate-700 text-slate-200">
+                        {statusLabel[selected.status]}
+                      </Badge>
+                      {selected.requires_notification && (
+                        <Badge className="border-amber-500/20 bg-amber-500/10 text-amber-200">
+                          Resmi bildirim gerekli
                         </Badge>
-                      </div>
-                    </div>
-                    <div>
-                      <p className="text-xs uppercase tracking-wide text-slate-500">
-                        Durum
-                      </p>
-                      <p className="mt-1">{statusLabel[selected.status]}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs uppercase tracking-wide text-slate-500">
-                        İş günü kaybı
-                      </p>
-                      <p className="mt-1">{selected.lost_time_days}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs uppercase tracking-wide text-slate-500">
-                        Lokasyon
-                      </p>
-                      <p className="mt-1">{selected.location || "-"}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs uppercase tracking-wide text-slate-500">
-                        Etkilenen kişi
-                      </p>
-                      <p className="mt-1">{selected.affected_person || "-"}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs uppercase tracking-wide text-slate-500">
-                        Bildirimi yapan
-                      </p>
-                      <p className="mt-1">{selected.reported_by || "-"}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs uppercase tracking-wide text-slate-500">
-                        Kategori
-                      </p>
-                      <p className="mt-1">{selected.accident_category || "-"}</p>
-                    </div>
-                    <div className="md:col-span-2">
-                      <p className="text-xs uppercase tracking-wide text-slate-500">
-                        Olay açıklaması
-                      </p>
-                      <p className="mt-1 whitespace-pre-wrap">
-                        {selected.description}
-                      </p>
-                    </div>
-                    <div className="md:col-span-2">
-                      <p className="text-xs uppercase tracking-wide text-slate-500">
-                        İlk / acil müdahale
-                      </p>
-                      <p className="mt-1 whitespace-pre-wrap">
-                        {selected.immediate_action || "-"}
-                      </p>
-                    </div>
-                    <div className="md:col-span-2">
-                      <p className="text-xs uppercase tracking-wide text-slate-500">
-                        Kök neden
-                      </p>
-                      <p className="mt-1 whitespace-pre-wrap">
-                        {selected.root_cause || "-"}
-                      </p>
-                    </div>
-                    <div className="md:col-span-2">
-                      <p className="text-xs uppercase tracking-wide text-slate-500">
-                        Düzeltici / önleyici aksiyon
-                      </p>
-                      <p className="mt-1 whitespace-pre-wrap">
-                        {selected.corrective_action || "-"}
-                      </p>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card className="border-slate-800 bg-slate-950/40">
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-white">
-                      <FileUp className="h-4 w-4" />
-                      Dosyalar
-                    </CardTitle>
-                    <CardDescription>
-                      Fotoğraf, tutanak veya destekleyici evrak yükleyin.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    <label className="inline-flex">
-                      <input
-                        type="file"
-                        className="hidden"
-                        onChange={(event) => {
-                          const file = event.target.files?.[0];
-                          if (!file) return;
-                          void handleAttachmentUpload(file);
-                          event.target.value = "";
-                        }}
-                      />
-                      <Button type="button" variant="outline" className="gap-2" asChild>
-                        <span>{uploadingFile ? "Yükleniyor..." : "Dosya Ekle"}</span>
-                      </Button>
-                    </label>
-
-                    <div className="space-y-3">
-                      {attachments.length === 0 ? (
-                        <div className="rounded-xl border border-dashed border-slate-800 px-4 py-6 text-sm text-slate-400">
-                          Henüz dosya eklenmedi.
-                        </div>
-                      ) : (
-                        attachments.map((attachment) => (
-                          <div
-                            key={attachment.id}
-                            className="flex items-center justify-between rounded-xl border border-slate-800 px-4 py-3"
-                          >
-                            <div>
-                              <p className="font-medium text-white">
-                                {attachment.file_name}
-                              </p>
-                              <p className="text-xs text-slate-400">
-                                {formatDate(attachment.created_at)}
-                              </p>
-                            </div>
-                            <div className="flex gap-2">
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() =>
-                                  void handleAttachmentDownload(
-                                    attachment.file_path,
-                                  )
-                                }
-                              >
-                                İndir
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="text-red-300"
-                                onClick={() =>
-                                  void handleAttachmentDelete(attachment.id)
-                                }
-                              >
-                                Sil
-                              </Button>
-                            </div>
-                          </div>
-                        ))
                       )}
                     </div>
-                  </CardContent>
-                </Card>
+                    <div className="space-y-1">
+                      <p className="text-lg font-semibold text-white">
+                        {selected.title}
+                      </p>
+                      <p className="text-sm text-slate-400">
+                        {formatDate(selected.incident_date)} • {selected.company?.company_name || "Firma seçilmedi"} • {selected.location || "Lokasyon belirtilmedi"}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-3">
+                    <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-3">
+                      <p className="text-xs uppercase tracking-wide text-slate-500">Etkilenen kişi</p>
+                      <p className="mt-2 font-medium text-white">{selected.affected_person || "-"}</p>
+                    </div>
+                    <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-3">
+                      <p className="text-xs uppercase tracking-wide text-slate-500">İş günü kaybı</p>
+                      <p className="mt-2 font-medium text-white">{selected.lost_time_days}</p>
+                    </div>
+                    <div className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-3">
+                      <p className="text-xs uppercase tracking-wide text-slate-500">Kategori</p>
+                      <p className="mt-2 font-medium text-white">{selected.accident_category || "-"}</p>
+                    </div>
+                  </div>
+                </div>
               </div>
 
-              <div className="space-y-6">
-                <Card className="border-slate-800 bg-slate-950/40">
-                  <CardHeader>
-                    <CardTitle className="text-white">Hızlı Aksiyonlar</CardTitle>
-                    <CardDescription>
-                      Olayı görev motoruna aktarın veya düzenleme ekranına geçin.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <Button
-                      className="w-full gap-2"
-                      onClick={() => void handleCreateTask()}
-                      disabled={taskCreating}
-                    >
-                      <ClipboardPlus className="h-4 w-4" />
-                      {taskCreating ? "Görev oluşturuluyor..." : "OSGB görevi oluştur"}
-                    </Button>
-                    <Button
-                      variant="outline"
-                      className="w-full gap-2"
-                      onClick={() => {
-                        setDetailOpen(false);
-                        openEdit(selected);
-                      }}
-                    >
-                      <Eye className="h-4 w-4" />
-                      Kaydı düzenle
-                    </Button>
-                  </CardContent>
-                </Card>
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <TabsList className="h-auto w-full justify-start rounded-xl bg-slate-900/70 p-1 lg:w-auto">
+                  <TabsTrigger value="summary" className="rounded-lg px-4 py-2">Özet</TabsTrigger>
+                  <TabsTrigger value="actions" className="rounded-lg px-4 py-2">Aksiyonlar</TabsTrigger>
+                  <TabsTrigger value="attachments" className="rounded-lg px-4 py-2">Dosyalar</TabsTrigger>
+                </TabsList>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    className="gap-2"
+                    onClick={() => void handleCreateTask()}
+                    disabled={taskCreating}
+                  >
+                    <ClipboardPlus className="h-4 w-4" />
+                    {taskCreating ? "Görev oluşturuluyor..." : "OSGB görevi oluştur"}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    className="gap-2"
+                    onClick={() => {
+                      setDetailOpen(false);
+                      openEdit(selected);
+                    }}
+                  >
+                    <Eye className="h-4 w-4" />
+                    Kaydı düzenle
+                  </Button>
+                </div>
+              </div>
 
-                <Card className="border-slate-800 bg-slate-950/40">
-                  <CardHeader>
-                    <CardTitle className="text-white">Aksiyon Planı</CardTitle>
-                    <CardDescription>
-                      Olay bazlı takip adımlarını kayıt altına alın.
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <div className="grid gap-3">
+              <TabsContent value="summary" className="mt-0">
+                <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+                  <Card className="border-slate-800 bg-slate-950/40">
+                    <CardHeader>
+                      <CardTitle className="text-white">Olay Açıklaması</CardTitle>
+                      <CardDescription>Olayın ham anlatımı ve ilk kayıt bilgileri.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-5 text-sm text-slate-300">
+                      <div>
+                        <p className="text-xs uppercase tracking-wide text-slate-500">Olay açıklaması</p>
+                        <p className="mt-2 whitespace-pre-wrap">{selected.description}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs uppercase tracking-wide text-slate-500">İlk / acil müdahale</p>
+                        <p className="mt-2 whitespace-pre-wrap">{selected.immediate_action || "-"}</p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                  <Card className="border-slate-800 bg-slate-950/40">
+                    <CardHeader>
+                      <CardTitle className="text-white">Operasyon Bilgileri</CardTitle>
+                      <CardDescription>Takipte en çok ihtiyaç duyulan temel alanlar.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="grid gap-4 text-sm text-slate-300 sm:grid-cols-2">
+                      <div>
+                        <p className="text-xs uppercase tracking-wide text-slate-500">Bildirimi yapan</p>
+                        <p className="mt-2">{selected.reported_by || "-"}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs uppercase tracking-wide text-slate-500">Tanık / görgü</p>
+                        <p className="mt-2">{selected.witness_info || "-"}</p>
+                      </div>
+                      <div className="sm:col-span-2">
+                        <p className="text-xs uppercase tracking-wide text-slate-500">Kök neden</p>
+                        <p className="mt-2 whitespace-pre-wrap">{selected.root_cause || "-"}</p>
+                      </div>
+                      <div className="sm:col-span-2">
+                        <p className="text-xs uppercase tracking-wide text-slate-500">Düzeltici / önleyici aksiyon</p>
+                        <p className="mt-2 whitespace-pre-wrap">{selected.corrective_action || "-"}</p>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="actions" className="mt-0">
+                <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
+                  <Card className="border-slate-800 bg-slate-950/40">
+                    <CardHeader>
+                      <CardTitle className="text-white">Yeni Aksiyon</CardTitle>
+                      <CardDescription>Olay bazlı takip adımı ekleyin.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
                       <Input
                         placeholder="Aksiyon başlığı"
                         value={actionForm.actionTitle}
@@ -1382,43 +1433,45 @@ export default function IncidentManagement() {
                             notes: event.target.value,
                           }))
                         }
-                        className="min-h-20"
+                        className="min-h-24"
                       />
                       <Button
                         onClick={() => void handleActionSave()}
                         disabled={actionSaving}
+                        className="w-full"
                       >
                         {actionSaving ? "Ekleniyor..." : "Aksiyon ekle"}
                       </Button>
-                    </div>
-
-                    <div className="space-y-3">
+                    </CardContent>
+                  </Card>
+                  <Card className="border-slate-800 bg-slate-950/40">
+                    <CardHeader>
+                      <CardTitle className="text-white">Açık Aksiyonlar</CardTitle>
+                      <CardDescription>Bu olay için tanımlanan takip adımları.</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-3">
                       {actions.length === 0 ? (
-                        <div className="rounded-xl border border-dashed border-slate-800 px-4 py-6 text-sm text-slate-400">
+                        <div className="rounded-xl border border-dashed border-slate-800 px-4 py-8 text-sm text-slate-400">
                           Henüz aksiyon eklenmedi.
                         </div>
                       ) : (
                         actions.map((action) => (
                           <div
                             key={action.id}
-                            className="rounded-xl border border-slate-800 px-4 py-3"
+                            className="rounded-2xl border border-slate-800 bg-slate-900/40 px-4 py-4"
                           >
                             <div className="flex items-start justify-between gap-3">
-                              <div className="space-y-1">
-                                <p className="font-medium text-white">
-                                  {action.action_title}
-                                </p>
-                                <p className="text-xs text-slate-400">
-                                  {action.owner_name || "Sorumlu atanmamış"} •{" "}
-                                  {action.due_date
-                                    ? new Date(action.due_date).toLocaleDateString(
-                                        "tr-TR",
-                                      )
-                                    : "Termin yok"}
-                                </p>
-                                <p className="text-xs text-slate-500">
-                                  {action.notes || "Açıklama yok"}
-                                </p>
+                              <div className="space-y-2">
+                                <p className="font-medium text-white">{action.action_title}</p>
+                                <div className="flex flex-wrap gap-3 text-xs text-slate-400">
+                                  <span>{action.owner_name || "Sorumlu atanmamış"}</span>
+                                  <span>
+                                    {action.due_date
+                                      ? new Date(action.due_date).toLocaleDateString("tr-TR")
+                                      : "Termin yok"}
+                                  </span>
+                                </div>
+                                <p className="text-sm text-slate-500">{action.notes || "Açıklama yok"}</p>
                               </div>
                               <div className="flex items-center gap-2">
                                 <Badge variant="outline">{action.status}</Badge>
@@ -1426,9 +1479,7 @@ export default function IncidentManagement() {
                                   variant="ghost"
                                   size="icon"
                                   className="text-red-300"
-                                  onClick={() =>
-                                    void handleActionDelete(action.id)
-                                  }
+                                  onClick={() => void handleActionDelete(action.id)}
                                 >
                                   <Trash2 className="h-4 w-4" />
                                 </Button>
@@ -1437,14 +1488,87 @@ export default function IncidentManagement() {
                           </div>
                         ))
                       )}
+                    </CardContent>
+                  </Card>
+                </div>
+              </TabsContent>
+
+              <TabsContent value="attachments" className="mt-0">
+                <Card className="border-slate-800 bg-slate-950/40">
+                  <CardHeader>
+                    <CardTitle className="flex items-center gap-2 text-white">
+                      <FileUp className="h-4 w-4" />
+                      Olay Dosyaları
+                    </CardTitle>
+                    <CardDescription>
+                      Fotoğraf, tutanak ve destekleyici evrakları bu alanda yönetin.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <label className="inline-flex">
+                      <input
+                        type="file"
+                        className="hidden"
+                        onChange={(event) => {
+                          const file = event.target.files?.[0];
+                          if (!file) return;
+                          void handleAttachmentUpload(file);
+                          event.target.value = "";
+                        }}
+                      />
+                      <Button type="button" variant="outline" className="gap-2" asChild>
+                        <span>{uploadingFile ? "Yükleniyor..." : "Dosya Ekle"}</span>
+                      </Button>
+                    </label>
+
+                    <div className="space-y-3">
+                      {attachments.length === 0 ? (
+                        <div className="rounded-2xl border border-dashed border-slate-800 px-4 py-10 text-sm text-slate-400">
+                          Bu olaya henüz dosya eklenmedi. Olay fotoğrafı, tutanak veya resmi belge yükleyebilirsiniz.
+                        </div>
+                      ) : (
+                        attachments.map((attachment) => (
+                          <div
+                            key={attachment.id}
+                            className="flex items-center justify-between rounded-2xl border border-slate-800 bg-slate-900/40 px-4 py-4"
+                          >
+                            <div>
+                              <p className="font-medium text-white">{attachment.file_name}</p>
+                              <p className="mt-1 text-xs text-slate-400">
+                                {formatDate(attachment.created_at)}
+                              </p>
+                            </div>
+                            <div className="flex gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() =>
+                                  void handleAttachmentDownload(attachment.file_path)
+                                }
+                              >
+                                İndir
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="text-red-300"
+                                onClick={() => void handleAttachmentDelete(attachment.id)}
+                              >
+                                Sil
+                              </Button>
+                            </div>
+                          </div>
+                        ))
+                      )}
                     </div>
                   </CardContent>
                 </Card>
-              </div>
-            </div>
+              </TabsContent>
+            </Tabs>
           )}
         </DialogContent>
       </Dialog>
     </div>
   );
 }
+

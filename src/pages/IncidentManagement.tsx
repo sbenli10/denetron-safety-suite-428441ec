@@ -809,7 +809,7 @@ export default function IncidentManagement() {
           if (!open) resetIncidentForm();
         }}
       >
-        <DialogContent className="max-w-5xl">
+        <DialogContent className="max-h-[90vh] max-w-5xl overflow-hidden">
           <DialogHeader>
             <DialogTitle>
               {editing
@@ -822,8 +822,9 @@ export default function IncidentManagement() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2">
+          <div className="overflow-y-auto pr-2">
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
               <Label>Olay türü</Label>
               <Select
                 value={form.incidentType}
@@ -1075,19 +1076,20 @@ export default function IncidentManagement() {
               />
             </div>
 
-            <label className="flex items-center gap-3 rounded-xl border border-slate-800 px-4 py-3 text-sm text-slate-300 md:col-span-2">
-              <input
-                type="checkbox"
-                checked={form.requiresNotification}
-                onChange={(event) =>
-                  setForm((prev) => ({
-                    ...prev,
-                    requiresNotification: event.target.checked,
-                  }))
-                }
-              />
-              Resmi bildirim veya ilave takip gerektiriyor
-            </label>
+              <label className="flex items-center gap-3 rounded-xl border border-slate-800 px-4 py-3 text-sm text-slate-300 md:col-span-2">
+                <input
+                  type="checkbox"
+                  checked={form.requiresNotification}
+                  onChange={(event) =>
+                    setForm((prev) => ({
+                      ...prev,
+                      requiresNotification: event.target.checked,
+                    }))
+                  }
+                />
+                Resmi bildirim veya ilave takip gerektiriyor
+              </label>
+            </div>
           </div>
 
           <DialogFooter>

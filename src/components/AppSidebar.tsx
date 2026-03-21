@@ -192,6 +192,12 @@ export function AppSidebar() {
           badge: null,
         },
         {
+          title: "KKD Zimmet",
+          url: "/ppe-management",
+          icon: Shield,
+          badge: "NEW",
+        },
+        {
           title: "OSGB Modülü",
           url: "/osgb",
           icon: Briefcase,

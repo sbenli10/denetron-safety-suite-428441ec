@@ -96,6 +96,7 @@ const AnnualPlans = lazy(() => import("@/pages/AnnualPlans"));
 // ============================================
 const Findings = lazy(() => import("@/pages/Findings"));
 const Employees = lazy(() => import("@/pages/Employees"));
+const PPEManagement = lazy(() => import("@/pages/PPEManagement"));
 
 // ============================================
 // QUERY CLIENT CONFIGURATION
@@ -307,6 +308,7 @@ const App = () => (
                           {/* ============================================ */}
                           <Route path="/employees" element={<Employees />} />
                           <Route path="/employees/:id" element={<Employees />} />
+                          <Route path="/ppe-management" element={<PPEManagement />} />
 
                           {/* ============================================ */}
                           {/* BLUEPRINT ANALYZER */}

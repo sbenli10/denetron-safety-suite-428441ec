@@ -809,7 +809,7 @@ export default function IncidentManagement() {
           if (!open) resetIncidentForm();
         }}
       >
-        <DialogContent className="max-h-[90vh] max-w-5xl overflow-hidden">
+        <DialogContent className="flex max-h-[90vh] max-w-5xl flex-col overflow-hidden">
           <DialogHeader>
             <DialogTitle>
               {editing
@@ -822,7 +822,7 @@ export default function IncidentManagement() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="overflow-y-auto pr-2">
+          <div className="min-h-0 flex-1 overflow-y-auto pr-2">
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
               <Label>Olay türü</Label>

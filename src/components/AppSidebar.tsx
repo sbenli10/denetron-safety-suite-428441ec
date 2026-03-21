@@ -172,6 +172,12 @@ export function AppSidebar() {
           icon: FileText,
           badge: null,
         },
+        {
+          title: "İş Kazası / Ramak Kala",
+          url: "/incidents",
+          icon: ShieldAlert,
+          badge: "NEW",
+        },
       ],
     },
     {

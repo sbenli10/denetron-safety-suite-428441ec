@@ -31,6 +31,7 @@ const Reports = lazy(() => import("./pages/Reports"));
 const CAPA = lazy(() => import("./pages/CAPA"));
 const BulkCAPA = lazy(() => import("./pages/BulkCAPA"));
 const BulkCAPAHowTo = lazy(() => import("./pages/BulkCAPAHowTo"));
+const IncidentManagement = lazy(() => import("./pages/IncidentManagement"));
 const SafetyLibrary = lazy(() => import("./pages/SafetyLibrary"));
 const SafetyLibraryGuide = lazy(() => import("./pages/SafetyLibraryGuide"));
 const Settings = lazy(() => import("./pages/Settings"));
@@ -209,6 +210,7 @@ const App = () => (
                           {/* ============================================ */}
                           <Route path="/companies" element={<CompanyManager />} />
                           <Route path="/assignment-letters" element={<AssignmentLetters />} />
+                          <Route path="/incidents" element={<IncidentManagement />} />
                           <Route path="/osgb" element={<OsgbAccessGate><OSGBModule /></OsgbAccessGate>} />
                           <Route path="/osgb/dashboard" element={<OsgbAccessGate><OSGBDashboard /></OsgbAccessGate>} />
                           <Route path="/osgb/personnel" element={<OsgbAccessGate><OSGBPersonnel /></OsgbAccessGate>} />

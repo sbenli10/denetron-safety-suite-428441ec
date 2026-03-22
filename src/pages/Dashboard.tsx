@@ -50,6 +50,89 @@ interface MetricCard {
   color: string;
 }
 
+function RevealBlock({
+  children,
+  delay = 0,
+  className = "",
+}: {
+  children: React.ReactNode;
+  delay?: number;
+  className?: string;
+}) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    const node = ref.current;
+    if (!node) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setVisible(true);
+          observer.disconnect();
+        }
+      },
+      { threshold: 0.18 },
+    );
+
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
+
+  return (
+    <div
+      ref={ref}
+      className={className}
+      style={{
+        opacity: visible ? 1 : 0,
+        transform: visible ? "translateY(0px)" : "translateY(26px)",
+        transition: `opacity 700ms ease ${delay}ms, transform 700ms ease ${delay}ms`,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function StorySurface({
+  children,
+  className = "",
+}: {
+  children: React.ReactNode;
+  className?: string;
+}) {
+  const ref = useRef<HTMLDivElement | null>(null);
+
+  const handleMove = (event: React.MouseEvent<HTMLDivElement>) => {
+    const node = ref.current;
+    if (!node) return;
+
+    const rect = node.getBoundingClientRect();
+    const x = ((event.clientX - rect.left) / rect.width) * 100;
+    const y = ((event.clientY - rect.top) / rect.height) * 100;
+    node.style.setProperty("--glow-x", `${x}%`);
+    node.style.setProperty("--glow-y", `${y}%`);
+  };
+
+  return (
+    <div
+      ref={ref}
+      onMouseMove={handleMove}
+      className={`relative overflow-hidden ${className}`}
+      style={
+        {
+          "--glow-x": "50%",
+          "--glow-y": "30%",
+        } as React.CSSProperties
+      }
+    >
+      <div className="pointer-events-none absolute inset-0 opacity-70 transition-opacity duration-300 [background:radial-gradient(circle_at_var(--glow-x)_var(--glow-y),rgba(56,189,248,0.14),transparent_24%),radial-gradient(circle_at_calc(var(--glow-x)_-_14%)_calc(var(--glow-y)_+_18%),rgba(99,102,241,0.10),transparent_26%)]" />
+      <div className="relative">{children}</div>
+    </div>
+  );
+}
+
 function AnimatedNumber({ value }: { value: number }) {
   const [displayValue, setDisplayValue] = useState(0);
 
@@ -283,6 +366,11 @@ export default function Dashboard() {
   );
 
   const criticalRecentCount = recentInspections.filter((inspection) => inspection.risk_level === "critical").length;
+  const totalRiskVolume = riskDistribution.reduce((sum, item) => sum + item.value, 0);
+  const dominantRisk = [...riskDistribution].sort((a, b) => b.value - a.value)[0];
+  const latestTrend = monthlyTrend[monthlyTrend.length - 1]?.denetimler ?? 0;
+  const previousTrend = monthlyTrend[monthlyTrend.length - 2]?.denetimler ?? 0;
+  const momentumDelta = latestTrend - previousTrend;
 
   const priorityHeadline =
     overdueActions > 0
@@ -333,7 +421,8 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-8">
-      <section className="relative overflow-hidden rounded-[24px] border border-cyan-500/20 bg-[radial-gradient(circle_at_top_left,_rgba(34,211,238,0.18),_transparent_32%),radial-gradient(circle_at_80%_20%,_rgba(59,130,246,0.16),_transparent_28%),linear-gradient(135deg,_rgba(15,23,42,0.98),_rgba(10,15,28,0.94))] p-4 shadow-[0_20px_80px_rgba(2,6,23,0.45)] md:rounded-[28px] md:p-8">
+      <RevealBlock>
+        <section className="relative overflow-hidden rounded-[24px] border border-cyan-500/20 bg-[radial-gradient(circle_at_top_left,_rgba(34,211,238,0.18),_transparent_32%),radial-gradient(circle_at_80%_20%,_rgba(59,130,246,0.16),_transparent_28%),linear-gradient(135deg,_rgba(15,23,42,0.98),_rgba(10,15,28,0.94))] p-4 shadow-[0_20px_80px_rgba(2,6,23,0.45)] md:rounded-[28px] md:p-8">
         <div className="absolute inset-0 bg-[linear-gradient(120deg,transparent_0%,rgba(255,255,255,0.04)_45%,transparent_100%)]" />
         <div className="relative grid gap-6 xl:grid-cols-[1.3fr_0.7fr]">
           <div className="space-y-6">
@@ -345,10 +434,11 @@ export default function Dashboard() {
             </div>
 
             <div className="space-y-3">
-              <h1 className="max-w-4xl text-2xl font-semibold tracking-tight text-white sm:text-3xl md:text-5xl">
+              <p className="text-[11px] uppercase tracking-[0.34em] text-cyan-200/70">Executive Safety Narrative</p>
+              <h1 className="max-w-4xl text-2xl font-semibold leading-[1.02] tracking-[-0.04em] text-white sm:text-3xl md:text-5xl xl:text-[3.8rem]">
                 Denetim, risk ve aksiyon yükünü tek bakışta yöneten kurumsal kontrol masası
               </h1>
-              <p className="max-w-2xl text-sm leading-6 text-slate-300 md:text-base">
+              <p className="max-w-2xl text-sm leading-6 text-slate-300 md:text-[15px]">
                 Kritik yoğunluğu, saha hareketini ve kapanış baskısını aynı çerçevede gösterir. Panelin amacı sayı
                 vermek değil, yöneticiye bugün neye odaklanması gerektiğini netleştirmektir.
               </p>
@@ -422,9 +512,11 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
-      </section>
+        </section>
+      </RevealBlock>
 
-      <section className="grid gap-3 md:grid-cols-3">
+      <RevealBlock delay={80}>
+        <section className="grid gap-3 md:grid-cols-3">
         {priorityActions.map((action, index) => (
           <div
             key={action.title}
@@ -438,9 +530,11 @@ export default function Dashboard() {
             <p className="mt-2 text-sm leading-6 opacity-90">{action.detail}</p>
           </div>
         ))}
-      </section>
+        </section>
+      </RevealBlock>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <RevealBlock delay={120}>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {loading ? (
           Array.from({ length: 4 }).map((_, idx) => (
             <div
@@ -487,190 +581,326 @@ export default function Dashboard() {
             </div>
           ))
         )}
-      </div>
+        </div>
+      </RevealBlock>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-        <div className="space-y-6">
-          <div className="rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.9),rgba(9,14,25,0.95))] p-6">
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <h3 className="flex items-center gap-2 text-sm font-semibold text-white">
-                  <PieChartIcon className="h-4 w-4 text-cyan-300" />
-                  Risk Dağılımı Analizi
-                </h3>
-                <p className="mt-1 text-sm text-slate-400">Portföydeki risk yoğunluğunu seviyelere göre özetler.</p>
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.12fr_0.88fr]">
+        <RevealBlock delay={180} className="space-y-6">
+          <section className="grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
+            <div className="rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(14,18,31,0.96),rgba(10,14,24,0.98))] p-6">
+              <p className="text-[11px] uppercase tracking-[0.32em] text-cyan-200/70">Control Thesis</p>
+              <h3 className="mt-3 text-[1.7rem] font-semibold leading-[1.05] tracking-[-0.04em] text-white">
+                Güvenlik operasyonu şu an hangi baskıyla yönetiliyor?
+              </h3>
+              <p className="mt-4 text-sm leading-7 text-slate-300">
+                Panelin merkezinde üç sinyal var: kritik riskin payı, kapanış bekleyen aksiyon yükü ve sahadaki denetim ritmi.
+                Bu üçlü birlikte okunduğunda yöneticinin gerçekten müdahale etmesi gereken tablo ortaya çıkıyor.
+              </p>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-3">
+              <div className="rounded-[26px] border border-white/10 bg-white/[0.035] p-5">
+                <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400">Risk Hacmi</p>
+                <p className="mt-3 text-3xl font-semibold tracking-[-0.04em] text-white">
+                  <AnimatedNumber value={totalRiskVolume} />
+                </p>
+                <p className="mt-2 text-sm text-slate-300">Toplam sınıflandırılmış risk kaydı</p>
               </div>
-              <Badge variant="outline" className="border-white/10 bg-white/5 text-slate-200">
-                {riskDistribution.reduce((sum, item) => sum + item.value, 0)} toplam kayıt
-              </Badge>
+              <div className="rounded-[26px] border border-white/10 bg-white/[0.035] p-5">
+                <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400">Baskın Seviye</p>
+                <p className="mt-3 text-2xl font-semibold tracking-[-0.04em] text-white">
+                  {dominantRisk?.name ?? "Veri yok"}
+                </p>
+                <p className="mt-2 text-sm text-slate-300">
+                  {dominantRisk ? `${dominantRisk.value} kayıt ile en yoğun alan` : "Risk dağılımı oluşmadı"}
+                </p>
+              </div>
+              <div className="rounded-[26px] border border-white/10 bg-white/[0.035] p-5">
+                <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400">Ritim Farkı</p>
+                <p className="mt-3 text-3xl font-semibold tracking-[-0.04em] text-white">
+                  {momentumDelta > 0 ? "+" : ""}
+                  <AnimatedNumber value={Math.abs(momentumDelta)} />
+                </p>
+                <p className="mt-2 text-sm text-slate-300">
+                  {momentumDelta === 0 ? "Son iki ay aynı ritimde" : momentumDelta > 0 ? "Son ay yukarı yönlü" : "Son ay aşağı yönlü"}
+                </p>
+              </div>
             </div>
-          {loading ? (
-            <div className="h-[280px] animate-pulse rounded-xl bg-slate-900/70" />
-          ) : riskDistribution.length > 0 ? (
-            <ResponsiveContainer width="100%" height={280}>
-              <PieChart>
-                <Pie
-                  data={riskDistribution}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  label={(entry) => `${entry.name}: ${entry.value}`}
-                  outerRadius={90}
-                  fill="#8884d8"
-                  dataKey="value"
-                >
-                  {riskDistribution.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="flex h-[280px] flex-col items-center justify-center text-muted-foreground">
-              <AlertCircle className="mb-3 h-12 w-12 opacity-30" />
-              <p className="text-sm">Henüz denetim verisi yok</p>
-              <p className="mt-1 text-xs">İlk denetiminizi oluşturun</p>
-            </div>
-          )}
-          </div>
+          </section>
 
-          <div className="rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.9),rgba(9,14,25,0.95))] p-6">
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <h3 className="flex items-center gap-2 text-sm font-semibold text-white">
-                  <Activity className="h-4 w-4 text-cyan-300" />
-                  Son Denetimler
-                </h3>
-                <p className="mt-1 text-sm text-slate-400">Sahadan yeni gelen kayıtların operasyonel özeti.</p>
-              </div>
-              <Badge variant="outline" className="border-white/10 bg-white/5 text-slate-200">
-                {recentInspections.length} kayıt
-              </Badge>
-            </div>
-            <div className="space-y-3">
-              {loading ? (
-                Array.from({ length: 4 }).map((_, idx) => (
-                  <div
-                    key={idx}
-                    className="rounded-lg border border-border/40 bg-secondary/30 p-4"
-                  >
-                    <div className="mb-2 h-4 w-52 animate-pulse rounded bg-slate-800" />
-                    <div className="h-3 w-36 animate-pulse rounded bg-slate-900" />
-                  </div>
-                ))
-              ) : recentInspections.length > 0 ? (
-                recentInspections.map((inspection) => (
-                  <div
-                    key={inspection.id}
-                    className="flex cursor-pointer items-center justify-between rounded-2xl border border-white/8 bg-white/[0.03] p-4 transition-all hover:border-cyan-400/20 hover:bg-white/[0.05]"
-                  >
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium text-white">
-                        {inspection.location_name || "İsimsiz Lokasyon"}
-                      </p>
-                      <p className="mt-1 text-xs text-slate-400">
-                        {new Date(inspection.created_at).toLocaleDateString("tr-TR", {
-                          day: "numeric",
-                          month: "long",
-                          year: "numeric",
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })}
-                      </p>
-                    </div>
-                    <div className="ml-4 flex shrink-0 items-center gap-2">
-                      <Badge
-                        variant="outline"
-                        className={`text-[10px] ${getRiskColor(inspection.risk_level)}`}
-                      >
-                        {getRiskLabel(inspection.risk_level)}
-                      </Badge>
-                      <Badge
-                        variant="outline"
-                        className={`text-[10px] ${getStatusColor(inspection.status)}`}
-                      >
-                        {getStatusLabel(inspection.status)}
-                      </Badge>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div className="py-12 text-center">
-                  <AlertCircle className="mx-auto mb-3 h-12 w-12 text-muted-foreground opacity-30" />
-                  <p className="text-sm font-medium text-foreground">Henüz denetim bulunmuyor</p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    İlk denetiminizi oluşturmak için "Denetimler" sayfasını ziyaret edin
+          <StorySurface className="rounded-[30px] border border-white/10 bg-[linear-gradient(135deg,rgba(10,14,26,0.98),rgba(18,24,41,0.92))] p-6 md:p-7">
+            <div className="absolute right-0 top-0 h-40 w-40 rounded-full bg-cyan-400/10 blur-3xl" />
+            <div className="relative grid gap-6 lg:grid-cols-[0.42fr_0.58fr]">
+              <div className="space-y-5">
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.28em] text-cyan-200/70">Risk Story Panel</p>
+                  <h3 className="mt-3 text-[1.95rem] font-semibold leading-[1.04] tracking-[-0.045em] text-white">Risk haritası hangi seviyede yoğunlaşıyor?</h3>
+                  <p className="mt-3 text-sm leading-6 text-slate-300">
+                    Grafik burada tek başına bir kart değil. Portföyün hangi yoğunlukta risk ürettiğini, hangi
+                    seviyenin baskın olduğunu ve müdahale tonunu birlikte anlatan bir hikâye paneli.
                   </p>
                 </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        <div className="space-y-6">
-          <div className="rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.9),rgba(9,14,25,0.95))] p-6">
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <h3 className="flex items-center gap-2 text-sm font-semibold text-white">
-                  <BarChart3 className="h-4 w-4 text-cyan-300" />
-                  Aylık Denetim Trendi
-                </h3>
-                <p className="mt-1 text-sm text-slate-400">Son altı ayda saha aktivitesinin yönünü gösterir.</p>
+                <div className="grid gap-3">
+                  {riskDistribution.slice(0, 4).map((item) => (
+                    <div key={item.name} className="rounded-2xl border border-white/8 bg-white/[0.04] p-4">
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-medium text-white">{item.name}</p>
+                        <span className="text-sm text-slate-300">{item.value}</span>
+                      </div>
+                      <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10">
+                        <div
+                          className="h-full rounded-full"
+                          style={{
+                            width: `${riskDistribution.reduce((sum, entry) => sum + entry.value, 0) > 0 ? (item.value / riskDistribution.reduce((sum, entry) => sum + entry.value, 0)) * 100 : 0}%`,
+                            background: item.color,
+                          }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
-              <Badge variant="outline" className="border-white/10 bg-white/5 text-slate-200">
-                6 aylık görünüm
-              </Badge>
-            </div>
-          {loading ? (
-            <div className="h-[280px] animate-pulse rounded-xl bg-slate-900/70" />
-          ) : monthlyTrend.some((m) => m.denetimler > 0) ? (
-            <ResponsiveContainer width="100%" height={280}>
-              <AreaChart data={monthlyTrend}>
-                <defs>
-                  <linearGradient id="colorDenetim" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.8} />
-                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                <XAxis dataKey="month" stroke="#9ca3af" tick={{ fontSize: 11 }} />
-                <YAxis stroke="#9ca3af" tick={{ fontSize: 11 }} allowDecimals={false} />
-                <Tooltip
-                  contentStyle={{
-                    backgroundColor: "#1f2937",
-                    border: "1px solid #374151",
-                    borderRadius: "8px",
-                  }}
-                  labelStyle={{ color: "#f3f4f6" }}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="denetimler"
-                  stroke="#3b82f6"
-                  strokeWidth={2}
-                  fillOpacity={1}
-                  fill="url(#colorDenetim)"
-                />
-              </AreaChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="flex h-[280px] flex-col items-center justify-center text-muted-foreground">
-              <TrendingUp className="mb-3 h-12 w-12 opacity-30" />
-              <p className="text-sm">Henüz trend verisi yok</p>
-              <p className="mt-1 text-xs">Denetimler eklendikçe grafik oluşacak</p>
-            </div>
-          )}
-          </div>
 
-          <div className="rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.9),rgba(9,14,25,0.95))] p-6">
-            <div className="mb-4">
-              <h3 className="text-sm font-semibold text-white">Bildirim Merkezi</h3>
-              <p className="mt-1 text-sm text-slate-400">Canlı uyarılar ve işlem çağrıları burada toplanır.</p>
+              <div className="rounded-[26px] border border-white/8 bg-black/20 p-4">
+                {loading ? (
+                  <div className="h-[340px] animate-pulse rounded-2xl bg-slate-900/70" />
+                ) : riskDistribution.length > 0 ? (
+                  <ResponsiveContainer width="100%" height={340}>
+                    <PieChart>
+                      <Pie
+                        data={riskDistribution}
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={58}
+                        outerRadius={110}
+                        paddingAngle={3}
+                        dataKey="value"
+                        stroke="rgba(255,255,255,0.05)"
+                        strokeWidth={2}
+                      >
+                        {riskDistribution.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.color} />
+                        ))}
+                      </Pie>
+                      <Tooltip />
+                    </PieChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="flex h-[340px] flex-col items-center justify-center text-muted-foreground">
+                    <AlertCircle className="mb-3 h-12 w-12 opacity-30" />
+                    <p className="text-sm">Henüz denetim verisi yok</p>
+                    <p className="mt-1 text-xs">İlk denetiminizi oluşturun</p>
+                  </div>
+                )}
+              </div>
             </div>
-            <NotificationWidget />
-          </div>
-        </div>
+          </StorySurface>
+
+          <StorySurface className="rounded-[30px] border border-white/10 bg-[linear-gradient(135deg,rgba(10,14,26,0.98),rgba(20,26,44,0.92))] p-6 md:p-7">
+            <div className="absolute left-0 top-10 h-32 w-32 rounded-full bg-blue-500/10 blur-3xl" />
+            <div className="relative">
+              <div className="mb-5 flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.28em] text-cyan-200/70">Field Story</p>
+                  <h3 className="mt-3 text-[1.95rem] font-semibold leading-[1.04] tracking-[-0.045em] text-white">Sahadan son gelen hareketler</h3>
+                  <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
+                    Bu alan son denetimleri sadece listelemez; kritik yoğunluğu ve tamamlanma durumunu yöneticinin
+                    tarayabileceği hızlı bir akış halinde gösterir.
+                  </p>
+                </div>
+                <Badge variant="outline" className="border-white/10 bg-white/5 text-slate-200">
+                  {recentInspections.length} kayıt
+                </Badge>
+              </div>
+
+              <div className="relative ml-2 space-y-3 border-l border-white/10 pl-5">
+                {loading ? (
+                  Array.from({ length: 4 }).map((_, idx) => (
+                    <div key={idx} className="rounded-2xl border border-border/40 bg-secondary/30 p-4">
+                      <div className="mb-2 h-4 w-52 animate-pulse rounded bg-slate-800" />
+                      <div className="h-3 w-36 animate-pulse rounded bg-slate-900" />
+                    </div>
+                  ))
+                ) : recentInspections.length > 0 ? (
+                  recentInspections.map((inspection, index) => (
+                    <div
+                      key={inspection.id}
+                      className="relative grid gap-4 rounded-2xl border border-white/8 bg-white/[0.03] p-4 transition-all hover:border-cyan-400/20 hover:bg-white/[0.05] md:grid-cols-[1fr_auto]"
+                    >
+                      <div className="absolute -left-[30px] top-6 flex h-4 w-4 items-center justify-center rounded-full border border-cyan-400/30 bg-slate-950">
+                        <div className={`h-2 w-2 rounded-full ${inspection.risk_level === "critical" ? "bg-red-400" : inspection.risk_level === "high" ? "bg-orange-400" : "bg-cyan-400"}`} />
+                      </div>
+                      <div>
+                        <div className="flex items-center gap-3">
+                          <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">#{String(index + 1).padStart(2, "0")}</p>
+                          <p className="truncate text-sm font-medium text-white">
+                            {inspection.location_name || "İsimsiz Lokasyon"}
+                          </p>
+                        </div>
+                        <p className="mt-2 text-xs text-slate-400">
+                          {new Date(inspection.created_at).toLocaleDateString("tr-TR", {
+                            day: "numeric",
+                            month: "long",
+                            year: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}
+                        </p>
+                        <p className="mt-2 text-xs uppercase tracking-[0.2em] text-slate-500">Saha Günlüğü</p>
+                      </div>
+                      <div className="flex flex-col items-start gap-2 md:items-end">
+                        <div className="flex items-center gap-2 md:justify-end">
+                          <Badge variant="outline" className={`text-[10px] ${getRiskColor(inspection.risk_level)}`}>
+                            {getRiskLabel(inspection.risk_level)}
+                          </Badge>
+                          <Badge variant="outline" className={`text-[10px] ${getStatusColor(inspection.status)}`}>
+                            {getStatusLabel(inspection.status)}
+                          </Badge>
+                        </div>
+                        <p className="text-xs text-slate-500">Denetim akışındaki son kayıt</p>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="py-12 text-center">
+                    <AlertCircle className="mx-auto mb-3 h-12 w-12 text-muted-foreground opacity-30" />
+                    <p className="text-sm font-medium text-foreground">Henüz denetim bulunmuyor</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      İlk denetiminizi oluşturmak için "Denetimler" sayfasını ziyaret edin
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </StorySurface>
+        </RevealBlock>
+
+        <RevealBlock delay={240} className="space-y-6">
+          <section className="grid gap-4 md:grid-cols-[0.74fr_1.26fr]">
+            <div className="rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(12,16,29,0.96),rgba(8,12,22,0.98))] p-6">
+              <p className="text-[11px] uppercase tracking-[0.32em] text-cyan-200/70">Narrative Cue</p>
+              <h3 className="mt-3 text-[1.7rem] font-semibold leading-[1.05] tracking-[-0.04em] text-white">
+                Rapor değil, okuma sırası olan bir yönetim yüzeyi
+              </h3>
+              <p className="mt-4 text-sm leading-7 text-slate-300">
+                Sağ blok trendin yönünü, alttaki bildirim odası ise o yönü bozan gerçek zamanlı sinyalleri gösterir.
+                Böylece yönetici önce eğilimi, sonra kesintiyi okur.
+              </p>
+            </div>
+            <div className="rounded-[28px] border border-white/10 bg-[linear-gradient(135deg,rgba(34,211,238,0.08),rgba(99,102,241,0.08),rgba(15,23,42,0.85))] p-6">
+              <div className="grid gap-4 sm:grid-cols-3">
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400">Son Ay</p>
+                  <p className="mt-2 text-3xl font-semibold tracking-[-0.04em] text-white">{latestTrend}</p>
+                </div>
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400">Önceki Ay</p>
+                  <p className="mt-2 text-3xl font-semibold tracking-[-0.04em] text-white">{previousTrend}</p>
+                </div>
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400">Yorum</p>
+                  <p className="mt-2 text-sm leading-6 text-slate-200">
+                    {momentumDelta > 0
+                      ? "Denetim temposu toparlanıyor."
+                      : momentumDelta < 0
+                        ? "Ritim zayıflıyor, planlama gözden geçirilmeli."
+                        : "Ritim stabil ilerliyor."}
+                  </p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <StorySurface className="rounded-[30px] border border-white/10 bg-[linear-gradient(135deg,rgba(9,13,24,0.98),rgba(19,24,41,0.92))] p-6 md:p-7">
+            <div className="absolute bottom-0 right-0 h-40 w-40 rounded-full bg-indigo-500/10 blur-3xl" />
+            <div className="relative space-y-5">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.28em] text-cyan-200/70">Momentum Story</p>
+                  <h3 className="mt-3 text-[1.95rem] font-semibold leading-[1.04] tracking-[-0.045em] text-white">Denetim ritmi nasıl değişiyor?</h3>
+                  <p className="mt-2 text-sm leading-6 text-slate-300">
+                    Son altı ayın hareketini, ani düşüş veya yükselişleri daha sinematik bir yüzeyde gösteren trend
+                    paneli. Yöneticiye sayıdan çok yön hissi verir.
+                  </p>
+                </div>
+                <Badge variant="outline" className="border-white/10 bg-white/5 text-slate-200">
+                  6 aylık görünüm
+                </Badge>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-3">
+                {monthlyTrend.map((item) => (
+                  <div key={item.month} className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
+                    <p className="text-xs uppercase tracking-[0.16em] text-slate-400">{item.month}</p>
+                    <p className="mt-2 text-2xl font-semibold text-white">{item.denetimler}</p>
+                    <p className="mt-1 text-xs text-slate-400">Tamamlanan denetim</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="rounded-[26px] border border-white/8 bg-black/20 p-4">
+                {loading ? (
+                  <div className="h-[320px] animate-pulse rounded-2xl bg-slate-900/70" />
+                ) : monthlyTrend.some((m) => m.denetimler > 0) ? (
+                  <ResponsiveContainer width="100%" height={320}>
+                    <AreaChart data={monthlyTrend}>
+                      <defs>
+                        <linearGradient id="storyTrend" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#22d3ee" stopOpacity={0.45} />
+                          <stop offset="60%" stopColor="#3b82f6" stopOpacity={0.18} />
+                          <stop offset="95%" stopColor="#3b82f6" stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#243042" />
+                      <XAxis dataKey="month" stroke="#94a3b8" tick={{ fontSize: 11 }} />
+                      <YAxis stroke="#94a3b8" tick={{ fontSize: 11 }} allowDecimals={false} />
+                      <Tooltip
+                        contentStyle={{
+                          backgroundColor: "#111827",
+                          border: "1px solid #243042",
+                          borderRadius: "12px",
+                        }}
+                        labelStyle={{ color: "#f8fafc" }}
+                      />
+                      <Area
+                        type="monotone"
+                        dataKey="denetimler"
+                        stroke="#22d3ee"
+                        strokeWidth={2.5}
+                        fillOpacity={1}
+                        fill="url(#storyTrend)"
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                ) : (
+                  <div className="flex h-[320px] flex-col items-center justify-center text-muted-foreground">
+                    <TrendingUp className="mb-3 h-12 w-12 opacity-30" />
+                    <p className="text-sm">Henüz trend verisi yok</p>
+                    <p className="mt-1 text-xs">Denetimler eklendikçe grafik oluşacak</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          </StorySurface>
+
+          <StorySurface className="rounded-[30px] border border-white/10 bg-[linear-gradient(135deg,rgba(9,13,24,0.98),rgba(19,24,41,0.92))] p-6 md:p-7">
+            <div className="mb-5 flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.28em] text-cyan-200/70">Signal Room</p>
+                <h3 className="mt-3 text-[1.95rem] font-semibold leading-[1.04] tracking-[-0.045em] text-white">Canlı bildirim odası</h3>
+                <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
+                  Operasyon akışını kesen uyarılar, hatırlatmalar ve işlem çağrıları bu bölümde odaklı biçimde toplanır.
+                </p>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-right">
+                <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Kontrol modu</p>
+                <p className="mt-2 text-sm font-medium text-white">Gerçek zamanlı bildirim akışı</p>
+              </div>
+            </div>
+            <div className="rounded-[24px] border border-white/8 bg-black/20">
+              <NotificationWidget />
+            </div>
+          </StorySurface>
+        </RevealBlock>
       </div>
     </div>
   );

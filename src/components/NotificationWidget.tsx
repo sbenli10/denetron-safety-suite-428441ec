@@ -1,5 +1,4 @@
-import { Bell, TrendingUp, AlertTriangle } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+﻿import { Bell, TrendingUp, AlertTriangle, Radar } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useNavigate } from "react-router-dom";
@@ -11,52 +10,75 @@ export default function NotificationWidget() {
   const navigate = useNavigate();
   const { notifications, unreadCount } = useNotifications();
 
-  const criticalNotifications = notifications.filter(
-    n => !n.is_read && (n.priority === "critical" || n.priority === "high")
-  ).slice(0, 3);
+  const criticalNotifications = notifications
+    .filter((notification) => !notification.is_read && (notification.priority === "critical" || notification.priority === "high"))
+    .slice(0, 3);
 
   return (
-    <Card className="bg-gradient-to-br from-blue-500/10 to-purple-500/10 border-blue-500/30">
-      <CardHeader>
-        <CardTitle className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Bell className="h-5 w-5 text-blue-400" />
-            Acil Bildirimler
+    <div className="rounded-[24px] p-5">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="rounded-2xl border border-cyan-400/20 bg-cyan-400/10 p-3 text-cyan-200">
+            <Radar className="h-5 w-5" />
           </div>
+          <div>
+            <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">Control Feed</p>
+            <p className="mt-1 text-lg font-semibold text-white">Acil Bildirimler</p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Badge variant="outline" className="border-white/10 bg-white/[0.04] text-slate-200">
+            <Bell className="mr-2 h-3.5 w-3.5" />
+            {unreadCount} okunmamış
+          </Badge>
           {unreadCount > 0 && (
-            <Badge className="bg-red-600 text-white">
+            <Badge className="border-red-500/20 bg-red-500/15 text-red-100">
               {unreadCount} yeni
             </Badge>
           )}
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-3">
+        </div>
+      </div>
+
+      <div className="mt-5 space-y-3">
         {criticalNotifications.length === 0 ? (
-          <div className="text-center py-6 text-muted-foreground text-sm">
-            ✅ Acil bildirim yok
+          <div className="rounded-2xl border border-white/8 bg-white/[0.03] py-8 text-center text-sm text-slate-400">
+            Kritik veya yüksek öncelikli açık bildirim görünmüyor.
           </div>
         ) : (
           <>
-            {criticalNotifications.map((notification) => (
+            {criticalNotifications.map((notification, index) => (
               <div
                 key={notification.id}
-                className="p-3 bg-slate-900/50 rounded-lg border border-slate-700 hover:border-blue-500/50 transition-colors cursor-pointer"
+                className="group relative overflow-hidden rounded-2xl border border-white/8 bg-white/[0.035] p-4 transition-all hover:border-cyan-400/20 hover:bg-white/[0.05] cursor-pointer"
                 onClick={() => navigate(notification.action_url || "/notifications")}
               >
-                <div className="flex items-start gap-2">
+                <div className="absolute inset-y-4 left-0 w-px bg-gradient-to-b from-cyan-400/0 via-cyan-400/40 to-cyan-400/0" />
+                <div className="flex items-start gap-3 pl-3">
+                  <div className="mt-0.5 rounded-full border border-white/10 bg-slate-950 p-1.5">
+                    <span
+                      className={`block h-2 w-2 rounded-full ${notification.priority === "critical" ? "bg-red-400" : "bg-orange-400"}`}
+                    />
+                  </div>
+
                   {notification.priority === "critical" ? (
-                    <AlertTriangle className="h-4 w-4 text-red-500 mt-0.5" />
+                    <AlertTriangle className="mt-0.5 h-4 w-4 text-red-500" />
                   ) : (
-                    <TrendingUp className="h-4 w-4 text-orange-500 mt-0.5" />
+                    <TrendingUp className="mt-0.5 h-4 w-4 text-orange-500" />
                   )}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold text-white line-clamp-1">
-                      {notification.title}
-                    </p>
-                    <p className="text-xs text-slate-400 line-clamp-2 mt-1">
-                      {notification.message}
-                    </p>
-                    <p className="text-xs text-slate-500 mt-1">
+
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="text-[11px] uppercase tracking-[0.22em] text-slate-500">
+                        Sinyal {String(index + 1).padStart(2, "0")}
+                      </p>
+                      <Badge variant="outline" className="border-white/10 bg-white/[0.04] text-[10px] text-slate-300">
+                        {notification.priority === "critical" ? "Kritik" : "Yüksek"}
+                      </Badge>
+                    </div>
+                    <p className="mt-2 line-clamp-1 text-sm font-semibold text-white">{notification.title}</p>
+                    <p className="mt-1 line-clamp-2 text-xs text-slate-400">{notification.message}</p>
+                    <p className="mt-2 text-xs text-slate-500">
                       {formatDistanceToNow(new Date(notification.created_at), {
                         addSuffix: true,
                         locale: tr,
@@ -69,14 +91,14 @@ export default function NotificationWidget() {
 
             <Button
               variant="outline"
-              className="w-full mt-3"
+              className="mt-3 w-full border-white/10 bg-white/[0.04] text-slate-100 hover:bg-white/[0.08]"
               onClick={() => navigate("/notifications")}
             >
               Tüm Bildirimleri Görüntüle
             </Button>
           </>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }

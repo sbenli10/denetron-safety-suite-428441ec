@@ -666,7 +666,6 @@ export default function Employees() {
         <Card>
           <CardHeader>
             <CardTitle>Tüm Çalışanlar</CardTitle>
-            <CardDescription>Bu ekran artık gerçek `employees` tablosunu gösterir. KKD ekranındaki çalışan listesiyle aynı kaynağı kullanır.</CardDescription>
           </CardHeader>
           <CardContent>
             <Tabs defaultValue="active" className="space-y-4">

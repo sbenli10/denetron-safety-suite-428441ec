@@ -43,8 +43,9 @@ type Inspection = DashboardInspection;
 
 interface MetricCard {
   title: string;
+  subtitle: string;
   value: number;
-  change: string;
+  insight: string;
   icon: React.ReactNode;
   color: string;
 }
@@ -212,60 +213,148 @@ export default function Dashboard() {
 
   const metrics: MetricCard[] = [
     {
-      title: "Aktif Denetim",
+      title: "Aktif Denetim Hattı",
+      subtitle: "Sahada devam eden iş akışı",
       value: activeInspections,
-      change: activeInspections > 0 ? "+2 bu hafta" : "Henüz yok",
+      insight: activeInspections > 0 ? "İş yükü aktif şekilde ilerliyor" : "Yeni denetim planlanmalı",
       icon: <Activity className="h-5 w-5" />,
-      color: "from-blue-500 to-blue-600",
+      color: "from-cyan-500 via-sky-500 to-blue-600",
     },
     {
-      title: "Açık DÖF",
+      title: "Açık DÖF Havuzu",
+      subtitle: "Takip isteyen bulgular",
       value: openFindings,
-      change: openFindings > 0 ? "-1 geçen haftaya göre" : "Yok",
+      insight: openFindings > 0 ? "Kapanış odaklı takip gerekli" : "Açık bulgu baskısı görünmüyor",
       icon: <AlertTriangle className="h-5 w-5" />,
-      color: "from-orange-500 to-orange-600",
+      color: "from-amber-500 via-orange-500 to-orange-600",
     },
     {
-      title: "Kritik Risk %",
+      title: "Kritik Risk Oranı",
+      subtitle: "En yüksek öncelikli risk payı",
       value: criticalRiskPercent,
-      change:
+      insight:
         criticalRiskPercent > 20
-          ? "Yüksek"
+          ? "Yönetim müdahalesi gerekiyor"
           : criticalRiskPercent > 0
-            ? "Normal"
-            : "Yok",
+            ? "Kontrol altında izlenmeli"
+            : "Kritik yoğunluk görünmüyor",
       icon: <AlertCircle className="h-5 w-5" />,
-      color: "from-red-500 to-red-600",
+      color: "from-rose-500 via-red-500 to-red-700",
     },
     {
       title: "Geciken İşlemler",
+      subtitle: "Termin aşımı yaşayan aksiyonlar",
       value: overdueActions,
-      change: overdueActions > 0 ? "Aksiyon gerekli" : "Yok",
+      insight: overdueActions > 0 ? "Hızlı kapanış gerekli" : "Takvim baskısı görünmüyor",
       icon: <Clock className="h-5 w-5" />,
-      color: "from-purple-500 to-purple-600",
+      color: "from-fuchsia-500 via-violet-500 to-purple-600",
     },
   ];
 
+  const operationalScore = Math.max(
+    0,
+    100 - Math.min(criticalRiskPercent * 2, 50) - Math.min(overdueActions * 4, 30) - Math.min(openFindings, 20),
+  );
+
+  const criticalRecentCount = recentInspections.filter((inspection) => inspection.risk_level === "critical").length;
+
+  const priorityHeadline =
+    overdueActions > 0
+      ? `${overdueActions} geciken işlem bugün öncelik istiyor`
+      : openFindings > 0
+        ? `${openFindings} açık DÖF için kapanış takibi gerekli`
+        : "Operasyon görünümü dengeli, yeni denetim planlamasına geçilebilir";
+
   return (
     <div className="space-y-8">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold text-foreground">İSG Yönetim Paneli</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Gerçek zamanlı denetim ve risk analizi
-          </p>
+      <section className="relative overflow-hidden rounded-[28px] border border-cyan-500/20 bg-[radial-gradient(circle_at_top_left,_rgba(34,211,238,0.18),_transparent_32%),radial-gradient(circle_at_80%_20%,_rgba(59,130,246,0.16),_transparent_28%),linear-gradient(135deg,_rgba(15,23,42,0.98),_rgba(10,15,28,0.94))] p-6 shadow-[0_20px_80px_rgba(2,6,23,0.45)] md:p-8">
+        <div className="absolute inset-0 bg-[linear-gradient(120deg,transparent_0%,rgba(255,255,255,0.04)_45%,transparent_100%)]" />
+        <div className="relative grid gap-6 xl:grid-cols-[1.3fr_0.7fr]">
+          <div className="space-y-6">
+            <div className="flex flex-wrap items-center gap-3">
+              <Badge className="border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-cyan-100">İSG Yönetim Paneli</Badge>
+              <Badge variant="outline" className="border-white/10 bg-white/5 px-3 py-1 text-slate-200">
+                Operasyon skoru: {operationalScore}/100
+              </Badge>
+            </div>
+
+            <div className="space-y-3">
+              <h1 className="max-w-4xl text-3xl font-semibold tracking-tight text-white md:text-5xl">
+                Denetim, risk ve aksiyon yükünü tek bakışta yöneten kurumsal kontrol masası
+              </h1>
+              <p className="max-w-2xl text-sm leading-6 text-slate-300 md:text-base">
+                Kritik yoğunluğu, saha hareketini ve kapanış baskısını aynı çerçevede gösterir. Panelin amacı sayı
+                vermek değil, yöneticiye bugün neye odaklanması gerektiğini netleştirmektir.
+              </p>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-3">
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
+                <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Bugünün Önceliği</p>
+                <p className="mt-3 text-sm font-medium leading-6 text-white">{priorityHeadline}</p>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
+                <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Kritik Sonuçlar</p>
+                <p className="mt-3 text-3xl font-semibold text-white">{criticalRecentCount}</p>
+                <p className="mt-1 text-sm text-slate-300">Son denetimlerde kritik risk etiketi alan kayıtlar</p>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
+                <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Operasyon Yorumu</p>
+                <p className="mt-3 text-sm font-medium leading-6 text-white">
+                  {operationalScore >= 80
+                    ? "Sistem dengeli görünüyor, standart takiple ilerlenebilir."
+                    : operationalScore >= 60
+                      ? "Panel kontrollü ama dikkat isteyen alanlar var."
+                      : "Yük baskısı yüksek, kritik akışlar ayrıştırılmalı."}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-col justify-between gap-4">
+            <div className="rounded-[24px] border border-white/10 bg-black/20 p-5 backdrop-blur">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Canlı Durum</p>
+                  <p className="mt-2 text-4xl font-semibold text-white">{operationalScore}</p>
+                </div>
+                <Button
+                  onClick={handleRefresh}
+                  disabled={refreshing}
+                  variant="outline"
+                  size="sm"
+                  className="gap-2 border-white/10 bg-white/5 text-slate-100 hover:bg-white/10"
+                >
+                  <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+                  Yenile
+                </Button>
+              </div>
+              <div className="mt-5 h-2 overflow-hidden rounded-full bg-white/10">
+                <div
+                  className="h-full rounded-full bg-[linear-gradient(90deg,#22d3ee_0%,#3b82f6_45%,#8b5cf6_100%)]"
+                  style={{ width: `${operationalScore}%` }}
+                />
+              </div>
+              <p className="mt-3 text-sm text-slate-300">
+                Skor; kritik risk oranı, geciken işlemler ve açık DÖF yoğunluğuna göre dinamik hesaplanır.
+              </p>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-1">
+              <div className="rounded-2xl border border-emerald-400/10 bg-emerald-400/5 p-4">
+                <p className="text-xs uppercase tracking-[0.2em] text-emerald-200/70">Saha Akışı</p>
+                <p className="mt-2 text-2xl font-semibold text-white">{activeInspections}</p>
+                <p className="mt-1 text-sm text-slate-300">Aktif yürüyen denetim</p>
+              </div>
+              <div className="rounded-2xl border border-amber-400/10 bg-amber-400/5 p-4">
+                <p className="text-xs uppercase tracking-[0.2em] text-amber-200/70">Kapanış Baskısı</p>
+                <p className="mt-2 text-2xl font-semibold text-white">{openFindings + overdueActions}</p>
+                <p className="mt-1 text-sm text-slate-300">Açık bulgu + geciken işlem toplamı</p>
+              </div>
+            </div>
+          </div>
         </div>
-        <Button
-          onClick={handleRefresh}
-          disabled={refreshing}
-          variant="outline"
-          size="sm"
-          className="gap-2"
-        >
-          <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
-          Yenile
-        </Button>
-      </div>
+      </section>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {loading ? (
@@ -288,31 +377,47 @@ export default function Dashboard() {
           metrics.map((metric, idx) => (
             <div
               key={idx}
-              className="glass-card space-y-3 border border-primary/20 p-5 transition-all hover:border-primary/40"
+              className="group relative overflow-hidden rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.92),rgba(8,12,22,0.96))] p-5 transition-all hover:-translate-y-0.5 hover:border-cyan-400/20"
             >
-              <div className="flex items-center justify-between">
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  {metric.title}
-                </h3>
-                <div className={`rounded-lg bg-gradient-to-br p-2.5 text-white ${metric.color}`}>
+              <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/30 to-transparent opacity-0 transition-opacity group-hover:opacity-100" />
+              <div className="flex items-start justify-between gap-4">
+                <div className="space-y-2">
+                  <p className="text-xs uppercase tracking-[0.2em] text-slate-400">{metric.title}</p>
+                  <p className="text-sm text-slate-300">{metric.subtitle}</p>
+                </div>
+                <div className={`rounded-2xl bg-gradient-to-br p-3 text-white shadow-lg ${metric.color}`}>
                   {metric.icon}
                 </div>
               </div>
-              <div className="space-y-1">
-                <p className="text-3xl font-bold text-foreground">{metric.value}</p>
-                <p className="text-xs font-medium text-muted-foreground">{metric.change}</p>
+              <div className="mt-6 space-y-2">
+                <p className="text-4xl font-semibold tracking-tight text-white">{metric.value}</p>
+                <p className="text-sm text-slate-300">{metric.insight}</p>
+              </div>
+              <div className="mt-5 h-px bg-gradient-to-r from-white/0 via-white/10 to-white/0" />
+              <div className="mt-4 flex items-center justify-between text-xs text-slate-400">
+                <span>Durum sinyali</span>
+                <span>{metric.value > 0 ? "Canlı" : "Beklemede"}</span>
               </div>
             </div>
           ))
         )}
       </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-        <div className="glass-card border border-primary/20 p-6">
-          <h3 className="mb-4 flex items-center gap-2 text-sm font-semibold text-foreground">
-            <PieChartIcon className="h-4 w-4 text-primary" />
-            Risk Dağılımı Analizi
-          </h3>
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1.1fr_0.9fr]">
+        <div className="space-y-6">
+          <div className="rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.9),rgba(9,14,25,0.95))] p-6">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <h3 className="flex items-center gap-2 text-sm font-semibold text-white">
+                  <PieChartIcon className="h-4 w-4 text-cyan-300" />
+                  Risk Dağılımı Analizi
+                </h3>
+                <p className="mt-1 text-sm text-slate-400">Portföydeki risk yoğunluğunu seviyelere göre özetler.</p>
+              </div>
+              <Badge variant="outline" className="border-white/10 bg-white/5 text-slate-200">
+                {riskDistribution.reduce((sum, item) => sum + item.value, 0)} toplam kayıt
+              </Badge>
+            </div>
           {loading ? (
             <div className="h-[280px] animate-pulse rounded-xl bg-slate-900/70" />
           ) : riskDistribution.length > 0 ? (
@@ -342,13 +447,95 @@ export default function Dashboard() {
               <p className="mt-1 text-xs">İlk denetiminizi oluşturun</p>
             </div>
           )}
+          </div>
+
+          <div className="rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.9),rgba(9,14,25,0.95))] p-6">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <h3 className="flex items-center gap-2 text-sm font-semibold text-white">
+                  <Activity className="h-4 w-4 text-cyan-300" />
+                  Son Denetimler
+                </h3>
+                <p className="mt-1 text-sm text-slate-400">Sahadan yeni gelen kayıtların operasyonel özeti.</p>
+              </div>
+              <Badge variant="outline" className="border-white/10 bg-white/5 text-slate-200">
+                {recentInspections.length} kayıt
+              </Badge>
+            </div>
+            <div className="space-y-3">
+              {loading ? (
+                Array.from({ length: 4 }).map((_, idx) => (
+                  <div
+                    key={idx}
+                    className="rounded-lg border border-border/40 bg-secondary/30 p-4"
+                  >
+                    <div className="mb-2 h-4 w-52 animate-pulse rounded bg-slate-800" />
+                    <div className="h-3 w-36 animate-pulse rounded bg-slate-900" />
+                  </div>
+                ))
+              ) : recentInspections.length > 0 ? (
+                recentInspections.map((inspection) => (
+                  <div
+                    key={inspection.id}
+                    className="flex cursor-pointer items-center justify-between rounded-2xl border border-white/8 bg-white/[0.03] p-4 transition-all hover:border-cyan-400/20 hover:bg-white/[0.05]"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-white">
+                        {inspection.location_name || "İsimsiz Lokasyon"}
+                      </p>
+                      <p className="mt-1 text-xs text-slate-400">
+                        {new Date(inspection.created_at).toLocaleDateString("tr-TR", {
+                          day: "numeric",
+                          month: "long",
+                          year: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </p>
+                    </div>
+                    <div className="ml-4 flex shrink-0 items-center gap-2">
+                      <Badge
+                        variant="outline"
+                        className={`text-[10px] ${getRiskColor(inspection.risk_level)}`}
+                      >
+                        {getRiskLabel(inspection.risk_level)}
+                      </Badge>
+                      <Badge
+                        variant="outline"
+                        className={`text-[10px] ${getStatusColor(inspection.status)}`}
+                      >
+                        {getStatusLabel(inspection.status)}
+                      </Badge>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="py-12 text-center">
+                  <AlertCircle className="mx-auto mb-3 h-12 w-12 text-muted-foreground opacity-30" />
+                  <p className="text-sm font-medium text-foreground">Henüz denetim bulunmuyor</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    İlk denetiminizi oluşturmak için "Denetimler" sayfasını ziyaret edin
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
 
-        <div className="glass-card border border-primary/20 p-6">
-          <h3 className="mb-4 flex items-center gap-2 text-sm font-semibold text-foreground">
-            <BarChart3 className="h-4 w-4 text-primary" />
-            Aylık Denetim Trendi (Son 6 Ay)
-          </h3>
+        <div className="space-y-6">
+          <div className="rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.9),rgba(9,14,25,0.95))] p-6">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <h3 className="flex items-center gap-2 text-sm font-semibold text-white">
+                  <BarChart3 className="h-4 w-4 text-cyan-300" />
+                  Aylık Denetim Trendi
+                </h3>
+                <p className="mt-1 text-sm text-slate-400">Son altı ayda saha aktivitesinin yönünü gösterir.</p>
+              </div>
+              <Badge variant="outline" className="border-white/10 bg-white/5 text-slate-200">
+                6 aylık görünüm
+              </Badge>
+            </div>
           {loading ? (
             <div className="h-[280px] animate-pulse rounded-xl bg-slate-900/70" />
           ) : monthlyTrend.some((m) => m.denetimler > 0) ? (
@@ -388,74 +575,15 @@ export default function Dashboard() {
               <p className="mt-1 text-xs">Denetimler eklendikçe grafik oluşacak</p>
             </div>
           )}
-        </div>
+          </div>
 
-        <div>
-          <NotificationWidget />
-        </div>
-      </div>
-
-      <div className="glass-card border border-primary/20 p-6">
-        <h3 className="mb-4 flex items-center gap-2 text-sm font-semibold text-foreground">
-          <Activity className="h-4 w-4 text-primary" />
-          Son Denetimler
-        </h3>
-        <div className="space-y-3">
-          {loading ? (
-            Array.from({ length: 4 }).map((_, idx) => (
-              <div
-                key={idx}
-                className="rounded-lg border border-border/40 bg-secondary/30 p-4"
-              >
-                <div className="mb-2 h-4 w-52 animate-pulse rounded bg-slate-800" />
-                <div className="h-3 w-36 animate-pulse rounded bg-slate-900" />
-              </div>
-            ))
-          ) : recentInspections.length > 0 ? (
-            recentInspections.map((inspection) => (
-              <div
-                key={inspection.id}
-                className="flex cursor-pointer items-center justify-between rounded-lg border border-border/50 bg-secondary/50 p-4 transition-all hover:border-primary/30"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-foreground">
-                    {inspection.location_name || "İsimsiz Lokasyon"}
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {new Date(inspection.created_at).toLocaleDateString("tr-TR", {
-                      day: "numeric",
-                      month: "long",
-                      year: "numeric",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                  </p>
-                </div>
-                <div className="ml-4 flex shrink-0 items-center gap-2">
-                  <Badge
-                    variant="outline"
-                    className={`text-[10px] ${getRiskColor(inspection.risk_level)}`}
-                  >
-                    {getRiskLabel(inspection.risk_level)}
-                  </Badge>
-                  <Badge
-                    variant="outline"
-                    className={`text-[10px] ${getStatusColor(inspection.status)}`}
-                  >
-                    {getStatusLabel(inspection.status)}
-                  </Badge>
-                </div>
-              </div>
-            ))
-          ) : (
-            <div className="py-12 text-center">
-              <AlertCircle className="mx-auto mb-3 h-12 w-12 text-muted-foreground opacity-30" />
-              <p className="text-sm font-medium text-foreground">Henüz denetim bulunmuyor</p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                İlk denetiminizi oluşturmak için "Denetimler" sayfasını ziyaret edin
-              </p>
+          <div className="rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.9),rgba(9,14,25,0.95))] p-6">
+            <div className="mb-4">
+              <h3 className="text-sm font-semibold text-white">Bildirim Merkezi</h3>
+              <p className="mt-1 text-sm text-slate-400">Canlı uyarılar ve işlem çağrıları burada toplanır.</p>
             </div>
-          )}
+            <NotificationWidget />
+          </div>
         </div>
       </div>
     </div>

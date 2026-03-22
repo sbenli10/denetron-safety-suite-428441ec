@@ -31,6 +31,7 @@ import {
   Briefcase,
   FileSearch,
   Map,
+  CalendarClock,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useAuth } from "@/contexts/AuthContext";
@@ -176,6 +177,12 @@ export function AppSidebar() {
           title: "İş Kazası / Ramak Kala",
           url: "/incidents",
           icon: ShieldAlert,
+          badge: "NEW",
+        },
+        {
+          title: "Periyodik Kontrol",
+          url: "/periodic-controls",
+          icon: CalendarClock,
           badge: "NEW",
         },
       ],

@@ -97,6 +97,8 @@ const AnnualPlans = lazy(() => import("@/pages/AnnualPlans"));
 const Findings = lazy(() => import("@/pages/Findings"));
 const Employees = lazy(() => import("@/pages/Employees"));
 const PPEManagement = lazy(() => import("@/pages/PPEManagement"));
+const PeriodicControls = lazy(() => import("@/pages/PeriodicControls"));
+const PeriodicControlsGuide = lazy(() => import("@/pages/PeriodicControlsGuide"));
 
 // ============================================
 // QUERY CLIENT CONFIGURATION
@@ -309,6 +311,8 @@ const App = () => (
                           <Route path="/employees" element={<Employees />} />
                           <Route path="/employees/:id" element={<Employees />} />
                           <Route path="/ppe-management" element={<PPEManagement />} />
+                          <Route path="/periodic-controls" element={<PeriodicControls />} />
+                          <Route path="/periodic-controls/guide" element={<PeriodicControlsGuide />} />
 
                           {/* ============================================ */}
                           {/* BLUEPRINT ANALYZER */}

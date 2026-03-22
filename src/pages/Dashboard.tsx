@@ -50,6 +50,32 @@ interface MetricCard {
   color: string;
 }
 
+function AnimatedNumber({ value }: { value: number }) {
+  const [displayValue, setDisplayValue] = useState(0);
+
+  useEffect(() => {
+    const duration = 700;
+    const steps = 24;
+    const increment = value / steps;
+    let currentStep = 0;
+
+    const timer = window.setInterval(() => {
+      currentStep += 1;
+      if (currentStep >= steps) {
+        setDisplayValue(value);
+        window.clearInterval(timer);
+        return;
+      }
+
+      setDisplayValue(Math.round(increment * currentStep));
+    }, duration / steps);
+
+    return () => window.clearInterval(timer);
+  }, [value]);
+
+  return <>{displayValue}</>;
+}
+
 export default function Dashboard() {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
@@ -265,9 +291,49 @@ export default function Dashboard() {
         ? `${openFindings} açık DÖF için kapanış takibi gerekli`
         : "Operasyon görünümü dengeli, yeni denetim planlamasına geçilebilir";
 
+  const priorityActions = [
+    {
+      title: "Geciken İşlemler",
+      detail:
+        overdueActions > 0
+          ? `${overdueActions} kayıt için kapanış aksiyonu planlanmalı`
+          : "Geciken işlem görünmüyor",
+      tone:
+        overdueActions > 0
+          ? "border-red-500/20 bg-red-500/10 text-red-100"
+          : "border-emerald-500/20 bg-emerald-500/10 text-emerald-100",
+    },
+    {
+      title: "Açık DÖF Akışı",
+      detail:
+        openFindings > 0
+          ? `${openFindings} açık kayıt için sorumlu ve termin kontrolü gerekli`
+          : "Açık DÖF baskısı görünmüyor",
+      tone:
+        openFindings > 0
+          ? "border-amber-500/20 bg-amber-500/10 text-amber-100"
+          : "border-emerald-500/20 bg-emerald-500/10 text-emerald-100",
+    },
+    {
+      title: "Kritik Risk Yoğunluğu",
+      detail:
+        criticalRiskPercent > 20
+          ? `Kritik oran %${criticalRiskPercent}; yönetim değerlendirmesi gerekli`
+          : criticalRiskPercent > 0
+            ? `Kritik oran %${criticalRiskPercent}; kontrollü takip önerilir`
+            : "Kritik risk baskısı görünmüyor",
+      tone:
+        criticalRiskPercent > 20
+          ? "border-rose-500/20 bg-rose-500/10 text-rose-100"
+          : criticalRiskPercent > 0
+            ? "border-orange-500/20 bg-orange-500/10 text-orange-100"
+            : "border-emerald-500/20 bg-emerald-500/10 text-emerald-100",
+    },
+  ];
+
   return (
     <div className="space-y-8">
-      <section className="relative overflow-hidden rounded-[28px] border border-cyan-500/20 bg-[radial-gradient(circle_at_top_left,_rgba(34,211,238,0.18),_transparent_32%),radial-gradient(circle_at_80%_20%,_rgba(59,130,246,0.16),_transparent_28%),linear-gradient(135deg,_rgba(15,23,42,0.98),_rgba(10,15,28,0.94))] p-6 shadow-[0_20px_80px_rgba(2,6,23,0.45)] md:p-8">
+      <section className="relative overflow-hidden rounded-[24px] border border-cyan-500/20 bg-[radial-gradient(circle_at_top_left,_rgba(34,211,238,0.18),_transparent_32%),radial-gradient(circle_at_80%_20%,_rgba(59,130,246,0.16),_transparent_28%),linear-gradient(135deg,_rgba(15,23,42,0.98),_rgba(10,15,28,0.94))] p-4 shadow-[0_20px_80px_rgba(2,6,23,0.45)] md:rounded-[28px] md:p-8">
         <div className="absolute inset-0 bg-[linear-gradient(120deg,transparent_0%,rgba(255,255,255,0.04)_45%,transparent_100%)]" />
         <div className="relative grid gap-6 xl:grid-cols-[1.3fr_0.7fr]">
           <div className="space-y-6">
@@ -279,7 +345,7 @@ export default function Dashboard() {
             </div>
 
             <div className="space-y-3">
-              <h1 className="max-w-4xl text-3xl font-semibold tracking-tight text-white md:text-5xl">
+              <h1 className="max-w-4xl text-2xl font-semibold tracking-tight text-white sm:text-3xl md:text-5xl">
                 Denetim, risk ve aksiyon yükünü tek bakışta yöneten kurumsal kontrol masası
               </h1>
               <p className="max-w-2xl text-sm leading-6 text-slate-300 md:text-base">
@@ -288,17 +354,17 @@ export default function Dashboard() {
               </p>
             </div>
 
-            <div className="grid gap-4 md:grid-cols-3">
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
+            <div className="grid gap-3 md:grid-cols-3">
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur transition-transform duration-300 hover:-translate-y-0.5">
                 <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Bugünün Önceliği</p>
                 <p className="mt-3 text-sm font-medium leading-6 text-white">{priorityHeadline}</p>
               </div>
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur transition-transform duration-300 hover:-translate-y-0.5">
                 <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Kritik Sonuçlar</p>
-                <p className="mt-3 text-3xl font-semibold text-white">{criticalRecentCount}</p>
+                <p className="mt-3 text-3xl font-semibold text-white"><AnimatedNumber value={criticalRecentCount} /></p>
                 <p className="mt-1 text-sm text-slate-300">Son denetimlerde kritik risk etiketi alan kayıtlar</p>
               </div>
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur transition-transform duration-300 hover:-translate-y-0.5">
                 <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Operasyon Yorumu</p>
                 <p className="mt-3 text-sm font-medium leading-6 text-white">
                   {operationalScore >= 80
@@ -312,11 +378,13 @@ export default function Dashboard() {
           </div>
 
           <div className="flex flex-col justify-between gap-4">
-            <div className="rounded-[24px] border border-white/10 bg-black/20 p-5 backdrop-blur">
+            <div className="rounded-[22px] border border-white/10 bg-black/20 p-4 backdrop-blur md:rounded-[24px] md:p-5">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Canlı Durum</p>
-                  <p className="mt-2 text-4xl font-semibold text-white">{operationalScore}</p>
+                  <p className="mt-2 text-3xl font-semibold text-white md:text-4xl">
+                    <AnimatedNumber value={operationalScore} />
+                  </p>
                 </div>
                 <Button
                   onClick={handleRefresh}
@@ -341,19 +409,35 @@ export default function Dashboard() {
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-1">
-              <div className="rounded-2xl border border-emerald-400/10 bg-emerald-400/5 p-4">
+              <div className="rounded-2xl border border-emerald-400/10 bg-emerald-400/5 p-4 transition-transform duration-300 hover:-translate-y-0.5">
                 <p className="text-xs uppercase tracking-[0.2em] text-emerald-200/70">Saha Akışı</p>
-                <p className="mt-2 text-2xl font-semibold text-white">{activeInspections}</p>
+                <p className="mt-2 text-2xl font-semibold text-white"><AnimatedNumber value={activeInspections} /></p>
                 <p className="mt-1 text-sm text-slate-300">Aktif yürüyen denetim</p>
               </div>
-              <div className="rounded-2xl border border-amber-400/10 bg-amber-400/5 p-4">
+              <div className="rounded-2xl border border-amber-400/10 bg-amber-400/5 p-4 transition-transform duration-300 hover:-translate-y-0.5">
                 <p className="text-xs uppercase tracking-[0.2em] text-amber-200/70">Kapanış Baskısı</p>
-                <p className="mt-2 text-2xl font-semibold text-white">{openFindings + overdueActions}</p>
+                <p className="mt-2 text-2xl font-semibold text-white"><AnimatedNumber value={openFindings + overdueActions} /></p>
                 <p className="mt-1 text-sm text-slate-300">Açık bulgu + geciken işlem toplamı</p>
               </div>
             </div>
           </div>
         </div>
+      </section>
+
+      <section className="grid gap-3 md:grid-cols-3">
+        {priorityActions.map((action, index) => (
+          <div
+            key={action.title}
+            className={`rounded-2xl border p-4 shadow-[0_10px_30px_rgba(2,6,23,0.18)] transition-transform duration-300 hover:-translate-y-0.5 ${action.tone}`}
+            style={{ animationDelay: `${index * 80}ms` }}
+          >
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-semibold">{action.title}</p>
+              <span className="h-2.5 w-2.5 rounded-full bg-current opacity-80 animate-pulse" />
+            </div>
+            <p className="mt-2 text-sm leading-6 opacity-90">{action.detail}</p>
+          </div>
+        ))}
       </section>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -390,7 +474,9 @@ export default function Dashboard() {
                 </div>
               </div>
               <div className="mt-6 space-y-2">
-                <p className="text-4xl font-semibold tracking-tight text-white">{metric.value}</p>
+                <p className="text-4xl font-semibold tracking-tight text-white">
+                  <AnimatedNumber value={metric.value} />
+                </p>
                 <p className="text-sm text-slate-300">{metric.insight}</p>
               </div>
               <div className="mt-5 h-px bg-gradient-to-r from-white/0 via-white/10 to-white/0" />

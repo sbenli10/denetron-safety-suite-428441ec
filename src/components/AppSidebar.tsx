@@ -32,6 +32,7 @@ import {
   FileSearch,
   Map,
   CalendarClock,
+  HeartPulse,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useAuth } from "@/contexts/AuthContext";
@@ -202,6 +203,12 @@ export function AppSidebar() {
           title: "KKD Zimmet",
           url: "/ppe-management",
           icon: Shield,
+          badge: "NEW",
+        },
+        {
+          title: "Sağlık Gözetimi",
+          url: "/health-surveillance",
+          icon: HeartPulse,
           badge: "NEW",
         },
         {
@@ -684,6 +691,9 @@ export function AppSidebar() {
     </Sidebar>
   );
 }
+
+
+
 
 
 

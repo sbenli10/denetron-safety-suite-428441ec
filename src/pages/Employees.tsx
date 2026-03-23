@@ -56,6 +56,16 @@ type EmployeePpeRecord = {
   item_name: string;
 };
 
+type EmployeeHealthRecord = {
+  id: string;
+  exam_type: string;
+  exam_date: string;
+  next_exam_date: string | null;
+  result_status: string;
+  status: string;
+  physician_name: string | null;
+};
+
 const emptyForm: EmployeeFormState = {
   companyId: "",
   firstName: "",
@@ -142,6 +152,7 @@ export default function Employees() {
   const [search, setSearch] = useState("");
   const [companyFilter, setCompanyFilter] = useState("ALL");
   const [employeePpeItems, setEmployeePpeItems] = useState<EmployeePpeRecord[]>([]);
+  const [employeeHealthItems, setEmployeeHealthItems] = useState<EmployeeHealthRecord[]>([]);
   const addInputRef = useRef<HTMLInputElement | null>(null);
   const removeInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -190,6 +201,7 @@ export default function Employees() {
     const loadEmployeePpe = async () => {
       if (!id) {
         setEmployeePpeItems([]);
+        setEmployeeHealthItems([]);
         return;
       }
 
@@ -217,6 +229,30 @@ export default function Employees() {
     };
 
     void loadEmployeePpe();
+
+    const loadEmployeeHealth = async () => {
+      if (!id) return;
+      const { data, error } = await (supabase as any)
+        .from("health_surveillance_records")
+        .select("id, exam_type, exam_date, next_exam_date, result_status, status, physician_name")
+        .eq("employee_id", id)
+        .order("exam_date", { ascending: false });
+      if (error) {
+        toast.error("Çalışanın sağlık gözetimi verileri yüklenemedi.");
+        return;
+      }
+      setEmployeeHealthItems(((data || []) as Array<Record<string, unknown>>).map((row) => ({
+        id: String(row.id),
+        exam_type: String(row.exam_type || ""),
+        exam_date: String(row.exam_date || ""),
+        next_exam_date: row.next_exam_date ? String(row.next_exam_date) : null,
+        result_status: String(row.result_status || ""),
+        status: String(row.status || ""),
+        physician_name: row.physician_name ? String(row.physician_name) : null,
+      })));
+    };
+
+    void loadEmployeeHealth();
   }, [id]);
 
   const selectedEmployee = useMemo(() => employees.find((item) => item.id === id) || null, [employees, id]);
@@ -607,6 +643,50 @@ export default function Employees() {
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <div>
+                  <p className="text-sm font-medium text-muted-foreground">Sağlık Gözetimi Özeti</p>
+                  <p className="text-sm text-slate-400">Son muayene kayıtları ve sıradaki tarih.</p>
+                </div>
+                <Button variant="outline" className="gap-2" onClick={() => navigate(`/health-surveillance?employeeId=${id}`)}>
+                  <Shield className="h-4 w-4" />
+                  Sağlık Gözetimine Git
+                </Button>
+              </div>
+
+              <div className="rounded-2xl border border-slate-800">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Muayene</TableHead>
+                      <TableHead>Tarih</TableHead>
+                      <TableHead>Sonraki</TableHead>
+                      <TableHead>Durum</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {employeeHealthItems.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={4} className="py-10 text-center text-sm text-muted-foreground">
+                          Bu çalışan için sağlık gözetimi kaydı bulunamadı.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      employeeHealthItems.slice(0, 4).map((item) => (
+                        <TableRow key={item.id}>
+                          <TableCell>{item.exam_type}</TableCell>
+                          <TableCell>{item.exam_date}</TableCell>
+                          <TableCell>{item.next_exam_date || "-"}</TableCell>
+                          <TableCell><Badge variant="outline">{item.status}</Badge></TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <div>
                   <p className="text-sm font-medium text-muted-foreground">KKD Zimmetleri</p>
                   <p className="text-sm text-slate-400">Bu çalışana bağlı aktif ve geçmiş KKD kayıtları.</p>
                 </div>
@@ -811,3 +891,5 @@ export default function Employees() {
     </div>
   );
 }
+
+

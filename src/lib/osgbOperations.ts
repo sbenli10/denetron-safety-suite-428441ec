@@ -285,6 +285,21 @@ export interface OsgbOperationalSummary {
   };
 }
 
+export interface OsgbDashboardOperationalSummary {
+  finance: {
+    pendingAmount: number;
+    overdueCount: number;
+    overdueAmount: number;
+    calendarItemCount: number;
+    monthlyTrendMonths: number;
+  };
+  documents: {
+    warningCount: number;
+    expiredCount: number;
+    monthlyTrendMonths: number;
+  };
+}
+
 export interface PagedResult<T> {
   rows: T[];
   count: number;
@@ -909,6 +924,60 @@ export const getOsgbOperationalSummary = async (userId: string): Promise<OsgbOpe
       expiredCount: documentRows.filter((item) => item.status === "expired").length,
       expiringSoonCount: documentRows.filter((item) => item.status === "warning" || item.status === "expired").length,
       monthlyTrend: documentMonthlyTrend,
+    },
+  };
+};
+
+export const getOsgbDashboardOperationalSummary = async (userId: string): Promise<OsgbDashboardOperationalSummary> => {
+  const [financeResponse, documentResponse] = await Promise.all([
+    supabase
+      .from("osgb_finance")
+      .select("due_date, invoice_date, amount, status")
+      .eq("user_id", userId),
+    supabase
+      .from("osgb_document_tracking")
+      .select("expiry_date, created_at, status")
+      .eq("user_id", userId),
+  ]);
+
+  if (financeResponse.error) throw financeResponse.error;
+  if (documentResponse.error) throw documentResponse.error;
+
+  const financeRows = (financeResponse.data ?? []) as Array<{
+    due_date: string | null;
+    invoice_date: string | null;
+    amount: number;
+    status: OsgbFinanceRecord["status"];
+  }>;
+  const documentRows = (documentResponse.data ?? []) as Array<{
+    expiry_date: string | null;
+    created_at: string;
+    status: OsgbDocumentRecord["status"];
+  }>;
+
+  const now = new Date();
+  const nextWindow = new Date();
+  nextWindow.setDate(nextWindow.getDate() + 60);
+
+  const calendarItemCount = financeRows.filter((record) => {
+    if (!record.due_date) return false;
+    const dueDate = new Date(record.due_date);
+    if (Number.isNaN(dueDate.getTime())) return false;
+    return record.status === "overdue" || (dueDate >= now && dueDate <= nextWindow);
+  }).length;
+
+  return {
+    finance: {
+      pendingAmount: financeRows.filter((item) => item.status === "pending").reduce((sum, item) => sum + item.amount, 0),
+      overdueCount: financeRows.filter((item) => item.status === "overdue").length,
+      overdueAmount: financeRows.filter((item) => item.status === "overdue").reduce((sum, item) => sum + item.amount, 0),
+      calendarItemCount: Math.min(calendarItemCount, 12),
+      monthlyTrendMonths: 6,
+    },
+    documents: {
+      warningCount: documentRows.filter((item) => item.status === "warning").length,
+      expiredCount: documentRows.filter((item) => item.status === "expired").length,
+      monthlyTrendMonths: 6,
     },
   };
 };

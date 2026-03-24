@@ -1,4 +1,4 @@
-export type RiskClass = 
+﻿export type RiskClass = 
   | "Kabul Edilebilir" 
   | "Olası" 
   | "Önemli" 
@@ -8,7 +8,6 @@ export type RiskClass =
 export type AssessmentStatus = "draft" | "completed" | "approved";
 export type RiskItemStatus = "open" | "in_progress" | "completed";
 
-// ✅ YENİ: 2 Aşamalı Fine-Kinney için genişletilmiş RiskItem
 export interface RiskItem {
   id: string;
   created_at: string;

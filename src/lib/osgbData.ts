@@ -73,6 +73,15 @@ export interface OsgbDashboardData {
   expertLoads: OsgbExpertLoad[];
 }
 
+export interface OsgbDashboardCatalogData {
+  summary: OsgbDashboardSummary;
+  expertLoads: OsgbExpertLoad[];
+  latestSyncDate: string | null;
+  latestContractDate: string | null;
+  latestFlagDate: string | null;
+  latestAlertDate: string | null;
+}
+
 const normalizeCompany = (row: any): OsgbCompanyRecord => ({
   id: row.id,
   sgkNo: row.sgk_no,
@@ -238,5 +247,86 @@ export const getOsgbDashboardData = async (orgId: string): Promise<OsgbDashboard
     flags,
     alerts,
     expertLoads: calculateExpertLoads(companies),
+  };
+};
+
+export const getOsgbDashboardCatalogData = async (orgId: string): Promise<OsgbDashboardCatalogData> => {
+  const [companiesResponse, flagsResponse, alertsResponse] = await Promise.all([
+    supabase
+      .from("isgkatip_companies")
+      .select("id, employee_count, assigned_minutes, required_minutes, compliance_status, risk_score, contract_end, assigned_person_name, last_synced_at")
+      .eq("org_id", orgId)
+      .eq("is_deleted", false)
+      .order("risk_score", { ascending: false }),
+    supabase
+      .from("isgkatip_compliance_flags")
+      .select("created_at")
+      .eq("org_id", orgId)
+      .eq("status", "OPEN")
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("isgkatip_predictive_alerts")
+      .select("created_at")
+      .eq("org_id", orgId)
+      .eq("status", "OPEN")
+      .order("created_at", { ascending: false }),
+  ]);
+
+  if (companiesResponse.error) throw companiesResponse.error;
+  if (flagsResponse.error) throw flagsResponse.error;
+  if (alertsResponse.error) throw alertsResponse.error;
+
+  const companies = (companiesResponse.data ?? []).map((row: any) =>
+    normalizeCompany({
+      ...row,
+      sgk_no: null,
+      company_name: null,
+      hazard_class: null,
+      contract_start: null,
+      service_provider_name: null,
+      nace_code: null,
+      work_period: null,
+    }),
+  );
+
+  const flags = (flagsResponse.data ?? []).map((row: any) =>
+    normalizeFlag({
+      ...row,
+      id: "",
+      company_id: null,
+      rule_name: "",
+      severity: "",
+      message: "",
+      status: "OPEN",
+    }),
+  );
+
+  const alerts = (alertsResponse.data ?? []).map((row: any) =>
+    normalizeAlert({
+      ...row,
+      id: "",
+      company_id: null,
+      alert_type: "",
+      severity: "",
+      message: "",
+      predicted_date: null,
+      confidence_score: null,
+      status: "OPEN",
+    }),
+  );
+
+  return {
+    summary: calculateSummary(companies, flags, alerts),
+    expertLoads: calculateExpertLoads(companies),
+    latestSyncDate: companies
+      .map((company) => company.lastSyncedAt)
+      .filter(Boolean)
+      .sort((left, right) => new Date(right as string).getTime() - new Date(left as string).getTime())[0] || null,
+    latestContractDate: companies
+      .map((company) => company.contractEnd)
+      .filter(Boolean)
+      .sort((left, right) => new Date(left as string).getTime() - new Date(right as string).getTime())[0] || null,
+    latestFlagDate: flags[0]?.createdAt || null,
+    latestAlertDate: alerts[0]?.createdAt || null,
   };
 };

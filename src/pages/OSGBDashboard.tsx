@@ -25,8 +25,8 @@ import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { cn } from "@/lib/utils";
 import { readOsgbPageCache, writeOsgbPageCache } from "@/lib/osgbPageCache";
-import { getOsgbDashboardData, type OsgbDashboardData } from "@/lib/osgbData";
-import { getOsgbOperationalSummary, type OsgbOperationalSummary } from "@/lib/osgbOperations";
+import { getOsgbDashboardCatalogData, type OsgbDashboardCatalogData } from "@/lib/osgbData";
+import { getOsgbDashboardOperationalSummary, type OsgbDashboardOperationalSummary } from "@/lib/osgbOperations";
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
 
@@ -47,8 +47,8 @@ const formatDate = (value: string | null) => {
 };
 
 type DashboardSnapshot = {
-  data: OsgbDashboardData;
-  operations: OsgbOperationalSummary;
+  data: OsgbDashboardCatalogData;
+  operations: OsgbDashboardOperationalSummary;
 };
 
 type ModuleStatus = "good" | "warning" | "critical" | "info";
@@ -112,8 +112,8 @@ export default function OSGBDashboard() {
   const navigate = useNavigate();
   const { user } = useAuth();
 
-  const [data, setData] = useState<OsgbDashboardData | null>(null);
-  const [operations, setOperations] = useState<OsgbOperationalSummary | null>(null);
+  const [data, setData] = useState<OsgbDashboardCatalogData | null>(null);
+  const [operations, setOperations] = useState<OsgbDashboardOperationalSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -129,8 +129,8 @@ export default function OSGBDashboard() {
 
     try {
       const [dashboardData, operationalSummary] = await Promise.all([
-        getOsgbDashboardData(user.id),
-        getOsgbOperationalSummary(user.id),
+        getOsgbDashboardCatalogData(user.id),
+        getOsgbDashboardOperationalSummary(user.id),
       ]);
 
       setData(dashboardData);
@@ -166,40 +166,6 @@ export default function OSGBDashboard() {
 
     void loadDashboard();
   }, [user]);
-
-  const latestSyncDate = useMemo(() => {
-    if (!data?.companies.length) return null;
-    const lastSyncedValues = data.companies
-      .map((company) => company.lastSyncedAt)
-      .filter(Boolean) as string[];
-
-    if (!lastSyncedValues.length) return null;
-
-    return lastSyncedValues.sort((left, right) => new Date(right).getTime() - new Date(left).getTime())[0];
-  }, [data]);
-
-  const latestContractDate = useMemo(() => {
-    if (!data?.companies.length) return null;
-    const contractDates = data.companies
-      .map((company) => company.contractEnd)
-      .filter(Boolean) as string[];
-
-    if (!contractDates.length) return null;
-
-    return contractDates.sort((left, right) => new Date(left).getTime() - new Date(right).getTime())[0];
-  }, [data]);
-
-  const latestFlagDate = useMemo(() => {
-    if (!data?.flags.length) return null;
-    const dates = data.flags.map((flag) => flag.createdAt).filter(Boolean) as string[];
-    return dates.length ? dates.sort((left, right) => new Date(right).getTime() - new Date(left).getTime())[0] : null;
-  }, [data]);
-
-  const latestAlertDate = useMemo(() => {
-    if (!data?.alerts.length) return null;
-    const dates = data.alerts.map((alert) => alert.createdAt).filter(Boolean) as string[];
-    return dates.length ? dates.sort((left, right) => new Date(right).getTime() - new Date(left).getTime())[0] : null;
-  }, [data]);
 
   const overviewCards = useMemo(() => {
     if (!data || !operations) return [];
@@ -238,14 +204,14 @@ export default function OSGBDashboard() {
         href: "/osgb/personnel",
         icon: Users,
         tone: "from-cyan-500/15 to-blue-500/5",
-        status: latestSyncDate ? "good" : "info",
-        statusLabel: latestSyncDate ? "Senkron güncel" : "İzleme aktif",
+        status: data.latestSyncDate ? "good" : "info",
+        statusLabel: data.latestSyncDate ? "Senkron güncel" : "İzleme aktif",
         stats: [
           { label: "Uzman yükü", value: `${data.expertLoads.length} kişi` },
           { label: "Kapsam", value: `${data.summary.totalCompanies} firma` },
         ],
         lastActionLabel: "Son işlem",
-        lastActionValue: formatDate(latestSyncDate),
+        lastActionValue: formatDate(data.latestSyncDate),
         recommendedAction: "Belge bitiş tarihlerini ve kapasite doluluklarını gözden geçir.",
       },
       {
@@ -262,7 +228,7 @@ export default function OSGBDashboard() {
           { label: "Süre uyumu", value: `%${data.summary.coverageRate}` },
         ],
         lastActionLabel: "Son sözleşme",
-        lastActionValue: formatDate(latestContractDate),
+        lastActionValue: formatDate(data.latestContractDate),
         recommendedAction: "Eksik dakika olan firmalar için atama planını güncelle.",
       },
       {
@@ -278,7 +244,7 @@ export default function OSGBDashboard() {
           { label: "Sözleşme baskısı", value: `${data.summary.expiringContracts}` },
         ],
         lastActionLabel: "Son senkron",
-        lastActionValue: formatDate(latestSyncDate),
+        lastActionValue: formatDate(data.latestSyncDate),
         recommendedAction: "Kritik firmaları drawer üzerinden hızlı aksiyonla kapat.",
       },
       {
@@ -295,7 +261,7 @@ export default function OSGBDashboard() {
           { label: "Ortalama risk", value: `${data.summary.averageRiskScore}` },
         ],
         lastActionLabel: "Son kontrol",
-        lastActionValue: formatDate(latestSyncDate),
+        lastActionValue: formatDate(data.latestSyncDate),
         recommendedAction: "Aşırı yüklü uzmanlar için dakika dağılımını yeniden dengele.",
       },
       {
@@ -312,7 +278,7 @@ export default function OSGBDashboard() {
           { label: "Öngörüsel uyarı", value: `${data.summary.openAlerts}` },
         ],
         lastActionLabel: "Son uyarı",
-        lastActionValue: formatDate(latestAlertDate || latestFlagDate),
+        lastActionValue: formatDate(data.latestAlertDate || data.latestFlagDate),
         recommendedAction: "Önce kritik severity kayıtlarını göreve çevir.",
       },
       {
@@ -328,7 +294,7 @@ export default function OSGBDashboard() {
           { label: "Geciken", value: formatCurrency(operations.finance.overdueAmount) },
         ],
         lastActionLabel: "Takvim görünümü",
-        lastActionValue: `${operations.finance.calendarItems.length} kayıt`,
+        lastActionValue: `${operations.finance.calendarItemCount} kayıt`,
         recommendedAction: "Geciken tahsilatları haftalık planda öncele.",
       },
       {
@@ -344,7 +310,7 @@ export default function OSGBDashboard() {
           { label: "Süresi dolmuş", value: `${operations.documents.expiredCount}` },
         ],
         lastActionLabel: "Son senkron",
-        lastActionValue: formatDate(latestSyncDate),
+        lastActionValue: formatDate(data.latestSyncDate),
         recommendedAction: "Warning ve expired kayıtlar için batch veya manuel görev üret.",
       },
       {
@@ -376,7 +342,7 @@ export default function OSGBDashboard() {
           { label: "Portföy", value: `${data.summary.totalCompanies} firma` },
         ],
         lastActionLabel: "Son senkron",
-        lastActionValue: formatDate(latestSyncDate),
+        lastActionValue: formatDate(data.latestSyncDate),
         recommendedAction: "Kritik firmalar için son saha notlarını güncelle.",
       },
       {
@@ -388,15 +354,15 @@ export default function OSGBDashboard() {
         status: "info",
         statusLabel: "Analiz hazır",
         stats: [
-          { label: "Finans trend", value: `${operations.finance.monthlyTrend.length} ay` },
-          { label: "Evrak trend", value: `${operations.documents.monthlyTrend.length} ay` },
+          { label: "Finans trend", value: `${operations.finance.monthlyTrendMonths} ay` },
+          { label: "Evrak trend", value: `${operations.documents.monthlyTrendMonths} ay` },
         ],
         lastActionLabel: "Analiz kapsamı",
         lastActionValue: "Son 6 ay",
         recommendedAction: "Sapma gösteren aylarda drill-down analizi aç.",
       },
     ];
-  }, [data, latestAlertDate, latestContractDate, latestFlagDate, latestSyncDate, operations]);
+  }, [data, operations]);
 
   const quickStartCards = useMemo(() => {
     if (!data || !operations) return [];
@@ -450,7 +416,7 @@ export default function OSGBDashboard() {
               <Badge className="border border-cyan-400/20 bg-cyan-500/10 text-cyan-200 hover:bg-cyan-500/10">
                 OSGB operasyon kataloğu
               </Badge>
-              <Badge variant="outline">Son sözleşme: {formatDate(latestContractDate)}</Badge>
+              <Badge variant="outline">Son sözleşme: {formatDate(data.latestContractDate)}</Badge>
             </div>
 
             <div className="space-y-3">

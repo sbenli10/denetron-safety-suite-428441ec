@@ -4,7 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import type { SubscriptionStatus, SubscriptionPlan, SubscriptionFeatures } from '@/types/subscription';
 
 export function useSubscription() {
-  const { user } = useAuth();
+  const { user, profile, refreshProfile } = useAuth();
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState<SubscriptionStatus>('trial');
   const [plan, setPlan] = useState<SubscriptionPlan>('free');
@@ -19,32 +19,41 @@ export function useSubscription() {
   });
 
   useEffect(() => {
-    if (user) {
-      fetchSubscription();
+    if (!user) {
+      setLoading(false);
+      return;
     }
-  }, [user]);
 
-  const fetchSubscription = async () => {
+    if (profile) {
+      void fetchSubscription(false);
+    }
+  }, [profile, user]);
+
+  const fetchSubscription = async (forceProfileRefresh = true) => {
     if (!user) return;
 
     try {
-      const { data: profile, error } = await supabase
-        .from('profiles')
-        .select('subscription_status, subscription_plan, trial_ends_at')
-        .eq('id', user.id)
-        .single();
+      let nextProfile = profile;
 
-      if (error) throw error;
+      if (!nextProfile && forceProfileRefresh) {
+        await refreshProfile();
+        nextProfile = profile;
+      }
 
-      setStatus(profile.subscription_status as SubscriptionStatus);
-      setPlan(profile.subscription_plan as SubscriptionPlan);
-      setTrialEndsAt(profile.trial_ends_at ? new Date(profile.trial_ends_at) : null);
+      if (!nextProfile) {
+        setLoading(false);
+        return;
+      }
+
+      setStatus((nextProfile.subscription_status as SubscriptionStatus) || 'trial');
+      setPlan((nextProfile.subscription_plan as SubscriptionPlan) || 'free');
+      setTrialEndsAt(nextProfile.trial_ends_at ? new Date(nextProfile.trial_ends_at) : null);
 
       // Get plan features
       const { data: planData } = await supabase
         .from('subscription_plans')
         .select('*')
-        .eq('plan_code', profile.subscription_plan)
+        .eq('plan_code', nextProfile.subscription_plan || 'free')
         .single();
 
       if (planData) {
@@ -92,6 +101,9 @@ export function useSubscription() {
     isTrialExpired: isTrialExpired(),
     daysLeftInTrial: getDaysLeftInTrial(),
     isFeatureAllowed,
-    refetch: fetchSubscription,
+    refetch: async () => {
+      await refreshProfile();
+      await fetchSubscription(false);
+    },
   };
 }

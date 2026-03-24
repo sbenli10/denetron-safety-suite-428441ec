@@ -12,7 +12,7 @@ const rank: Record<AppAccessRole, number> = {
 };
 
 export function useAccessRole() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [role, setRole] = useState<AppAccessRole>("viewer");
   const [loading, setLoading] = useState(true);
 
@@ -30,8 +30,7 @@ export function useAccessRole() {
 
       setLoading(true);
       try {
-        const [{ data: profile }, { data: userRoles }] = await Promise.all([
-          supabase.from("profiles").select("role").eq("id", user.id).maybeSingle(),
+        const [{ data: userRoles }] = await Promise.all([
           supabase.from("user_roles").select("role").eq("user_id", user.id),
         ]);
 
@@ -60,7 +59,7 @@ export function useAccessRole() {
     return () => {
       active = false;
     };
-  }, [user?.id]);
+  }, [profile?.role, user?.id]);
 
   return useMemo(
     () => ({

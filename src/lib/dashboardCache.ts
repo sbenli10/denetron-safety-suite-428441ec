@@ -104,26 +104,16 @@ const calculateMonthlyTrend = (inspections: DashboardInspection[]) => {
 };
 
 export const fetchDashboardSnapshot = async (
-  userId: string
+  orgId: string
 ): Promise<DashboardSnapshot> => {
-  const { data: profile, error: profileError } = await supabase
-    .from("profiles")
-    .select("organization_id")
-    .eq("id", userId)
-    .single();
-
-  if (profileError) {
-    throw new Error(`Profil bilgisi alınamadı: ${profileError.message}`);
-  }
-
-  if (!profile?.organization_id) {
+  if (!orgId) {
     throw new Error("Kuruluş bilgisi bulunamadı.");
   }
 
   const { data: inspections, error: inspectionsError } = await supabase
     .from("inspections")
     .select("*")
-    .eq("org_id", profile.organization_id)
+    .eq("org_id", orgId)
     .order("created_at", { ascending: false });
 
   if (inspectionsError) {
@@ -165,7 +155,7 @@ export const fetchDashboardSnapshot = async (
   ).length;
 
   return {
-    orgId: profile.organization_id,
+    orgId,
     activeInspections,
     openFindings,
     criticalRiskPercent,

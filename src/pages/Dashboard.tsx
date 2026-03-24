@@ -160,7 +160,7 @@ function AnimatedNumber({ value }: { value: number }) {
 }
 
 export default function Dashboard() {
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [, setOrgId] = useState<string | null>(null);
@@ -194,7 +194,7 @@ export default function Dashboard() {
 
   const fetchDashboardData = useCallback(
     async (isRefresh = false, force = false) => {
-      if (!user || isFetching.current) {
+      if (!user || !profile?.organization_id || isFetching.current) {
         return;
       }
 
@@ -211,7 +211,7 @@ export default function Dashboard() {
       }
 
       try {
-        const snapshot = await fetchDashboardSnapshot(user.id);
+        const snapshot = await fetchDashboardSnapshot(profile.organization_id);
         applySnapshot(snapshot);
         writeDashboardSnapshot(user.id, snapshot);
         hasHydratedFromCache.current = true;
@@ -255,11 +255,11 @@ export default function Dashboard() {
         isFetching.current = false;
       }
     },
-    [applySnapshot, user]
+    [applySnapshot, profile?.organization_id, user]
   );
 
   useEffect(() => {
-    if (!user) {
+    if (!user || !profile) {
       return;
     }
 
@@ -274,7 +274,7 @@ export default function Dashboard() {
     }
 
     void fetchDashboardData(false, !isCacheFresh);
-  }, [applySnapshot, fetchDashboardData, user]);
+  }, [applySnapshot, fetchDashboardData, profile, user]);
 
   const handleRefresh = () => {
     void fetchDashboardData(true, true);

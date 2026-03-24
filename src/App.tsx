@@ -247,7 +247,6 @@ const App = () => (
                           {/* ============================================ */}
                           {/* ISG BOT */}
                           {/* ============================================ */}
-                          <Route path="/" element={<Index />} />
                           <Route path="/isg-bot" element={<ISGBot />} />
                           <Route path="/isg-bot-deleted" element={<ISGBotDeleted />} />
                           <Route path="/isg-bot/:tab" element={<ISGBot />} />

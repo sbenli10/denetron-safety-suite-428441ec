@@ -65,7 +65,7 @@ export default function Auth() {
     const checkUser = async () => {
       const { data } = await supabase.auth.getSession();
       if (data?.session?.user) {
-        navigate("/");
+        navigate("/auth/callback", { replace: true });
       }
     };
     checkUser();
@@ -226,7 +226,7 @@ const handleLogin = async (e: React.FormEvent) => {
         if (isExtension) {
           navigate('/auth/callback?ext=true');
         } else {
-          navigate('/');
+          navigate('/auth/callback');
         }
         return;
       }
@@ -267,7 +267,7 @@ const handleLogin = async (e: React.FormEvent) => {
       if (isExtension) {
         navigate('/auth/callback?ext=true');
       } else {
-        navigate('/');
+        navigate('/auth/callback');
       }
     }
   } catch (error: any) {
@@ -335,7 +335,7 @@ const handleVerify2FA = async (e: React.FormEvent) => {
     if (isExtension) {
       navigate('/auth/callback?ext=true');
     } else {
-      navigate('/');
+      navigate('/auth/callback');
     }
   } catch (error: any) {
     console.error("❌ 2FA error:", error);

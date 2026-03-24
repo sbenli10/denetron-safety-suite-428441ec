@@ -5,6 +5,8 @@ import { ArrowLeft, FileSpreadsheet, Plus, RefreshCcw, Shield, Trash2, Upload, U
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { downloadCsv } from "@/lib/csvExport";
+import { readPageSessionCache, writePageSessionCache } from "@/lib/pageSessionCache";
+import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -79,6 +81,9 @@ const emptyForm: EmployeeFormState = {
   email: "",
 };
 
+const EMPLOYEES_CACHE_TTL = 5 * 60 * 1000;
+const PAGE_SIZE = 10;
+
 const normalizeHeader = (value: string) =>
   value
     .toLocaleLowerCase("tr-TR")
@@ -143,6 +148,7 @@ const downloadRemoveTemplate = () => {
 export default function Employees() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [companies, setCompanies] = useState<CompanyOption[]>([]);
   const [employees, setEmployees] = useState<EmployeeRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -153,10 +159,23 @@ export default function Employees() {
   const [companyFilter, setCompanyFilter] = useState("ALL");
   const [employeePpeItems, setEmployeePpeItems] = useState<EmployeePpeRecord[]>([]);
   const [employeeHealthItems, setEmployeeHealthItems] = useState<EmployeeHealthRecord[]>([]);
+  const [activePage, setActivePage] = useState(1);
+  const [passivePage, setPassivePage] = useState(1);
   const addInputRef = useRef<HTMLInputElement | null>(null);
   const removeInputRef = useRef<HTMLInputElement | null>(null);
 
   const loadData = async () => {
+    const cacheKey = user?.id ? `employees:${user.id}` : null;
+    const cached = cacheKey
+      ? readPageSessionCache<{ companies: CompanyOption[]; employees: EmployeeRecord[] }>(cacheKey, EMPLOYEES_CACHE_TTL)
+      : null;
+
+    if (cached) {
+      setCompanies(cached.companies);
+      setEmployees(cached.employees);
+      setLoading(false);
+    }
+
     setLoading(true);
     try {
       const [{ data: companyRows, error: companyError }, { data: employeeRows, error: employeeError }] = await Promise.all([
@@ -168,9 +187,8 @@ export default function Employees() {
       if (employeeError) throw employeeError;
 
       const companyMap = new Map<string, string>((companyRows || []).map((row: { id: string; name: string }) => [row.id, row.name]));
-      setCompanies((companyRows || []) as CompanyOption[]);
-      setEmployees(
-        ((employeeRows || []) as Array<Record<string, unknown>>).map((row) => ({
+      const mappedCompanies = (companyRows || []) as CompanyOption[];
+      const mappedEmployees = ((employeeRows || []) as Array<Record<string, unknown>>).map((row) => ({
           id: String(row.id),
           company_id: String(row.company_id),
           company_name: companyMap.get(String(row.company_id)) || null,
@@ -184,8 +202,17 @@ export default function Employees() {
           start_date: row.start_date ? String(row.start_date) : null,
           employment_type: row.employment_type ? String(row.employment_type) : null,
           is_active: Boolean(row.is_active),
-        })),
-      );
+        }));
+
+      setCompanies(mappedCompanies);
+      setEmployees(mappedEmployees);
+
+      if (cacheKey) {
+        writePageSessionCache(cacheKey, {
+          companies: mappedCompanies,
+          employees: mappedEmployees,
+        });
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Çalışan verileri yüklenemedi.");
     } finally {
@@ -195,7 +222,7 @@ export default function Employees() {
 
   useEffect(() => {
     void loadData();
-  }, []);
+  }, [user?.id]);
 
   useEffect(() => {
     const loadEmployeePpe = async () => {
@@ -277,6 +304,16 @@ export default function Employees() {
   }, [companyFilter, employees, search]);
   const activeEmployees = useMemo(() => filteredEmployees.filter((item) => item.is_active), [filteredEmployees]);
   const passiveEmployees = useMemo(() => filteredEmployees.filter((item) => !item.is_active), [filteredEmployees]);
+  const activeTotalPages = Math.max(1, Math.ceil(activeEmployees.length / PAGE_SIZE));
+  const passiveTotalPages = Math.max(1, Math.ceil(passiveEmployees.length / PAGE_SIZE));
+  const pagedActiveEmployees = useMemo(
+    () => activeEmployees.slice((activePage - 1) * PAGE_SIZE, activePage * PAGE_SIZE),
+    [activeEmployees, activePage],
+  );
+  const pagedPassiveEmployees = useMemo(
+    () => passiveEmployees.slice((passivePage - 1) * PAGE_SIZE, passivePage * PAGE_SIZE),
+    [passiveEmployees, passivePage],
+  );
   const summary = useMemo(
     () => ({
       total: employees.length,
@@ -286,6 +323,19 @@ export default function Employees() {
     }),
     [employees, filteredEmployees],
   );
+
+  useEffect(() => {
+    setActivePage(1);
+    setPassivePage(1);
+  }, [search, companyFilter]);
+
+  useEffect(() => {
+    if (activePage > activeTotalPages) setActivePage(activeTotalPages);
+  }, [activePage, activeTotalPages]);
+
+  useEffect(() => {
+    if (passivePage > passiveTotalPages) setPassivePage(passiveTotalPages);
+  }, [passivePage, passiveTotalPages]);
 
   const handleCreateEmployee = async () => {
     if (!form.companyId || !form.firstName.trim() || !form.lastName.trim() || !form.jobTitle.trim()) {
@@ -776,7 +826,7 @@ export default function Employees() {
                           <TableCell colSpan={5} className="py-12 text-center text-sm text-muted-foreground">Filtreye uygun aktif çalışan yok.</TableCell>
                         </TableRow>
                       ) : (
-                        activeEmployees.map((employee) => (
+                        pagedActiveEmployees.map((employee) => (
                           <TableRow key={employee.id} className="cursor-pointer" onClick={() => navigate(`/employees/${employee.id}`)}>
                             <TableCell>
                               <div>
@@ -794,6 +844,19 @@ export default function Employees() {
                     </TableBody>
                   </Table>
                 </div>
+                {activeEmployees.length > PAGE_SIZE ? (
+                  <div className="mt-4 flex items-center justify-between text-sm text-slate-400">
+                    <span>Sayfa {activePage} / {activeTotalPages}</span>
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" onClick={() => setActivePage((page) => Math.max(1, page - 1))} disabled={activePage === 1}>
+                        Önceki
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={() => setActivePage((page) => Math.min(activeTotalPages, page + 1))} disabled={activePage === activeTotalPages}>
+                        Sonraki
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
               </TabsContent>
 
               <TabsContent value="passive" className="mt-0">
@@ -818,7 +881,7 @@ export default function Employees() {
                           <TableCell colSpan={5} className="py-12 text-center text-sm text-muted-foreground">Filtreye uygun pasif çalışan yok.</TableCell>
                         </TableRow>
                       ) : (
-                        passiveEmployees.map((employee) => (
+                        pagedPassiveEmployees.map((employee) => (
                           <TableRow key={employee.id} className="cursor-pointer" onClick={() => navigate(`/employees/${employee.id}`)}>
                             <TableCell>
                               <div>
@@ -852,6 +915,19 @@ export default function Employees() {
                     </TableBody>
                   </Table>
                 </div>
+                {passiveEmployees.length > PAGE_SIZE ? (
+                  <div className="mt-4 flex items-center justify-between text-sm text-slate-400">
+                    <span>Sayfa {passivePage} / {passiveTotalPages}</span>
+                    <div className="flex gap-2">
+                      <Button variant="outline" size="sm" onClick={() => setPassivePage((page) => Math.max(1, page - 1))} disabled={passivePage === 1}>
+                        Önceki
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={() => setPassivePage((page) => Math.min(passiveTotalPages, page + 1))} disabled={passivePage === passiveTotalPages}>
+                        Sonraki
+                      </Button>
+                    </div>
+                  </div>
+                ) : null}
               </TabsContent>
             </Tabs>
           </CardContent>

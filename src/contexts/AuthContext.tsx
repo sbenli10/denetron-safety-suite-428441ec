@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
+import { Sentry } from "@/lib/sentry";
 
 interface AuthContextType {
   session: Session | null;
@@ -37,6 +38,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       (_event, session) => {
         if (!mounted) return;
         setSession(session);
+        Sentry.setUser(
+          session?.user
+            ? {
+                id: session.user.id,
+                email: session.user.email,
+              }
+            : null,
+        );
         setLoading(false);
       }
     );
@@ -56,6 +65,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (data.session) {
             if (!mounted) return;
             setSession(data.session);
+            Sentry.setUser({
+              id: data.session.user.id,
+              email: data.session.user.email,
+            });
             setLoading(false);
             return;
           }
@@ -73,6 +86,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       setSession(data.session);
+      Sentry.setUser(
+        data.session?.user
+          ? {
+              id: data.session.user.id,
+              email: data.session.user.email,
+            }
+          : null,
+      );
       setLoading(false);
     };
 

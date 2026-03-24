@@ -201,6 +201,14 @@ export interface OsgbAssignmentPageParams {
   search?: string;
 }
 
+export interface OsgbFinancePageParams {
+  page: number;
+  pageSize: number;
+  status?: string;
+  companyId?: string;
+  search?: string;
+}
+
 export interface OsgbAssignmentInput {
   companyId: string;
   personnelId: string;
@@ -298,6 +306,13 @@ export interface OsgbDashboardOperationalSummary {
     expiredCount: number;
     monthlyTrendMonths: number;
   };
+}
+
+export interface OsgbFinanceOverview {
+  pendingAmount: number;
+  paidAmount: number;
+  overdueAmount: number;
+  calendarItems: OsgbFinanceCalendarItem[];
 }
 
 export interface PagedResult<T> {
@@ -722,6 +737,64 @@ export const listOsgbFinance = async (userId: string): Promise<OsgbFinanceRecord
   return (data ?? []) as OsgbFinanceRecord[];
 };
 
+export const listOsgbFinancePage = async (
+  userId: string,
+  params: OsgbFinancePageParams,
+): Promise<PagedResult<OsgbFinanceRecord>> => {
+  const { page, pageSize, status, companyId, search } = params;
+  const from = Math.max(0, (page - 1) * pageSize);
+  const to = from + pageSize - 1;
+
+  let query = (supabase as any)
+    .from("osgb_finance")
+    .select("*, company:isgkatip_companies(company_name)", { count: "exact" })
+    .eq("user_id", userId);
+
+  if (status && status !== "ALL") {
+    query = query.eq("status", status);
+  }
+
+  if (companyId && companyId !== "ALL") {
+    query = query.eq("company_id", companyId);
+  }
+
+  if (search?.trim()) {
+    const term = search.trim().replace(/,/g, " ");
+    const companyResult = await supabase
+      .from("isgkatip_companies")
+      .select("id")
+      .eq("org_id", userId)
+      .eq("is_deleted", false)
+      .ilike("company_name", `%${term}%`)
+      .limit(100);
+
+    if (companyResult.error) throw companyResult.error;
+
+    const companyIds = (companyResult.data ?? []).map((item: any) => item.id);
+    const conditions = [
+      `invoice_no.ilike.%${term}%`,
+      `service_period.ilike.%${term}%`,
+      `payment_note.ilike.%${term}%`,
+    ];
+
+    if (companyIds.length > 0) {
+      conditions.push(`company_id.in.(${companyIds.join(",")})`);
+    }
+
+    query = query.or(conditions.join(","));
+  }
+
+  const { data, error, count } = await query
+    .order("created_at", { ascending: false })
+    .range(from, to);
+
+  if (error) throw error;
+  return {
+    rows: (data ?? []) as OsgbFinanceRecord[],
+    count: count ?? 0,
+  };
+};
+
 export const listCompanyOsgbFinance = async (
   userId: string,
   companyId: string,
@@ -735,6 +808,69 @@ export const listCompanyOsgbFinance = async (
 
   if (error) throw error;
   return (data ?? []) as OsgbFinanceRecord[];
+};
+
+export const getOsgbFinanceOverview = async (userId: string): Promise<OsgbFinanceOverview> => {
+  const { data, error } = await supabase
+    .from("osgb_finance")
+    .select("id, due_date, invoice_date, amount, status, currency, invoice_no, service_period, company:isgkatip_companies(company_name)")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+
+  const financeRows = (data ?? []) as Array<{
+    id: string;
+    due_date: string | null;
+    invoice_date: string | null;
+    amount: number;
+    currency: string;
+    status: OsgbFinanceRecord["status"];
+    invoice_no: string | null;
+    service_period: string | null;
+    company?: { company_name: string | null } | null;
+  }>;
+
+  const now = new Date();
+  const nextWindow = new Date();
+  nextWindow.setDate(nextWindow.getDate() + 60);
+
+  const calendarItems = financeRows
+    .filter((record) => {
+      if (!record.due_date) return false;
+      const dueDate = new Date(record.due_date);
+      if (Number.isNaN(dueDate.getTime())) return false;
+      return record.status === "overdue" || (dueDate >= now && dueDate <= nextWindow);
+    })
+    .sort((a, b) => {
+      const aTime = a.due_date ? new Date(a.due_date).getTime() : 0;
+      const bTime = b.due_date ? new Date(b.due_date).getTime() : 0;
+      return aTime - bTime;
+    })
+    .slice(0, 12)
+    .map((record) => {
+      const dueDate = new Date(record.due_date as string);
+      return {
+        id: record.id,
+        companyName: record.company?.company_name || "Firma",
+        amount: record.amount,
+        currency: record.currency,
+        dueDate: record.due_date as string,
+        status: record.status,
+        invoiceNo: record.invoice_no,
+        servicePeriod: record.service_period,
+        dayLabel: dueDate.toLocaleDateString("tr-TR", { day: "2-digit", month: "2-digit" }),
+        monthLabel: dueDate.toLocaleDateString("tr-TR", { month: "long", year: "numeric" }),
+        isOverdue: record.status === "overdue" || dueDate.getTime() < now.getTime(),
+      } satisfies OsgbFinanceCalendarItem;
+    });
+
+  return {
+    pendingAmount: financeRows.filter((item) => item.status === "pending").reduce((sum, item) => sum + item.amount, 0),
+    paidAmount: financeRows.filter((item) => item.status === "paid").reduce((sum, item) => sum + item.amount, 0),
+    overdueAmount: financeRows.filter((item) => item.status === "overdue").reduce((sum, item) => sum + item.amount, 0),
+    calendarItems,
+  };
 };
 
 export const upsertOsgbFinance = async (userId: string, input: OsgbFinanceInput, id?: string) => {

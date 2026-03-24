@@ -48,11 +48,12 @@ import { downloadCsv } from "@/lib/csvExport";
 import {
   deleteOsgbFinance,
   getOsgbCompanyOptions,
-  getOsgbOperationalSummary,
-  listOsgbFinance,
+  getOsgbFinanceOverview,
+  listOsgbFinancePage,
   type OsgbFinanceCalendarItem,
   type OsgbCompanyOption,
   type OsgbFinanceInput,
+  type OsgbFinanceOverview,
   type OsgbFinanceRecord,
   upsertOsgbFinance,
 } from "@/lib/osgbOperations";
@@ -109,6 +110,7 @@ const formatMoney = (value: number, currency: string) =>
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const getCacheKey = (userId: string) => `finance:${userId}`;
+const FINANCE_PAGE_SIZE = 20;
 
 export default function OSGBFinance() {
   const { user } = useAuth();
@@ -117,6 +119,7 @@ export default function OSGBFinance() {
   const [records, setRecords] = useState<OsgbFinanceRecord[]>([]);
   const [companies, setCompanies] = useState<OsgbCompanyOption[]>([]);
   const [calendarItems, setCalendarItems] = useState<OsgbFinanceCalendarItem[]>([]);
+  const [overview, setOverview] = useState<OsgbFinanceOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -127,6 +130,8 @@ export default function OSGBFinance() {
   const [companyFilter, setCompanyFilter] = useState<string>("ALL");
   const [search, setSearch] = useState("");
   const [calendarView, setCalendarView] = useState<"weekly" | "monthly">("monthly");
+  const [page, setPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
 
   useEffect(() => {
     const status = searchParams.get("status");
@@ -139,18 +144,29 @@ export default function OSGBFinance() {
     if (!user?.id) return;
     if (!silent) setLoading(true);
     try {
-      const [financeRows, companyRows] = await Promise.all([
-        listOsgbFinance(user.id),
-        getOsgbCompanyOptions(user.id),
+      const cacheKey = `${getCacheKey(user.id)}:${statusFilter}:${companyFilter}:${search}:${page}`;
+      const [financeResult, companyRows, financeOverview] = await Promise.all([
+        listOsgbFinancePage(user.id, {
+          page,
+          pageSize: FINANCE_PAGE_SIZE,
+          status: statusFilter,
+          companyId: companyFilter,
+          search,
+        }),
+        companies.length > 0 ? Promise.resolve(companies) : getOsgbCompanyOptions(user.id),
+        getOsgbFinanceOverview(user.id),
       ]);
-      setRecords(financeRows);
+      setRecords(financeResult.rows);
       setCompanies(companyRows);
-      const summary = await getOsgbOperationalSummary(user.id);
-      setCalendarItems(summary.finance.calendarItems);
-      writeOsgbPageCache(getCacheKey(user.id), {
-        records: financeRows,
+      setCalendarItems(financeOverview.calendarItems);
+      setOverview(financeOverview);
+      setTotalCount(financeResult.count);
+      writeOsgbPageCache(cacheKey, {
+        records: financeResult.rows,
         companies: companyRows,
-        calendarItems: summary.finance.calendarItems,
+        calendarItems: financeOverview.calendarItems,
+        overview: financeOverview,
+        totalCount: financeResult.count,
       });
       setError(null);
     } catch (err) {
@@ -166,34 +182,45 @@ export default function OSGBFinance() {
       records: OsgbFinanceRecord[];
       companies: OsgbCompanyOption[];
       calendarItems: OsgbFinanceCalendarItem[];
-    }>(getCacheKey(user.id), CACHE_TTL_MS);
+      overview: OsgbFinanceOverview;
+      totalCount: number;
+    }>(`${getCacheKey(user.id)}:${statusFilter}:${companyFilter}:${search}:${page}`, CACHE_TTL_MS);
     if (cached) {
       setRecords(cached.records);
       setCompanies(cached.companies);
       setCalendarItems(cached.calendarItems);
+      setOverview(cached.overview);
+      setTotalCount(cached.totalCount);
       setLoading(false);
       void loadData(true);
       return;
     }
     void loadData();
-  }, [user?.id]);
+  }, [companyFilter, page, search, statusFilter, user?.id]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [companyFilter, search, statusFilter]);
 
   const summary = useMemo(() => {
-    const pending = records.filter((item) => item.status === "pending").reduce((sum, item) => sum + item.amount, 0);
-    const paid = records.filter((item) => item.status === "paid").reduce((sum, item) => sum + item.amount, 0);
-    const overdue = records.filter((item) => item.status === "overdue").reduce((sum, item) => sum + item.amount, 0);
-    return { pending, paid, overdue };
-  }, [records]);
+    return {
+      pending: overview?.pendingAmount || 0,
+      paid: overview?.paidAmount || 0,
+      overdue: overview?.overdueAmount || 0,
+    };
+  }, [overview]);
 
   const filteredRecords = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    return records.filter((record) => {
-      const matchesStatus = statusFilter === "ALL" || record.status === statusFilter;
-      const matchesCompany = companyFilter === "ALL" || record.company_id === companyFilter;
-      const matchesQuery = !query || [record.invoice_no || "", record.service_period || "", record.company?.company_name || "", record.payment_note || ""].some((value) => value.toLowerCase().includes(query));
-      return matchesStatus && matchesCompany && matchesQuery;
-    });
-  }, [records, search, statusFilter, companyFilter]);
+    return records;
+  }, [records]);
+
+  const totalPages = Math.max(1, Math.ceil(totalCount / FINANCE_PAGE_SIZE));
+
+  useEffect(() => {
+    if (page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [page, totalPages]);
 
   const groupedCalendar = useMemo(() => {
     const getWeekLabel = (value: string) => {
@@ -319,10 +346,8 @@ export default function OSGBFinance() {
         paymentNote: form.paymentNote,
       };
 
-      const saved = await upsertOsgbFinance(user.id, payload, editing?.id);
-      setRecords((prev) => editing ? prev.map((item) => (item.id === saved.id ? saved : item)) : [saved, ...prev]);
-      const refreshedSummary = await getOsgbOperationalSummary(user.id);
-      setCalendarItems(refreshedSummary.finance.calendarItems);
+      await upsertOsgbFinance(user.id, payload, editing?.id);
+      await loadData(true);
       setDialogOpen(false);
       setEditing(null);
       setForm(emptyForm);
@@ -342,11 +367,7 @@ export default function OSGBFinance() {
     if (!confirm("Bu finans kaydını silmek istiyor musunuz?")) return;
     try {
       await deleteOsgbFinance(id);
-      setRecords((prev) => prev.filter((item) => item.id !== id));
-      if (user?.id) {
-        const refreshedSummary = await getOsgbOperationalSummary(user.id);
-        setCalendarItems(refreshedSummary.finance.calendarItems);
-      }
+      await loadData(true);
       toast.success("Finans kaydı silindi.");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Finans kaydı silinemedi.");
@@ -418,9 +439,9 @@ export default function OSGBFinance() {
           </Card>
         </button>
         <button type="button" onClick={() => setStatusFilter("overdue")} className="text-left">
-          <Card className="border-slate-800 bg-slate-900/70 transition hover:border-red-500/30">
-            <CardHeader className="pb-3"><CardDescription>Geciken tahsilat</CardDescription><CardTitle className="mt-2 text-3xl text-white">{formatMoney(summary.overdue, "TRY")}</CardTitle></CardHeader>
-          </Card>
+            <Card className="border-slate-800 bg-slate-900/70 transition hover:border-red-500/30">
+              <CardHeader className="pb-3"><CardDescription>Geciken tahsilat</CardDescription><CardTitle className="mt-2 text-3xl text-white">{formatMoney(summary.overdue, "TRY")}</CardTitle></CardHeader>
+            </Card>
         </button>
       </div>
 
@@ -581,6 +602,29 @@ export default function OSGBFinance() {
               )}
             </TableBody>
           </Table>
+          {totalCount > FINANCE_PAGE_SIZE ? (
+            <div className="mt-4 flex items-center justify-between text-sm text-slate-400">
+              <span>Sayfa {page} / {totalPages} • Toplam kayıt {totalCount}</span>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage((current) => Math.max(1, current - 1))}
+                  disabled={page === 1}
+                >
+                  Önceki
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+                  disabled={page === totalPages}
+                >
+                  Sonraki
+                </Button>
+              </div>
+            </div>
+          ) : null}
         </CardContent>
       </Card>
 

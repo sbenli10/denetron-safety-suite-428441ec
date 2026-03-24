@@ -163,10 +163,29 @@ export function setup() {
 
   const accessToken = loginRes.json("access_token");
   const payload = decodeJwtPayload(accessToken);
+  const userId = payload.sub;
+
+  const profileRes = get(
+    `/rest/v1/profiles?select=organization_id&id=eq.${userId}`,
+    accessToken,
+    { endpoint: "profile-bootstrap" },
+  );
+
+  const profileOk = check(profileRes, {
+    "profile bootstrap succeeded": (r) => r.status === 200,
+  });
+
+  if (!profileOk) {
+    fail(`Profile bootstrap failed: ${profileRes.status} ${profileRes.body}`);
+  }
+
+  const profileRows = profileRes.json();
+  const orgId = Array.isArray(profileRows) ? profileRows[0]?.organization_id : null;
 
   return {
     accessToken,
-    userId: payload.sub,
+    userId,
+    orgId: orgId || userId,
   };
 }
 
@@ -179,13 +198,6 @@ function checkJson(res, label) {
 }
 
 export function dashboardReads(data) {
-  const profileRes = get(
-    `/rest/v1/profiles?select=id,organization_id,role,email&id=eq.${data.userId}`,
-    data.accessToken,
-    { module: "dashboard", query: "profile" },
-  );
-  checkJson(profileRes, "profile");
-
   const notificationsRes = get(
     "/rest/v1/notifications?select=id,is_read,priority,created_at&order=created_at.desc&limit=10",
     data.accessToken,
@@ -193,26 +205,28 @@ export function dashboardReads(data) {
   );
   checkJson(notificationsRes, "notifications");
 
-  const companyRes = get(
-    "/rest/v1/companies?select=id,name,employee_count,is_active,updated_at&order=updated_at.desc&limit=10",
+  const inspectionsRes = get(
+    `/rest/v1/inspections?select=id,location_name,risk_level,status,created_at,org_id&org_id=eq.${data.orgId}&order=created_at.desc`,
     data.accessToken,
-    { module: "dashboard", query: "companies" },
+    { module: "dashboard", query: "inspections" },
   );
-  checkJson(companyRes, "companies");
+  checkJson(inspectionsRes, "inspections");
 
-  const trackingRes = postRpc(
-    "get_osgb_company_tracking_page",
-    {
-      p_org_id: data.userId,
-      p_page: 1,
-      p_page_size: 10,
-      p_search: null,
-      p_assignment_status: null,
-    },
-    data.accessToken,
-    { module: "dashboard", query: "osgb_company_tracking_rpc" },
-  );
-  checkJson(trackingRes, "company_tracking_rpc");
+  if (inspectionsRes.status >= 200 && inspectionsRes.status < 300) {
+    const inspections = inspectionsRes.json();
+    const inspectionIds = Array.isArray(inspections)
+      ? inspections.map((inspection) => inspection.id).filter(Boolean)
+      : [];
+
+    if (inspectionIds.length > 0) {
+      const findingsRes = get(
+        `/rest/v1/findings?select=id,due_date,is_resolved,inspection_id&inspection_id=in.(${inspectionIds.join(",")})`,
+        data.accessToken,
+        { module: "dashboard", query: "findings" },
+      );
+      checkJson(findingsRes, "findings");
+    }
+  }
 
   sleep(1);
 }
@@ -327,7 +341,7 @@ export function osgbReads(data) {
   const trackingRes = postRpc(
     "get_osgb_company_tracking_page",
     {
-      p_org_id: data.userId,
+      p_org_id: data.orgId,
       p_page: 1,
       p_page_size: 10,
       p_search: null,

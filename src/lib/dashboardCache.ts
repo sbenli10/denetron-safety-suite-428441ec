@@ -112,7 +112,7 @@ export const fetchDashboardSnapshot = async (
 
   const { data: inspections, error: inspectionsError } = await supabase
     .from("inspections")
-    .select("*")
+    .select("id, location_name, risk_level, status, created_at, org_id")
     .eq("org_id", orgId)
     .order("created_at", { ascending: false });
 
@@ -127,7 +127,7 @@ export const fetchDashboardSnapshot = async (
     const inspectionIds = inspectionList.map((inspection) => inspection.id);
     const { data: findings, error: findingsError } = await supabase
       .from("findings")
-      .select("*")
+      .select("id, description, due_date, is_resolved, inspection_id")
       .in("inspection_id", inspectionIds);
 
     if (!findingsError) {

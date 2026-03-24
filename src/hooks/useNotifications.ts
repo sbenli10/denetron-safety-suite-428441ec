@@ -1,95 +1,237 @@
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import type { Notification } from "@/types/notification";
 import { toast } from "sonner";
 
-export const useNotifications = () => {
-  const { user } = useAuth();
-  const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [unreadCount, setUnreadCount] = useState(0);
-  const [loading, setLoading] = useState(true);
+type NotificationState = {
+  notifications: Notification[];
+  unreadCount: number;
+  loading: boolean;
+};
 
-  // Fetch notifications
-  const fetchNotifications = async () => {
-    if (!user) return;
+type Listener = (state: NotificationState) => void;
 
+const STALE_MS = 60 * 1000;
+
+const emptyState: NotificationState = {
+  notifications: [],
+  unreadCount: 0,
+  loading: true,
+};
+
+const store = {
+  userId: null as string | null,
+  state: emptyState,
+  listeners: new Set<Listener>(),
+  channel: null as ReturnType<typeof supabase.channel> | null,
+  fetchPromise: null as Promise<void> | null,
+  lastFetchedAt: 0,
+};
+
+const mapNotifications = (items: any[]): Notification[] =>
+  items.map((item) => ({
+    ...item,
+    type: item.type as Notification["type"],
+    category: item.category as Notification["category"],
+    priority: item.priority as Notification["priority"],
+    metadata: item.metadata as Record<string, any>,
+  }));
+
+const emit = () => {
+  for (const listener of store.listeners) {
+    listener(store.state);
+  }
+};
+
+const setState = (next: NotificationState) => {
+  store.state = next;
+  emit();
+};
+
+const patchState = (patch: Partial<NotificationState>) => {
+  setState({ ...store.state, ...patch });
+};
+
+const resetStore = () => {
+  if (store.channel) {
+    supabase.removeChannel(store.channel);
+    store.channel = null;
+  }
+
+  store.userId = null;
+  store.fetchPromise = null;
+  store.lastFetchedAt = 0;
+  setState(emptyState);
+};
+
+const fetchNotifications = async (userId: string, force = false) => {
+  const isFresh =
+    store.userId === userId && Date.now() - store.lastFetchedAt < STALE_MS;
+  if (!force && isFresh && store.state.notifications.length > 0) {
+    return;
+  }
+
+  if (store.fetchPromise) {
+    return store.fetchPromise;
+  }
+
+  store.userId = userId;
+  patchState({ loading: true });
+
+  store.fetchPromise = (async () => {
     try {
       const { data, error } = await supabase
         .from("notifications")
         .select("*")
-        .eq("user_id", user.id)
+        .eq("user_id", userId)
         .or("expires_at.is.null,expires_at.gt.now()")
         .order("created_at", { ascending: false })
         .limit(50);
 
       if (error) throw error;
 
-      // ✅ Type casting ile düzelt
-      const typedNotifications = (data || []).map(item => ({
-        ...item,
-        type: item.type as Notification['type'], // ✅ Explicit cast
-        category: item.category as Notification['category'], // ✅ Explicit cast
-        priority: item.priority as Notification['priority'], // ✅ Explicit cast
-        metadata: item.metadata as Record<string, any>, // ✅ Json → Object
-      })) as Notification[];
-
-      setNotifications(typedNotifications);
-      setUnreadCount(typedNotifications.filter(n => !n.is_read).length);
-    } catch (error: any) {
+      const notifications = mapNotifications(data || []);
+      store.lastFetchedAt = Date.now();
+      setState({
+        notifications,
+        unreadCount: notifications.filter((item) => !item.is_read).length,
+        loading: false,
+      });
+    } catch (error) {
       console.error("Fetch notifications error:", error);
+      patchState({ loading: false });
     } finally {
-      setLoading(false);
+      store.fetchPromise = null;
     }
-  };
+  })();
 
-  // Mark as read
+  return store.fetchPromise;
+};
+
+const ensureRealtime = (userId: string) => {
+  if (store.channel && store.userId === userId) {
+    return;
+  }
+
+  if (store.channel) {
+    supabase.removeChannel(store.channel);
+    store.channel = null;
+  }
+
+  store.userId = userId;
+  store.channel = supabase
+    .channel(`notifications:${userId}`)
+    .on(
+      "postgres_changes",
+      {
+        event: "INSERT",
+        schema: "public",
+        table: "notifications",
+        filter: `user_id=eq.${userId}`,
+      },
+      (payload) => {
+        const newNotification = mapNotifications([payload.new])[0];
+        const notifications = [newNotification, ...store.state.notifications].slice(
+          0,
+          50,
+        );
+
+        setState({
+          notifications,
+          unreadCount: notifications.filter((item) => !item.is_read).length,
+          loading: false,
+        });
+
+        toast.info(newNotification.title, {
+          description: newNotification.message,
+        });
+      },
+    )
+    .subscribe();
+};
+
+export const useNotifications = () => {
+  const { user } = useAuth();
+  const [state, setLocalState] = useState<NotificationState>(store.state);
+
+  useEffect(() => {
+    store.listeners.add(setLocalState);
+    setLocalState(store.state);
+
+    return () => {
+      store.listeners.delete(setLocalState);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!user?.id) {
+      resetStore();
+      return;
+    }
+
+    ensureRealtime(user.id);
+    void fetchNotifications(user.id);
+  }, [user?.id]);
+
   const markAsRead = async (notificationId: string) => {
     try {
+      const timestamp = new Date().toISOString();
       const { error } = await supabase
         .from("notifications")
-        .update({ 
-          is_read: true, 
-          read_at: new Date().toISOString() 
+        .update({
+          is_read: true,
+          read_at: timestamp,
         })
         .eq("id", notificationId);
 
       if (error) throw error;
 
-      setNotifications(prev =>
-        prev.map(n => n.id === notificationId ? { ...n, is_read: true, read_at: new Date().toISOString() } : n)
+      const notifications = store.state.notifications.map((notification) =>
+        notification.id === notificationId
+          ? { ...notification, is_read: true, read_at: timestamp }
+          : notification,
       );
-      setUnreadCount(prev => Math.max(0, prev - 1));
-    } catch (error: any) {
+
+      setState({
+        notifications,
+        unreadCount: notifications.filter((item) => !item.is_read).length,
+        loading: false,
+      });
+    } catch (error) {
       console.error("Mark as read error:", error);
     }
   };
 
-  // Mark all as read
   const markAllAsRead = async () => {
-    if (!user) return;
+    if (!user?.id) return;
 
     try {
+      const timestamp = new Date().toISOString();
       const { error } = await supabase
         .from("notifications")
-        .update({ 
-          is_read: true, 
-          read_at: new Date().toISOString() 
+        .update({
+          is_read: true,
+          read_at: timestamp,
         })
         .eq("user_id", user.id)
         .eq("is_read", false);
 
       if (error) throw error;
 
-      setNotifications(prev => prev.map(n => ({ ...n, is_read: true, read_at: new Date().toISOString() })));
-      setUnreadCount(0);
-      toast.success("Tüm bildirimler okundu olarak işaretlendi");
-    } catch (error: any) {
+      const notifications = store.state.notifications.map((notification) => ({
+        ...notification,
+        is_read: true,
+        read_at: timestamp,
+      }));
+
+      setState({ notifications, unreadCount: 0, loading: false });
+      toast.success("Tum bildirimler okundu olarak isaretlendi");
+    } catch (error) {
       console.error("Mark all as read error:", error);
     }
   };
 
-  // Delete notification
   const deleteNotification = async (notificationId: string) => {
     try {
       const { error } = await supabase
@@ -99,62 +241,33 @@ export const useNotifications = () => {
 
       if (error) throw error;
 
-      setNotifications(prev => prev.filter(n => n.id !== notificationId));
+      const notifications = store.state.notifications.filter(
+        (notification) => notification.id !== notificationId,
+      );
+
+      setState({
+        notifications,
+        unreadCount: notifications.filter((item) => !item.is_read).length,
+        loading: false,
+      });
       toast.success("Bildirim silindi");
-    } catch (error: any) {
+    } catch (error) {
       console.error("Delete notification error:", error);
     }
   };
 
-  // Real-time subscription
-  useEffect(() => {
-    if (!user) return;
-
-    fetchNotifications();
-
-    const channel = supabase
-      .channel("notifications")
-      .on(
-        "postgres_changes",
-        {
-          event: "INSERT",
-          schema: "public",
-          table: "notifications",
-          filter: `user_id=eq.${user.id}`,
-        },
-        (payload) => {
-          // ✅ Type casting
-          const newNotification = {
-            ...payload.new,
-            type: payload.new.type as Notification['type'],
-            category: payload.new.category as Notification['category'],
-            priority: payload.new.priority as Notification['priority'],
-            metadata: payload.new.metadata as Record<string, any>,
-          } as Notification;
-
-          setNotifications(prev => [newNotification, ...prev]);
-          setUnreadCount(prev => prev + 1);
-          
-          // Toast notification
-          toast.info(newNotification.title, {
-            description: newNotification.message,
-          });
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [user]);
+  const refresh = async () => {
+    if (!user?.id) return;
+    await fetchNotifications(user.id, true);
+  };
 
   return {
-    notifications,
-    unreadCount,
-    loading,
+    notifications: state.notifications,
+    unreadCount: state.unreadCount,
+    loading: state.loading,
     markAsRead,
     markAllAsRead,
     deleteNotification,
-    refresh: fetchNotifications,
+    refresh,
   };
 };

@@ -43,10 +43,10 @@ import {
 } from "@/components/ui/table";
 import {
   getOsgbCompanyTrackingPage,
-  listOsgbAssignments,
-  listOsgbDocuments,
-  listOsgbFinance,
-  listOsgbPersonnel,
+  listActiveOsgbPersonnel,
+  listCompanyOsgbAssignments,
+  listCompanyOsgbDocuments,
+  listCompanyOsgbFinance,
   type OsgbAssignmentInput,
   type OsgbAssignmentRecord,
   type OsgbCompanyTrackingRecord,
@@ -141,6 +141,7 @@ export default function OSGBCompanyTracking() {
   const [assignments, setAssignments] = useState<OsgbAssignmentRecord[]>([]);
   const [financeRecords, setFinanceRecords] = useState<OsgbFinanceRecord[]>([]);
   const [documentRecords, setDocumentRecords] = useState<OsgbDocumentRecord[]>([]);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -159,35 +160,42 @@ export default function OSGBCompanyTracking() {
   const [page, setPage] = useState(1);
   const [totalCount, setTotalCount] = useState(0);
 
+  const loadCompanyDetails = async (companyId: string) => {
+    if (!user?.id) return;
+
+    setDetailLoading(true);
+    try {
+      const [personnelRows, assignmentRows, financeRows, documentRows] = await Promise.all([
+        listActiveOsgbPersonnel(user.id),
+        listCompanyOsgbAssignments(user.id, companyId),
+        listCompanyOsgbFinance(user.id, companyId),
+        listCompanyOsgbDocuments(user.id, companyId),
+      ]);
+
+      setPersonnel(personnelRows);
+      setAssignments(assignmentRows);
+      setFinanceRecords(financeRows);
+      setDocumentRecords(documentRows);
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
   const loadData = async (silent = false) => {
     if (!user?.id) return;
     if (!silent) setLoading(true);
     try {
-      const [trackingResult, personnelRows, assignmentRows, financeRows, documentRows] = await Promise.all([
-        getOsgbCompanyTrackingPage(user.id, {
-          page,
-          pageSize: COMPANY_TRACKING_PAGE_SIZE,
-          search,
-          status: statusFilter,
-        }),
-        listOsgbPersonnel(user.id),
-        listOsgbAssignments(user.id),
-        listOsgbFinance(user.id),
-        listOsgbDocuments(user.id),
-      ]);
+      const trackingResult = await getOsgbCompanyTrackingPage(user.id, {
+        page,
+        pageSize: COMPANY_TRACKING_PAGE_SIZE,
+        search,
+        status: statusFilter,
+      });
       setRecords(trackingResult.rows);
       setTotalCount(trackingResult.count);
-      setPersonnel(personnelRows.filter((item) => item.is_active));
-      setAssignments(assignmentRows);
-      setFinanceRecords(financeRows);
-      setDocumentRecords(documentRows);
       writeOsgbPageCache(`${getCacheKey(user.id)}:${statusFilter}:${search}:${page}`, {
         records: trackingResult.rows,
         totalCount: trackingResult.count,
-        personnel: personnelRows.filter((item) => item.is_active),
-        assignments: assignmentRows,
-        financeRecords: financeRows,
-        documentRecords: documentRows,
       });
       setError(null);
     } catch (err) {
@@ -202,18 +210,10 @@ export default function OSGBCompanyTracking() {
     const cached = readOsgbPageCache<{
       records: OsgbCompanyTrackingRecord[];
       totalCount: number;
-      personnel: OsgbPersonnelRecord[];
-      assignments: OsgbAssignmentRecord[];
-      financeRecords: OsgbFinanceRecord[];
-      documentRecords: OsgbDocumentRecord[];
     }>(`${getCacheKey(user.id)}:${statusFilter}:${search}:${page}`, CACHE_TTL_MS);
     if (cached) {
       setRecords(cached.records);
       setTotalCount(cached.totalCount);
-      setPersonnel(cached.personnel);
-      setAssignments(cached.assignments);
-      setFinanceRecords(cached.financeRecords);
-      setDocumentRecords(cached.documentRecords);
       setLoading(false);
       void loadData(true);
       return;
@@ -243,6 +243,29 @@ export default function OSGBCompanyTracking() {
   useEffect(() => {
     setPage(1);
   }, [search, statusFilter]);
+
+  useEffect(() => {
+    if (!user?.id || !selectedCompany) return;
+
+    let cancelled = false;
+
+    const loadDetails = async () => {
+      try {
+        await loadCompanyDetails(selectedCompany.companyId);
+        if (cancelled) return;
+      } catch (err) {
+        if (!cancelled) {
+          toast.error(err instanceof Error ? err.message : "Firma detaylari yuklenemedi.");
+        }
+      }
+    };
+
+    void loadDetails();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedCompany?.companyId, user?.id]);
 
   useEffect(() => {
     if (page > totalPages) setPage(totalPages);
@@ -314,6 +337,7 @@ export default function OSGBCompanyTracking() {
       setAssignmentForm(emptyAssignmentForm);
       setEditingAssignmentId(null);
       await loadData();
+      await loadCompanyDetails(selectedCompany.companyId);
       toast.success(editingAssignmentId ? "Assignment güncellendi." : "Firma için assignment oluşturuldu.");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Assignment oluşturulamadı.");
@@ -348,6 +372,7 @@ export default function OSGBCompanyTracking() {
       setFinanceForm(emptyFinanceForm);
       setEditingFinanceId(null);
       await loadData();
+      await loadCompanyDetails(selectedCompany.companyId);
       toast.success(editingFinanceId ? "Finans kaydı güncellendi." : "Finans kaydı oluşturuldu.");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Finans kaydı oluşturulamadı.");
@@ -381,6 +406,7 @@ export default function OSGBCompanyTracking() {
       setDocumentForm(emptyDocumentForm);
       setEditingDocumentId(null);
       await loadData();
+      await loadCompanyDetails(selectedCompany.companyId);
       toast.success(editingDocumentId ? "Evrak kaydı güncellendi." : "Evrak kaydı oluşturuldu.");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Evrak kaydı oluşturulamadı.");
@@ -513,7 +539,19 @@ export default function OSGBCompanyTracking() {
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
-                        <Button size="sm" variant="outline" onClick={() => setSelectedCompany(record)}>Detay</Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => {
+                            setPersonnel([]);
+                            setAssignments([]);
+                            setFinanceRecords([]);
+                            setDocumentRecords([]);
+                            setSelectedCompany(record);
+                          }}
+                        >
+                          Detay
+                        </Button>
                         <Button asChild size="sm" variant="outline">
                           <Link to={`/osgb/documents?status=${record.documentSummary.expired > 0 ? "expired" : record.documentSummary.warning > 0 ? "warning" : "active"}`}>
                             <FileClock className="mr-2 h-4 w-4" />
@@ -545,7 +583,18 @@ export default function OSGBCompanyTracking() {
         </CardContent>
       </Card>
 
-      <Dialog open={Boolean(selectedCompany)} onOpenChange={(open) => !open && setSelectedCompany(null)}>
+      <Dialog
+        open={Boolean(selectedCompany)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedCompany(null);
+            setPersonnel([]);
+            setAssignments([]);
+            setFinanceRecords([]);
+            setDocumentRecords([]);
+          }
+        }}
+      >
         <DialogContent className="sm:max-w-3xl">
           <DialogHeader>
             <DialogTitle>{selectedCompany?.companyName}</DialogTitle>
@@ -553,6 +602,14 @@ export default function OSGBCompanyTracking() {
           </DialogHeader>
           {selectedCompany ? (
             <div className="space-y-4">
+              {detailLoading ? (
+                <Alert>
+                  <AlertTitle>Firma detaylari yukleniyor</AlertTitle>
+                  <AlertDescription>
+                    Assignment, finans ve evrak kayitlari sirayla yukleniyor. Ozet bilgiler hazir, islem alanlari detaylar geldikten sonra aktif olur.
+                  </AlertDescription>
+                </Alert>
+              ) : null}
               <div className="grid gap-4 md:grid-cols-2">
                 <Card className="border-slate-800 bg-slate-950/70">
                   <CardHeader><CardTitle className="text-base text-white">Atama özeti</CardTitle></CardHeader>
@@ -591,12 +648,13 @@ export default function OSGBCompanyTracking() {
               </div>
 
               <div className="flex flex-wrap gap-2">
-                <Button onClick={openQuickAssignment}>
+                <Button onClick={openQuickAssignment} disabled={detailLoading}>
                   <Plus className="mr-2 h-4 w-4" />
                   {selectedCompanyAssignments[0] ? "Assignment düzenle" : "Assignment ekle"}
                 </Button>
                 <Button
                   variant="outline"
+                  disabled={detailLoading}
                   onClick={() => {
                     setEditingFinanceId(selectedFinanceRecord?.id || null);
                     setFinanceForm(selectedFinanceRecord ? {
@@ -615,6 +673,7 @@ export default function OSGBCompanyTracking() {
                 </Button>
                 <Button
                   variant="outline"
+                  disabled={detailLoading}
                   onClick={() => {
                     setEditingDocumentId(selectedDocumentRecord?.id || null);
                     setDocumentForm(selectedDocumentRecord ? {
@@ -646,7 +705,7 @@ export default function OSGBCompanyTracking() {
             <div className="space-y-2">
               <Label>Personel</Label>
               <Select value={assignmentForm.personnelId} onValueChange={(value) => setAssignmentForm((prev) => ({ ...prev, personnelId: value }))}>
-                <SelectTrigger><SelectValue placeholder="Personel seçin" /></SelectTrigger>
+                <SelectTrigger disabled={detailLoading}><SelectValue placeholder="Personel seçin" /></SelectTrigger>
                 <SelectContent>
                   {personnel.map((item) => (
                     <SelectItem key={item.id} value={item.id}>{item.full_name} • {item.role.toUpperCase()}</SelectItem>

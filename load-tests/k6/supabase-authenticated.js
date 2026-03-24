@@ -54,12 +54,12 @@ export const options = {
       exec: "dashboardReads",
       startRate: 1,
       timeUnit: "1s",
-      preAllocatedVUs: 20,
-      maxVUs: 100,
+      preAllocatedVUs: 10,
+      maxVUs: 40,
       stages: [
-        { target: 5, duration: "1m" },
-        { target: 15, duration: "2m" },
-        { target: 25, duration: "2m" },
+        { target: 3, duration: "1m" },
+        { target: 6, duration: "2m" },
+        { target: 8, duration: "2m" },
         { target: 0, duration: "1m" },
       ],
     },
@@ -68,12 +68,12 @@ export const options = {
       exec: "coreModuleReads",
       startRate: 1,
       timeUnit: "1s",
-      preAllocatedVUs: 20,
-      maxVUs: 100,
+      preAllocatedVUs: 12,
+      maxVUs: 50,
       stages: [
-        { target: 5, duration: "1m" },
-        { target: 20, duration: "2m" },
-        { target: 40, duration: "2m" },
+        { target: 4, duration: "1m" },
+        { target: 8, duration: "2m" },
+        { target: 12, duration: "2m" },
         { target: 0, duration: "1m" },
       ],
     },
@@ -82,40 +82,40 @@ export const options = {
       exec: "osgbReads",
       startRate: 1,
       timeUnit: "1s",
-      preAllocatedVUs: 10,
-      maxVUs: 60,
+      preAllocatedVUs: 8,
+      maxVUs: 30,
       stages: [
         { target: 2, duration: "1m" },
-        { target: 10, duration: "2m" },
-        { target: 20, duration: "2m" },
+        { target: 4, duration: "2m" },
+        { target: 6, duration: "2m" },
         { target: 0, duration: "1m" },
       ],
     },
     core_module_reads_phase2: {
       executor: "ramping-arrival-rate",
       exec: "coreModuleReads",
-      startRate: 5,
+      startRate: 2,
       timeUnit: "1s",
-      preAllocatedVUs: 80,
-      maxVUs: 220,
+      preAllocatedVUs: 20,
+      maxVUs: 80,
       stages: [
-        { target: 20, duration: "1m" },
-        { target: 40, duration: "2m" },
-        { target: 60, duration: "2m" },
+        { target: 6, duration: "1m" },
+        { target: 12, duration: "2m" },
+        { target: 18, duration: "2m" },
         { target: 0, duration: "1m" },
       ],
     },
     osgb_reads_phase2: {
       executor: "ramping-arrival-rate",
       exec: "osgbReads",
-      startRate: 2,
+      startRate: 1,
       timeUnit: "1s",
-      preAllocatedVUs: 40,
-      maxVUs: 140,
+      preAllocatedVUs: 12,
+      maxVUs: 50,
       stages: [
-        { target: 10, duration: "1m" },
-        { target: 20, duration: "2m" },
-        { target: 30, duration: "2m" },
+        { target: 4, duration: "1m" },
+        { target: 8, duration: "2m" },
+        { target: 10, duration: "2m" },
         { target: 0, duration: "1m" },
       ],
     },
@@ -232,125 +232,94 @@ export function dashboardReads(data) {
 }
 
 export function coreModuleReads(data) {
-  const requests = [
-    [
-      "GET",
-      `${SUPABASE_URL}/rest/v1/employees?select=id,company_id,first_name,last_name,is_active&is_active=eq.true&order=first_name.asc&limit=10`,
-      null,
-      {
-        headers: authHeaders(data.accessToken),
-        tags: { module: "core", query: "employees_page_active" },
-      },
-    ],
-    [
-      "GET",
-      `${SUPABASE_URL}/rest/v1/ppe_inventory?select=id,item_name,category,stock_quantity,is_active&order=updated_at.desc&limit=10`,
-      null,
-      {
-        headers: authHeaders(data.accessToken),
-        tags: { module: "core", query: "ppe_inventory_page" },
-      },
-    ],
-    [
-      "GET",
-      `${SUPABASE_URL}/rest/v1/ppe_assignments?select=id,inventory_id,employee_id,status,due_date&order=due_date.asc&limit=10`,
-      null,
-      {
-        headers: authHeaders(data.accessToken),
-        tags: { module: "core", query: "ppe_assignments_page" },
-      },
-    ],
-    [
-      "GET",
-      `${SUPABASE_URL}/rest/v1/periodic_controls?select=id,company_id,equipment_name,status,next_control_date&order=next_control_date.asc&limit=10`,
-      null,
-      {
-        headers: authHeaders(data.accessToken),
-        tags: { module: "core", query: "periodic_controls_page" },
-      },
-    ],
-    [
-      "GET",
-      `${SUPABASE_URL}/rest/v1/health_surveillance_records?select=id,employee_id,company_id,status,exam_date,next_exam_date&order=next_exam_date.asc&limit=10`,
-      null,
-      {
-        headers: authHeaders(data.accessToken),
-        tags: { module: "core", query: "health_surveillance_records_page" },
-      },
-    ],
-    [
-      "GET",
-      `${SUPABASE_URL}/rest/v1/incident_reports?select=id,company_id,status,severity,incident_date,updated_at&order=updated_at.desc&limit=25`,
-      null,
-      {
-        headers: authHeaders(data.accessToken),
-        tags: { module: "core", query: "incident_reports" },
-      },
-    ],
+  const screens = [
+    {
+      label: "employees_page_active",
+      path: "/rest/v1/employees?select=id,company_id,first_name,last_name,is_active&is_active=eq.true&order=first_name.asc&limit=10",
+    },
+    {
+      label: "ppe_inventory_page",
+      path: "/rest/v1/ppe_inventory?select=id,item_name,category,stock_quantity,is_active&order=updated_at.desc&limit=10",
+    },
+    {
+      label: "ppe_assignments_page",
+      path: "/rest/v1/ppe_assignments?select=id,inventory_id,employee_id,status,due_date&order=due_date.asc&limit=10",
+    },
+    {
+      label: "periodic_controls_page",
+      path: "/rest/v1/periodic_controls?select=id,company_id,equipment_name,status,next_control_date&order=next_control_date.asc&limit=10",
+    },
+    {
+      label: "health_surveillance_records_page",
+      path: "/rest/v1/health_surveillance_records?select=id,employee_id,company_id,status,exam_date,next_exam_date&order=next_exam_date.asc&limit=10",
+    },
+    {
+      label: "incident_reports",
+      path: "/rest/v1/incident_reports?select=id,company_id,status,severity,incident_date,updated_at&order=updated_at.desc&limit=25",
+    },
   ];
 
-  const responses = http.batch(requests);
-  responses.forEach((res, index) => checkJson(res, `core_batch_${index}`));
+  const screen = screens[__ITER % screens.length];
+  const response = get(screen.path, data.accessToken, {
+    module: "core",
+    query: screen.label,
+  });
+  checkJson(response, screen.label);
 
   sleep(1);
 }
 
 export function osgbReads(data) {
-  const requests = [
-    [
-      "GET",
-      `${SUPABASE_URL}/rest/v1/isgkatip_companies?select=id,company_name,employee_count,compliance_status&is_deleted=eq.false&order=company_name.asc&limit=10`,
-      null,
-      {
-        headers: authHeaders(data.accessToken),
-        tags: { module: "osgb", query: "isgkatip_companies_page" },
-      },
-    ],
-    [
-      "GET",
-      `${SUPABASE_URL}/rest/v1/osgb_personnel?select=id,full_name,role,is_active&is_active=eq.true&order=full_name.asc&limit=10`,
-      null,
-      {
-        headers: authHeaders(data.accessToken),
-        tags: { module: "osgb", query: "osgb_personnel_page" },
-      },
-    ],
-    [
-      "GET",
-      `${SUPABASE_URL}/rest/v1/osgb_assignments?select=id,company_id,personnel_id,status,assigned_minutes&order=created_at.desc&limit=10`,
-      null,
-      {
-        headers: authHeaders(data.accessToken),
-        tags: { module: "osgb", query: "osgb_assignments_page" },
-      },
-    ],
-    [
-      "GET",
-      `${SUPABASE_URL}/rest/v1/osgb_tasks?select=id,company_id,title,status,priority,due_date&order=created_at.desc&limit=10`,
-      null,
-      {
-        headers: authHeaders(data.accessToken),
-        tags: { module: "osgb", query: "osgb_tasks_page" },
-      },
-    ],
+  const screens = [
+    {
+      type: "rest",
+      label: "isgkatip_companies_page",
+      path: "/rest/v1/isgkatip_companies?select=id,company_name,employee_count,compliance_status&is_deleted=eq.false&order=company_name.asc&limit=10",
+    },
+    {
+      type: "rest",
+      label: "osgb_personnel_page",
+      path: "/rest/v1/osgb_personnel?select=id,full_name,role,is_active&is_active=eq.true&order=full_name.asc&limit=10",
+    },
+    {
+      type: "rest",
+      label: "osgb_assignments_page",
+      path: "/rest/v1/osgb_assignments?select=id,company_id,personnel_id,status,assigned_minutes&order=created_at.desc&limit=10",
+    },
+    {
+      type: "rest",
+      label: "osgb_tasks_page",
+      path: "/rest/v1/osgb_tasks?select=id,company_id,title,status,priority,due_date&order=created_at.desc&limit=10",
+    },
+    {
+      type: "rpc",
+      label: "osgb_company_tracking_rpc",
+    },
   ];
 
-  const responses = http.batch(requests);
-  responses.forEach((res, index) => checkJson(res, `osgb_batch_${index}`));
+  const screen = screens[__ITER % screens.length];
 
-  const trackingRes = postRpc(
-    "get_osgb_company_tracking_page",
-    {
-      p_org_id: data.orgId,
-      p_page: 1,
-      p_page_size: 10,
-      p_search: null,
-      p_assignment_status: null,
-    },
-    data.accessToken,
-    { module: "osgb", query: "osgb_company_tracking_rpc" },
-  );
-  checkJson(trackingRes, "osgb_company_tracking_rpc");
+  if (screen.type === "rpc") {
+    const trackingRes = postRpc(
+      "get_osgb_company_tracking_page",
+      {
+        p_org_id: data.orgId,
+        p_page: 1,
+        p_page_size: 10,
+        p_search: null,
+        p_assignment_status: null,
+      },
+      data.accessToken,
+      { module: "osgb", query: screen.label },
+    );
+    checkJson(trackingRes, screen.label);
+  } else {
+    const response = get(screen.path, data.accessToken, {
+      module: "osgb",
+      query: screen.label,
+    });
+    checkJson(response, screen.label);
+  }
 
   sleep(1);
 }

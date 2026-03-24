@@ -351,6 +351,18 @@ export const listOsgbPersonnel = async (userId: string): Promise<OsgbPersonnelRe
   return (data ?? []) as OsgbPersonnelRecord[];
 };
 
+export const listActiveOsgbPersonnel = async (userId: string): Promise<OsgbPersonnelRecord[]> => {
+  const { data, error } = await supabase
+    .from("osgb_personnel")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("is_active", true)
+    .order("full_name", { ascending: true });
+
+  if (error) throw error;
+  return (data ?? []) as OsgbPersonnelRecord[];
+};
+
 export const upsertOsgbPersonnel = async (userId: string, input: OsgbPersonnelInput, id?: string) => {
   const payload = {
     user_id: userId,
@@ -388,6 +400,21 @@ export const listOsgbAssignments = async (userId: string): Promise<OsgbAssignmen
     .from("osgb_assignments")
     .select("*, company:isgkatip_companies(company_name), personnel:osgb_personnel(full_name, role)")
     .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+  return (data ?? []) as OsgbAssignmentRecord[];
+};
+
+export const listCompanyOsgbAssignments = async (
+  userId: string,
+  companyId: string,
+): Promise<OsgbAssignmentRecord[]> => {
+  const { data, error } = await supabase
+    .from("osgb_assignments")
+    .select("*, company:isgkatip_companies(company_name), personnel:osgb_personnel(full_name, role)")
+    .eq("user_id", userId)
+    .eq("company_id", companyId)
     .order("created_at", { ascending: false });
 
   if (error) throw error;
@@ -482,6 +509,21 @@ export const listOsgbFinance = async (userId: string): Promise<OsgbFinanceRecord
   return (data ?? []) as OsgbFinanceRecord[];
 };
 
+export const listCompanyOsgbFinance = async (
+  userId: string,
+  companyId: string,
+): Promise<OsgbFinanceRecord[]> => {
+  const { data, error } = await supabase
+    .from("osgb_finance")
+    .select("*, company:isgkatip_companies(company_name)")
+    .eq("user_id", userId)
+    .eq("company_id", companyId)
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+  return (data ?? []) as OsgbFinanceRecord[];
+};
+
 export const upsertOsgbFinance = async (userId: string, input: OsgbFinanceInput, id?: string) => {
   const payload = {
     user_id: userId,
@@ -519,6 +561,21 @@ export const listOsgbDocuments = async (userId: string): Promise<OsgbDocumentRec
     .from("osgb_document_tracking")
     .select("*, company:isgkatip_companies(company_name)")
     .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+  return (data ?? []) as OsgbDocumentRecord[];
+};
+
+export const listCompanyOsgbDocuments = async (
+  userId: string,
+  companyId: string,
+): Promise<OsgbDocumentRecord[]> => {
+  const { data, error } = await supabase
+    .from("osgb_document_tracking")
+    .select("*, company:isgkatip_companies(company_name)")
+    .eq("user_id", userId)
+    .eq("company_id", companyId)
     .order("created_at", { ascending: false });
 
   if (error) throw error;

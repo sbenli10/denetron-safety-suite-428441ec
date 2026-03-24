@@ -36,6 +36,17 @@ function get(path, accessToken, tags = {}) {
   });
 }
 
+function postRpc(fnName, payload, accessToken, tags = {}) {
+  return http.post(`${SUPABASE_URL}/rest/v1/rpc/${fnName}`, JSON.stringify(payload), {
+    headers: {
+      ...authHeaders(accessToken),
+      "Content-Type": "application/json",
+      Prefer: "count=exact",
+    },
+    tags,
+  });
+}
+
 export const options = {
   scenarios: {
     dashboard_reads: {
@@ -189,6 +200,20 @@ export function dashboardReads(data) {
   );
   checkJson(companyRes, "companies");
 
+  const trackingRes = postRpc(
+    "get_osgb_company_tracking_page",
+    {
+      p_org_id: data.userId,
+      p_page: 1,
+      p_page_size: 10,
+      p_search: null,
+      p_assignment_status: null,
+    },
+    data.accessToken,
+    { module: "dashboard", query: "osgb_company_tracking_rpc" },
+  );
+  checkJson(trackingRes, "company_tracking_rpc");
+
   sleep(1);
 }
 
@@ -196,47 +221,47 @@ export function coreModuleReads(data) {
   const requests = [
     [
       "GET",
-      `${SUPABASE_URL}/rest/v1/employees?select=id,company_id,first_name,last_name,is_active,updated_at&order=updated_at.desc&limit=25`,
+      `${SUPABASE_URL}/rest/v1/employees?select=id,company_id,first_name,last_name,is_active&is_active=eq.true&order=first_name.asc&limit=10`,
       null,
       {
         headers: authHeaders(data.accessToken),
-        tags: { module: "core", query: "employees" },
+        tags: { module: "core", query: "employees_page_active" },
       },
     ],
     [
       "GET",
-      `${SUPABASE_URL}/rest/v1/ppe_inventory?select=id,item_name,category,stock_quantity,is_active,updated_at&order=updated_at.desc&limit=25`,
+      `${SUPABASE_URL}/rest/v1/ppe_inventory?select=id,item_name,category,stock_quantity,is_active&order=updated_at.desc&limit=10`,
       null,
       {
         headers: authHeaders(data.accessToken),
-        tags: { module: "core", query: "ppe_inventory" },
+        tags: { module: "core", query: "ppe_inventory_page" },
       },
     ],
     [
       "GET",
-      `${SUPABASE_URL}/rest/v1/ppe_assignments?select=id,inventory_id,employee_id,status,due_date,updated_at&order=updated_at.desc&limit=25`,
+      `${SUPABASE_URL}/rest/v1/ppe_assignments?select=id,inventory_id,employee_id,status,due_date&order=due_date.asc&limit=10`,
       null,
       {
         headers: authHeaders(data.accessToken),
-        tags: { module: "core", query: "ppe_assignments" },
+        tags: { module: "core", query: "ppe_assignments_page" },
       },
     ],
     [
       "GET",
-      `${SUPABASE_URL}/rest/v1/periodic_controls?select=id,company_id,equipment_name,status,next_control_date,updated_at&order=updated_at.desc&limit=25`,
+      `${SUPABASE_URL}/rest/v1/periodic_controls?select=id,company_id,equipment_name,status,next_control_date&order=next_control_date.asc&limit=10`,
       null,
       {
         headers: authHeaders(data.accessToken),
-        tags: { module: "core", query: "periodic_controls" },
+        tags: { module: "core", query: "periodic_controls_page" },
       },
     ],
     [
       "GET",
-      `${SUPABASE_URL}/rest/v1/health_surveillance_records?select=id,employee_id,company_id,status,exam_date,next_exam_date,updated_at&order=updated_at.desc&limit=25`,
+      `${SUPABASE_URL}/rest/v1/health_surveillance_records?select=id,employee_id,company_id,status,exam_date,next_exam_date&order=next_exam_date.asc&limit=10`,
       null,
       {
         headers: authHeaders(data.accessToken),
-        tags: { module: "core", query: "health_surveillance_records" },
+        tags: { module: "core", query: "health_surveillance_records_page" },
       },
     ],
     [
@@ -260,44 +285,58 @@ export function osgbReads(data) {
   const requests = [
     [
       "GET",
-      `${SUPABASE_URL}/rest/v1/isgkatip_companies?select=id,company_name,employee_count,compliance_status,updated_at&order=updated_at.desc&limit=25`,
+      `${SUPABASE_URL}/rest/v1/isgkatip_companies?select=id,company_name,employee_count,compliance_status&is_deleted=eq.false&order=company_name.asc&limit=10`,
       null,
       {
         headers: authHeaders(data.accessToken),
-        tags: { module: "osgb", query: "isgkatip_companies" },
+        tags: { module: "osgb", query: "isgkatip_companies_page" },
       },
     ],
     [
       "GET",
-      `${SUPABASE_URL}/rest/v1/osgb_personnel?select=id,full_name,role,is_active,updated_at&order=updated_at.desc&limit=25`,
+      `${SUPABASE_URL}/rest/v1/osgb_personnel?select=id,full_name,role,is_active&is_active=eq.true&order=full_name.asc&limit=10`,
       null,
       {
         headers: authHeaders(data.accessToken),
-        tags: { module: "osgb", query: "osgb_personnel" },
+        tags: { module: "osgb", query: "osgb_personnel_page" },
       },
     ],
     [
       "GET",
-      `${SUPABASE_URL}/rest/v1/osgb_assignments?select=id,company_id,personnel_id,status,assigned_minutes,updated_at&order=updated_at.desc&limit=25`,
+      `${SUPABASE_URL}/rest/v1/osgb_assignments?select=id,company_id,personnel_id,status,assigned_minutes&order=created_at.desc&limit=10`,
       null,
       {
         headers: authHeaders(data.accessToken),
-        tags: { module: "osgb", query: "osgb_assignments" },
+        tags: { module: "osgb", query: "osgb_assignments_page" },
       },
     ],
     [
       "GET",
-      `${SUPABASE_URL}/rest/v1/osgb_tasks?select=id,company_id,title,status,priority,due_date,updated_at&order=updated_at.desc&limit=25`,
+      `${SUPABASE_URL}/rest/v1/osgb_tasks?select=id,company_id,title,status,priority,due_date&order=created_at.desc&limit=10`,
       null,
       {
         headers: authHeaders(data.accessToken),
-        tags: { module: "osgb", query: "osgb_tasks" },
+        tags: { module: "osgb", query: "osgb_tasks_page" },
       },
     ],
   ];
 
   const responses = http.batch(requests);
   responses.forEach((res, index) => checkJson(res, `osgb_batch_${index}`));
+
+  const trackingRes = postRpc(
+    "get_osgb_company_tracking_page",
+    {
+      p_org_id: data.userId,
+      p_page: 1,
+      p_page_size: 10,
+      p_search: null,
+      p_assignment_status: null,
+    },
+    data.accessToken,
+    { module: "osgb", query: "osgb_company_tracking_rpc" },
+  );
+  checkJson(trackingRes, "osgb_company_tracking_rpc");
 
   sleep(1);
 }

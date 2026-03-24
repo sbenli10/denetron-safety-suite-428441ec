@@ -36,6 +36,36 @@ function get(path, accessToken, tags = {}) {
   });
 }
 
+function buildIncidentReportsPath(params = {}) {
+  const queryParts = [
+    `select=${encodeURIComponent("id,company_id,incident_type,title,incident_date,severity,status,company:isgkatip_companies(company_name)")}`,
+    `order=${encodeURIComponent("incident_date.desc")}`,
+    "limit=20",
+  ];
+
+  if (params.type) {
+    queryParts.push(`incident_type=${encodeURIComponent(`eq.${params.type}`)}`);
+  }
+
+  if (params.status) {
+    queryParts.push(`status=${encodeURIComponent(`eq.${params.status}`)}`);
+  }
+
+  if (params.search) {
+    const term = params.search;
+    const orFilter = [
+      `title.ilike.%${term}%`,
+      `description.ilike.%${term}%`,
+      `location.ilike.%${term}%`,
+      `affected_person.ilike.%${term}%`,
+      `reported_by.ilike.%${term}%`,
+    ].join(",");
+    queryParts.push(`or=${encodeURIComponent(`(${orFilter})`)}`);
+  }
+
+  return `/rest/v1/incident_reports?${queryParts.join("&")}`;
+}
+
 function checkJson(res, label) {
   check(res, {
     [`${label} status ok`]: (r) => r.status >= 200 && r.status < 300,
@@ -157,9 +187,9 @@ export function incidentPageReads(data) {
 
 export function incidentFilteredReads(data) {
   const paths = [
-    "/rest/v1/incident_reports?select=id,company_id,incident_type,title,incident_date,severity,status,company:isgkatip_companies(company_name)&incident_type=eq.work_accident&order=incident_date.desc&limit=20",
-    "/rest/v1/incident_reports?select=id,company_id,incident_type,title,incident_date,severity,status,company:isgkatip_companies(company_name)&status=eq.open&order=incident_date.desc&limit=20",
-    "/rest/v1/incident_reports?select=id,company_id,incident_type,title,incident_date,severity,status,company:isgkatip_companies(company_name)&or=(title.ilike.%kaza%,description.ilike.%kaza%,location.ilike.%kaza%,affected_person.ilike.%kaza%,reported_by.ilike.%kaza%)&order=incident_date.desc&limit=20",
+    buildIncidentReportsPath({ type: "work_accident" }),
+    buildIncidentReportsPath({ status: "open" }),
+    buildIncidentReportsPath({ search: "kaza" }),
   ];
 
   const path = paths[__ITER % paths.length];

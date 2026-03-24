@@ -43,6 +43,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useAccessRole } from "@/hooks/useAccessRole";
 import { downloadCsv } from "@/lib/csvExport";
+import { readOsgbPageCache, writeOsgbPageCache } from "@/lib/osgbPageCache";
 import {
   createOsgbTask,
   deleteOsgbTask,
@@ -72,6 +73,8 @@ const emptyForm: TaskFormState = {
   assignedTo: "",
   dueDate: "",
 };
+const OSGB_TASKS_PAGE_SIZE = 10;
+const OSGB_TASKS_CACHE_TTL = 5 * 60 * 1000;
 
 const statusLabel: Record<OsgbTaskRecord["status"], string> = {
   open: "Açık",
@@ -106,9 +109,20 @@ export default function OSGBTasks() {
   const [form, setForm] = useState<TaskFormState>(emptyForm);
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
 
   const loadData = async () => {
     if (!user?.id) return;
+    const cacheKey = `osgb-tasks:${user.id}`;
+    const cached = readOsgbPageCache<{
+      records: OsgbTaskRecord[];
+      companies: OsgbCompanyOption[];
+    }>(cacheKey, OSGB_TASKS_CACHE_TTL);
+    if (cached) {
+      setRecords(cached.records);
+      setCompanies(cached.companies);
+      setLoading(false);
+    }
     setLoading(true);
     try {
       const [taskRows, companyRows] = await Promise.all([
@@ -117,6 +131,10 @@ export default function OSGBTasks() {
       ]);
       setRecords(taskRows);
       setCompanies(companyRows);
+      writeOsgbPageCache(cacheKey, {
+        records: taskRows,
+        companies: companyRows,
+      });
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "OSGB görevleri yüklenemedi.");
@@ -128,6 +146,14 @@ export default function OSGBTasks() {
   useEffect(() => {
     void loadData();
   }, [user?.id]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, statusFilter]);
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
 
   const filteredRecords = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -143,6 +169,11 @@ export default function OSGBTasks() {
     inProgress: records.filter((item) => item.status === "in_progress").length,
     completed: records.filter((item) => item.status === "completed").length,
   }), [records]);
+  const totalPages = Math.max(1, Math.ceil(filteredRecords.length / OSGB_TASKS_PAGE_SIZE));
+  const pagedRecords = useMemo(
+    () => filteredRecords.slice((page - 1) * OSGB_TASKS_PAGE_SIZE, page * OSGB_TASKS_PAGE_SIZE),
+    [filteredRecords, page],
+  );
 
   const openCreate = () => {
     if (!canManage) {
@@ -315,7 +346,7 @@ export default function OSGBTasks() {
               ) : filteredRecords.length === 0 ? (
                 <TableRow><TableCell colSpan={7} className="py-12 text-center text-sm text-slate-400">Eşleşen görev bulunamadı.</TableCell></TableRow>
               ) : (
-                filteredRecords.map((record) => (
+                pagedRecords.map((record) => (
                   <TableRow key={record.id} className="border-slate-800">
                     <TableCell>
                       <div className="font-medium text-white">{record.title}</div>
@@ -345,6 +376,15 @@ export default function OSGBTasks() {
               )}
             </TableBody>
           </Table>
+          {filteredRecords.length > OSGB_TASKS_PAGE_SIZE ? (
+            <div className="mt-4 flex items-center justify-between text-sm text-slate-400">
+              <span>Sayfa {page} / {totalPages}</span>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page === 1}>Önceki</Button>
+                <Button variant="outline" size="sm" onClick={() => setPage((current) => Math.min(totalPages, current + 1))} disabled={page === totalPages}>Sonraki</Button>
+              </div>
+            </div>
+          ) : null}
         </CardContent>
       </Card>
 

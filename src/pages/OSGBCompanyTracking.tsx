@@ -131,6 +131,7 @@ const emptyDocumentForm: DocumentQuickForm = {
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const getCacheKey = (userId: string) => `company-tracking:${userId}`;
+const COMPANY_TRACKING_PAGE_SIZE = 10;
 
 export default function OSGBCompanyTracking() {
   const { user } = useAuth();
@@ -155,6 +156,7 @@ export default function OSGBCompanyTracking() {
   const [editingAssignmentId, setEditingAssignmentId] = useState<string | null>(null);
   const [editingFinanceId, setEditingFinanceId] = useState<string | null>(null);
   const [editingDocumentId, setEditingDocumentId] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
 
   const loadData = async (silent = false) => {
     if (!user?.id) return;
@@ -234,6 +236,11 @@ export default function OSGBCompanyTracking() {
     }),
     [records],
   );
+  const totalPages = Math.max(1, Math.ceil(filteredRecords.length / COMPANY_TRACKING_PAGE_SIZE));
+  const pagedRecords = useMemo(
+    () => filteredRecords.slice((page - 1) * COMPANY_TRACKING_PAGE_SIZE, page * COMPANY_TRACKING_PAGE_SIZE),
+    [filteredRecords, page],
+  );
 
   const selectedCompanyAssignments = useMemo(
     () =>
@@ -242,6 +249,14 @@ export default function OSGBCompanyTracking() {
         : [],
     [assignments, selectedCompany],
   );
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, statusFilter]);
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
 
   const selectedFinanceRecord = useMemo(() => {
     if (!selectedCompany) return null;
@@ -467,7 +482,7 @@ export default function OSGBCompanyTracking() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredRecords.map((record) => (
+                {pagedRecords.map((record) => (
                   <TableRow key={record.companyId} className="border-slate-800">
                     <TableCell>
                       <div className="space-y-1">
@@ -528,6 +543,15 @@ export default function OSGBCompanyTracking() {
               </TableBody>
             </Table>
           )}
+          {filteredRecords.length > COMPANY_TRACKING_PAGE_SIZE ? (
+            <div className="mt-4 flex items-center justify-between text-sm text-slate-400">
+              <span>Sayfa {page} / {totalPages}</span>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page === 1}>Önceki</Button>
+                <Button variant="outline" size="sm" onClick={() => setPage((current) => Math.min(totalPages, current + 1))} disabled={page === totalPages}>Sonraki</Button>
+              </div>
+            </div>
+          ) : null}
         </CardContent>
       </Card>
 

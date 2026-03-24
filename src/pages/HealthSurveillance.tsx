@@ -30,6 +30,7 @@ import {
   upsertHealthSurveillanceRecord,
   uploadHealthSurveillanceFile,
 } from "@/lib/healthSurveillanceOperations";
+import { readPageSessionCache, writePageSessionCache } from "@/lib/pageSessionCache";
 
 type FormState = {
   employeeId: string;
@@ -70,6 +71,8 @@ const emptyFileForm: FileFormState = {
   fileSummary: "",
   file: null,
 };
+const HEALTH_CACHE_TTL = 5 * 60 * 1000;
+const HEALTH_RECORDS_PAGE_SIZE = 10;
 
 const examTypeLabel: Record<HealthExamType, string> = {
   pre_employment: "İşe giriş",
@@ -131,9 +134,21 @@ export default function HealthSurveillance() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<HealthWorkflowStatus | "ALL">("ALL");
   const [employeeFilter, setEmployeeFilter] = useState<string>(employeeParam);
+  const [recordsPage, setRecordsPage] = useState(1);
 
   const loadData = async (silent = false) => {
     if (!user?.id) return;
+    const cacheKey = `health-surveillance:${user.id}`;
+    const cached = readPageSessionCache<{
+      records: HealthSurveillanceRecord[];
+      employees: HealthEmployeeOption[];
+    }>(cacheKey, HEALTH_CACHE_TTL);
+
+    if (cached && !silent) {
+      setRecords(cached.records);
+      setEmployees(cached.employees);
+      setLoading(false);
+    }
     if (!silent) setLoading(true);
     try {
       const [recordRows, employeeRows] = await Promise.all([
@@ -142,6 +157,10 @@ export default function HealthSurveillance() {
       ]);
       setRecords(recordRows);
       setEmployees(employeeRows);
+      writePageSessionCache(cacheKey, {
+        records: recordRows,
+        employees: employeeRows,
+      });
 
       const taskResult = await createHealthSurveillanceTasks(user.id, recordRows, employeeRows);
       if (silent && taskResult.created > 0) {
@@ -164,6 +183,10 @@ export default function HealthSurveillance() {
     setEmployeeFilter(employeeParam);
   }, [employeeParam]);
 
+  useEffect(() => {
+    setRecordsPage(1);
+  }, [search, statusFilter, employeeFilter]);
+
   const filteredRecords = useMemo(() => {
     return records.filter((record) => {
       const employeeName = `${record.employee?.first_name || ""} ${record.employee?.last_name || ""}`.trim().toLocaleLowerCase("tr-TR");
@@ -182,6 +205,15 @@ export default function HealthSurveillance() {
     overdue: records.filter((item) => item.status === "overdue").length,
     pending: records.filter((item) => item.result_status === "pending").length,
   }), [records]);
+  const recordsTotalPages = Math.max(1, Math.ceil(filteredRecords.length / HEALTH_RECORDS_PAGE_SIZE));
+  const pagedRecords = useMemo(
+    () => filteredRecords.slice((recordsPage - 1) * HEALTH_RECORDS_PAGE_SIZE, recordsPage * HEALTH_RECORDS_PAGE_SIZE),
+    [filteredRecords, recordsPage],
+  );
+
+  useEffect(() => {
+    if (recordsPage > recordsTotalPages) setRecordsPage(recordsTotalPages);
+  }, [recordsPage, recordsTotalPages]);
 
   const openCreate = () => {
     setEditing(null);
@@ -405,7 +437,7 @@ export default function HealthSurveillance() {
               {loading ? (
                 <TableRow><TableCell colSpan={6} className="h-32 text-center text-slate-400">Kayıtlar yükleniyor...</TableCell></TableRow>
               ) : filteredRecords.length > 0 ? (
-                filteredRecords.map((record) => (
+                pagedRecords.map((record) => (
                   <TableRow key={record.id}>
                     <TableCell>
                       <div>
@@ -436,6 +468,15 @@ export default function HealthSurveillance() {
               )}
             </TableBody>
           </Table>
+          {filteredRecords.length > HEALTH_RECORDS_PAGE_SIZE ? (
+            <div className="mt-4 flex items-center justify-between text-sm text-slate-400">
+              <span>Sayfa {recordsPage} / {recordsTotalPages}</span>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={() => setRecordsPage((page) => Math.max(1, page - 1))} disabled={recordsPage === 1}>Önceki</Button>
+                <Button variant="outline" size="sm" onClick={() => setRecordsPage((page) => Math.min(recordsTotalPages, page + 1))} disabled={recordsPage === recordsTotalPages}>Sonraki</Button>
+              </div>
+            </div>
+          ) : null}
         </CardContent>
       </Card>
 

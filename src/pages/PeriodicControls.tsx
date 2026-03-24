@@ -39,6 +39,7 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import type { OsgbCompanyOption } from "@/lib/osgbOperations";
+import { readPageSessionCache, writePageSessionCache } from "@/lib/pageSessionCache";
 import {
   createPeriodicControlTasks,
   deletePeriodicControl,
@@ -98,6 +99,9 @@ const emptyReportForm: ReportFormState = {
   reportSummary: "",
   file: null,
 };
+const PERIODIC_CACHE_TTL = 5 * 60 * 1000;
+const PERIODIC_CONTROLS_PAGE_SIZE = 10;
+const PERIODIC_REPORTS_PAGE_SIZE = 10;
 
 const statusLabel: Record<PeriodicControlStatus, string> = {
   scheduled: "Planlandı",
@@ -189,10 +193,24 @@ export default function PeriodicControls() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<PeriodicControlStatus | "ALL">("ALL");
   const [companyFilter, setCompanyFilter] = useState<string>("ALL");
+  const [controlsPage, setControlsPage] = useState(1);
+  const [reportsPage, setReportsPage] = useState(1);
   const importInputRef = useRef<HTMLInputElement | null>(null);
 
   const loadData = async (silent = false) => {
     if (!user?.id) return;
+    const cacheKey = `periodic-controls:${user.id}`;
+    const cached = readPageSessionCache<{
+      controls: PeriodicControlRecord[];
+      reports: PeriodicControlReportRecord[];
+      companies: OsgbCompanyOption[];
+    }>(cacheKey, PERIODIC_CACHE_TTL);
+    if (cached && !silent) {
+      setControls(cached.controls);
+      setReports(cached.reports);
+      setCompanies(cached.companies);
+      setLoading(false);
+    }
     if (!silent) setLoading(true);
 
     try {
@@ -205,6 +223,11 @@ export default function PeriodicControls() {
       setControls(controlRows);
       setReports(reportRows);
       setCompanies(companyRows);
+      writePageSessionCache(cacheKey, {
+        controls: controlRows,
+        reports: reportRows,
+        companies: companyRows,
+      });
 
       const taskResult = await createPeriodicControlTasks(user.id, controlRows);
       if (taskResult.created > 0 && silent) {
@@ -239,6 +262,16 @@ export default function PeriodicControls() {
   }, [controls, search, statusFilter, companyFilter]);
 
   const reportControlMap = useMemo(() => new Map(controls.map((control) => [control.id, control])), [controls]);
+  const controlsTotalPages = Math.max(1, Math.ceil(filteredControls.length / PERIODIC_CONTROLS_PAGE_SIZE));
+  const reportsTotalPages = Math.max(1, Math.ceil(reports.length / PERIODIC_REPORTS_PAGE_SIZE));
+  const pagedControls = useMemo(
+    () => filteredControls.slice((controlsPage - 1) * PERIODIC_CONTROLS_PAGE_SIZE, controlsPage * PERIODIC_CONTROLS_PAGE_SIZE),
+    [controlsPage, filteredControls],
+  );
+  const pagedReports = useMemo(
+    () => reports.slice((reportsPage - 1) * PERIODIC_REPORTS_PAGE_SIZE, reportsPage * PERIODIC_REPORTS_PAGE_SIZE),
+    [reports, reportsPage],
+  );
 
   const stats = useMemo(
     () => ({
@@ -249,6 +282,22 @@ export default function PeriodicControls() {
     }),
     [controls],
   );
+
+  useEffect(() => {
+    setControlsPage(1);
+  }, [search, statusFilter, companyFilter]);
+
+  useEffect(() => {
+    setReportsPage(1);
+  }, [reports.length]);
+
+  useEffect(() => {
+    if (controlsPage > controlsTotalPages) setControlsPage(controlsTotalPages);
+  }, [controlsPage, controlsTotalPages]);
+
+  useEffect(() => {
+    if (reportsPage > reportsTotalPages) setReportsPage(reportsTotalPages);
+  }, [reportsPage, reportsTotalPages]);
 
   const openCreate = () => {
     setEditing(null);
@@ -654,7 +703,7 @@ export default function PeriodicControls() {
               {loading ? (
                 <TableRow><TableCell colSpan={6} className="h-32 text-center text-slate-400">Kayıtlar yükleniyor...</TableCell></TableRow>
               ) : filteredControls.length > 0 ? (
-                filteredControls.map((control) => (
+                pagedControls.map((control) => (
                   <TableRow key={control.id}>
                     <TableCell><div><p className="font-medium text-white">{control.equipment_name}</p><p className="text-xs text-slate-400">{control.location || "Lokasyon belirtilmedi"}</p></div></TableCell>
                     <TableCell>{control.company?.company_name || "-"}</TableCell>
@@ -675,6 +724,15 @@ export default function PeriodicControls() {
               )}
             </TableBody>
           </Table>
+          {filteredControls.length > PERIODIC_CONTROLS_PAGE_SIZE ? (
+            <div className="mt-4 flex items-center justify-between text-sm text-slate-400">
+              <span>Sayfa {controlsPage} / {controlsTotalPages}</span>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={() => setControlsPage((page) => Math.max(1, page - 1))} disabled={controlsPage === 1}>Önceki</Button>
+                <Button variant="outline" size="sm" onClick={() => setControlsPage((page) => Math.min(controlsTotalPages, page + 1))} disabled={controlsPage === controlsTotalPages}>Sonraki</Button>
+              </div>
+            </div>
+          ) : null}
         </CardContent>
       </Card>
 
@@ -696,7 +754,7 @@ export default function PeriodicControls() {
             </TableHeader>
             <TableBody>
               {reports.length > 0 ? (
-                reports.slice(0, 10).map((report) => (
+                pagedReports.map((report) => (
                   <TableRow key={report.id}>
                     <TableCell>{reportControlMap.get(report.control_id)?.equipment_name || "Kontrol kaydı"}</TableCell>
                     <TableCell>{formatDate(report.report_date)}</TableCell>
@@ -715,6 +773,15 @@ export default function PeriodicControls() {
               )}
             </TableBody>
           </Table>
+          {reports.length > PERIODIC_REPORTS_PAGE_SIZE ? (
+            <div className="mt-4 flex items-center justify-between text-sm text-slate-400">
+              <span>Sayfa {reportsPage} / {reportsTotalPages}</span>
+              <div className="flex gap-2">
+                <Button variant="outline" size="sm" onClick={() => setReportsPage((page) => Math.max(1, page - 1))} disabled={reportsPage === 1}>Önceki</Button>
+                <Button variant="outline" size="sm" onClick={() => setReportsPage((page) => Math.min(reportsTotalPages, page + 1))} disabled={reportsPage === reportsTotalPages}>Sonraki</Button>
+              </div>
+            </div>
+          ) : null}
         </CardContent>
       </Card>
 

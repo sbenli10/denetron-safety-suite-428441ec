@@ -47,8 +47,10 @@ import {
   getPeriodicControlCompanyOptions,
   getPeriodicControlReportDownloadUrl,
   listPeriodicControlReportHistory,
+  listPeriodicControlReportHistoryPage,
   listPeriodicControlReports,
   listPeriodicControls,
+  listPeriodicControlsPage,
   type PeriodicControlInput,
   type PeriodicControlRecord,
   type PeriodicControlReportRecord,
@@ -195,6 +197,8 @@ export default function PeriodicControls() {
   const [companyFilter, setCompanyFilter] = useState<string>("ALL");
   const [controlsPage, setControlsPage] = useState(1);
   const [reportsPage, setReportsPage] = useState(1);
+  const [controlsTotalCount, setControlsTotalCount] = useState(0);
+  const [reportsTotalCount, setReportsTotalCount] = useState(0);
   const importInputRef = useRef<HTMLInputElement | null>(null);
 
   const loadData = async (silent = false) => {
@@ -204,35 +208,47 @@ export default function PeriodicControls() {
       controls: PeriodicControlRecord[];
       reports: PeriodicControlReportRecord[];
       companies: OsgbCompanyOption[];
+      controlsTotalCount: number;
+      reportsTotalCount: number;
     }>(cacheKey, PERIODIC_CACHE_TTL);
     if (cached && !silent) {
       setControls(cached.controls);
       setReports(cached.reports);
       setCompanies(cached.companies);
+      setControlsTotalCount(cached.controlsTotalCount);
+      setReportsTotalCount(cached.reportsTotalCount);
       setLoading(false);
     }
     if (!silent) setLoading(true);
 
     try {
       const [controlRows, reportRows, companyRows] = await Promise.all([
-        listPeriodicControls(user.id),
-        listPeriodicControlReportHistory(user.id),
+        listPeriodicControlsPage(user.id, {
+          page: controlsPage,
+          pageSize: PERIODIC_CONTROLS_PAGE_SIZE,
+          search,
+          status: statusFilter,
+          companyId: companyFilter,
+        }),
+        listPeriodicControlReportHistoryPage(user.id, {
+          page: reportsPage,
+          pageSize: PERIODIC_REPORTS_PAGE_SIZE,
+        }),
         getPeriodicControlCompanyOptions(user.id),
       ]);
 
-      setControls(controlRows);
-      setReports(reportRows);
+      setControls(controlRows.rows);
+      setReports(reportRows.rows);
       setCompanies(companyRows);
+      setControlsTotalCount(controlRows.count);
+      setReportsTotalCount(reportRows.count);
       writePageSessionCache(cacheKey, {
-        controls: controlRows,
-        reports: reportRows,
+        controls: controlRows.rows,
+        reports: reportRows.rows,
         companies: companyRows,
+        controlsTotalCount: controlRows.count,
+        reportsTotalCount: reportRows.count,
       });
-
-      const taskResult = await createPeriodicControlTasks(user.id, controlRows);
-      if (taskResult.created > 0 && silent) {
-        toast.success(`${taskResult.created} periyodik kontrol görevi üretildi`);
-      }
     } catch (error) {
       console.error(error);
       toast.error("Periyodik kontrol verileri yüklenemedi");
@@ -244,34 +260,11 @@ export default function PeriodicControls() {
 
   useEffect(() => {
     void loadData();
-  }, [user?.id]);
-
-  const filteredControls = useMemo(() => {
-    return controls.filter((control) => {
-      const matchesSearch =
-        control.equipment_name.toLowerCase().includes(search.toLowerCase()) ||
-        control.control_category.toLowerCase().includes(search.toLowerCase()) ||
-        (control.location || "").toLowerCase().includes(search.toLowerCase()) ||
-        (control.company?.company_name || "").toLowerCase().includes(search.toLowerCase());
-
-      const matchesStatus = statusFilter === "ALL" || control.status === statusFilter;
-      const matchesCompany = companyFilter === "ALL" || control.company_id === companyFilter;
-
-      return matchesSearch && matchesStatus && matchesCompany;
-    });
-  }, [controls, search, statusFilter, companyFilter]);
+  }, [user?.id, controlsPage, reportsPage, search, statusFilter, companyFilter]);
 
   const reportControlMap = useMemo(() => new Map(controls.map((control) => [control.id, control])), [controls]);
-  const controlsTotalPages = Math.max(1, Math.ceil(filteredControls.length / PERIODIC_CONTROLS_PAGE_SIZE));
-  const reportsTotalPages = Math.max(1, Math.ceil(reports.length / PERIODIC_REPORTS_PAGE_SIZE));
-  const pagedControls = useMemo(
-    () => filteredControls.slice((controlsPage - 1) * PERIODIC_CONTROLS_PAGE_SIZE, controlsPage * PERIODIC_CONTROLS_PAGE_SIZE),
-    [controlsPage, filteredControls],
-  );
-  const pagedReports = useMemo(
-    () => reports.slice((reportsPage - 1) * PERIODIC_REPORTS_PAGE_SIZE, reportsPage * PERIODIC_REPORTS_PAGE_SIZE),
-    [reports, reportsPage],
-  );
+  const controlsTotalPages = Math.max(1, Math.ceil(controlsTotalCount / PERIODIC_CONTROLS_PAGE_SIZE));
+  const reportsTotalPages = Math.max(1, Math.ceil(reportsTotalCount / PERIODIC_REPORTS_PAGE_SIZE));
 
   const stats = useMemo(
     () => ({
@@ -702,8 +695,8 @@ export default function PeriodicControls() {
             <TableBody>
               {loading ? (
                 <TableRow><TableCell colSpan={6} className="h-32 text-center text-slate-400">Kayıtlar yükleniyor...</TableCell></TableRow>
-              ) : filteredControls.length > 0 ? (
-                pagedControls.map((control) => (
+              ) : controls.length > 0 ? (
+                controls.map((control) => (
                   <TableRow key={control.id}>
                     <TableCell><div><p className="font-medium text-white">{control.equipment_name}</p><p className="text-xs text-slate-400">{control.location || "Lokasyon belirtilmedi"}</p></div></TableCell>
                     <TableCell>{control.company?.company_name || "-"}</TableCell>
@@ -724,7 +717,7 @@ export default function PeriodicControls() {
               )}
             </TableBody>
           </Table>
-          {filteredControls.length > PERIODIC_CONTROLS_PAGE_SIZE ? (
+          {controlsTotalCount > PERIODIC_CONTROLS_PAGE_SIZE ? (
             <div className="mt-4 flex items-center justify-between text-sm text-slate-400">
               <span>Sayfa {controlsPage} / {controlsTotalPages}</span>
               <div className="flex gap-2">
@@ -754,7 +747,7 @@ export default function PeriodicControls() {
             </TableHeader>
             <TableBody>
               {reports.length > 0 ? (
-                pagedReports.map((report) => (
+                reports.map((report) => (
                   <TableRow key={report.id}>
                     <TableCell>{reportControlMap.get(report.control_id)?.equipment_name || "Kontrol kaydı"}</TableCell>
                     <TableCell>{formatDate(report.report_date)}</TableCell>
@@ -773,7 +766,7 @@ export default function PeriodicControls() {
               )}
             </TableBody>
           </Table>
-          {reports.length > PERIODIC_REPORTS_PAGE_SIZE ? (
+          {reportsTotalCount > PERIODIC_REPORTS_PAGE_SIZE ? (
             <div className="mt-4 flex items-center justify-between text-sm text-slate-400">
               <span>Sayfa {reportsPage} / {reportsTotalPages}</span>
               <div className="flex gap-2">

@@ -20,6 +20,7 @@ import {
   listHealthEmployeeOptions,
   listHealthSurveillanceFiles,
   listHealthSurveillanceRecords,
+  listHealthSurveillanceRecordsPage,
   type HealthEmployeeOption,
   type HealthExamType,
   type HealthResultStatus,
@@ -135,6 +136,7 @@ export default function HealthSurveillance() {
   const [statusFilter, setStatusFilter] = useState<HealthWorkflowStatus | "ALL">("ALL");
   const [employeeFilter, setEmployeeFilter] = useState<string>(employeeParam);
   const [recordsPage, setRecordsPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
 
   const loadData = async (silent = false) => {
     if (!user?.id) return;
@@ -142,30 +144,35 @@ export default function HealthSurveillance() {
     const cached = readPageSessionCache<{
       records: HealthSurveillanceRecord[];
       employees: HealthEmployeeOption[];
+      totalCount: number;
     }>(cacheKey, HEALTH_CACHE_TTL);
 
     if (cached && !silent) {
       setRecords(cached.records);
       setEmployees(cached.employees);
+      setTotalCount(cached.totalCount);
       setLoading(false);
     }
     if (!silent) setLoading(true);
     try {
       const [recordRows, employeeRows] = await Promise.all([
-        listHealthSurveillanceRecords(user.id),
+        listHealthSurveillanceRecordsPage(user.id, {
+          page: recordsPage,
+          pageSize: HEALTH_RECORDS_PAGE_SIZE,
+          status: statusFilter,
+          employeeId: employeeFilter,
+          search,
+        }),
         listHealthEmployeeOptions(),
       ]);
-      setRecords(recordRows);
+      setRecords(recordRows.rows);
       setEmployees(employeeRows);
+      setTotalCount(recordRows.count);
       writePageSessionCache(cacheKey, {
-        records: recordRows,
+        records: recordRows.rows,
         employees: employeeRows,
+        totalCount: recordRows.count,
       });
-
-      const taskResult = await createHealthSurveillanceTasks(user.id, recordRows, employeeRows);
-      if (silent && taskResult.created > 0) {
-        toast.success(`${taskResult.created} sağlık gözetimi görevi üretildi`);
-      }
     } catch (error) {
       console.error(error);
       toast.error("Sağlık gözetimi verileri yüklenemedi");
@@ -177,7 +184,7 @@ export default function HealthSurveillance() {
 
   useEffect(() => {
     void loadData();
-  }, [user?.id]);
+  }, [user?.id, recordsPage, search, statusFilter, employeeFilter]);
 
   useEffect(() => {
     setEmployeeFilter(employeeParam);
@@ -187,29 +194,13 @@ export default function HealthSurveillance() {
     setRecordsPage(1);
   }, [search, statusFilter, employeeFilter]);
 
-  const filteredRecords = useMemo(() => {
-    return records.filter((record) => {
-      const employeeName = `${record.employee?.first_name || ""} ${record.employee?.last_name || ""}`.trim().toLocaleLowerCase("tr-TR");
-      const companyName = (record.company?.name || "").toLocaleLowerCase("tr-TR");
-      const q = search.toLocaleLowerCase("tr-TR");
-      const matchesSearch = !q || employeeName.includes(q) || companyName.includes(q) || (record.physician_name || "").toLocaleLowerCase("tr-TR").includes(q);
-      const matchesStatus = statusFilter === "ALL" || record.status === statusFilter;
-      const matchesEmployee = employeeFilter === "ALL" || record.employee_id === employeeFilter;
-      return matchesSearch && matchesStatus && matchesEmployee;
-    });
-  }, [employeeFilter, records, search, statusFilter]);
-
   const stats = useMemo(() => ({
     total: records.length,
     warning: records.filter((item) => item.status === "warning").length,
     overdue: records.filter((item) => item.status === "overdue").length,
     pending: records.filter((item) => item.result_status === "pending").length,
   }), [records]);
-  const recordsTotalPages = Math.max(1, Math.ceil(filteredRecords.length / HEALTH_RECORDS_PAGE_SIZE));
-  const pagedRecords = useMemo(
-    () => filteredRecords.slice((recordsPage - 1) * HEALTH_RECORDS_PAGE_SIZE, recordsPage * HEALTH_RECORDS_PAGE_SIZE),
-    [filteredRecords, recordsPage],
-  );
+  const recordsTotalPages = Math.max(1, Math.ceil(totalCount / HEALTH_RECORDS_PAGE_SIZE));
 
   useEffect(() => {
     if (recordsPage > recordsTotalPages) setRecordsPage(recordsTotalPages);
@@ -436,8 +427,8 @@ export default function HealthSurveillance() {
             <TableBody>
               {loading ? (
                 <TableRow><TableCell colSpan={6} className="h-32 text-center text-slate-400">Kayıtlar yükleniyor...</TableCell></TableRow>
-              ) : filteredRecords.length > 0 ? (
-                pagedRecords.map((record) => (
+              ) : records.length > 0 ? (
+                records.map((record) => (
                   <TableRow key={record.id}>
                     <TableCell>
                       <div>
@@ -468,7 +459,7 @@ export default function HealthSurveillance() {
               )}
             </TableBody>
           </Table>
-          {filteredRecords.length > HEALTH_RECORDS_PAGE_SIZE ? (
+          {totalCount > HEALTH_RECORDS_PAGE_SIZE ? (
             <div className="mt-4 flex items-center justify-between text-sm text-slate-400">
               <span>Sayfa {recordsPage} / {recordsTotalPages}</span>
               <div className="flex gap-2">

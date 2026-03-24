@@ -270,6 +270,18 @@ export interface OsgbOperationalSummary {
   };
 }
 
+export interface PagedResult<T> {
+  rows: T[];
+  count: number;
+}
+
+export interface OsgbTaskPageParams {
+  page: number;
+  pageSize: number;
+  status?: string;
+  search?: string;
+}
+
 const assignmentDuplicateMessage =
   "Bu firmada zaten aktif bir personel görevlendirmesi var. Mükerrer atama engellendi.";
 
@@ -718,6 +730,27 @@ export const getOsgbCompanyTracking = async (userId: string): Promise<OsgbCompan
   });
 };
 
+export const getOsgbCompanyTrackingPage = async (
+  orgId: string,
+  params: { page: number; pageSize: number; status?: string; search?: string },
+): Promise<PagedResult<OsgbCompanyTrackingRecord>> => {
+  const { data, error } = await (supabase as any).rpc("get_osgb_company_tracking_page", {
+    p_org_id: orgId,
+    p_page: params.page,
+    p_page_size: params.pageSize,
+    p_search: params.search?.trim() || null,
+    p_assignment_status: params.status && params.status !== "ALL" ? params.status : null,
+  });
+
+  if (error) throw error;
+
+  const rows = (data ?? []) as Array<OsgbCompanyTrackingRecord & { total_count?: number }>;
+  return {
+    rows: rows.map(({ total_count, ...row }) => row),
+    count: rows[0]?.total_count ?? 0,
+  };
+};
+
 export const listOsgbTasks = async (userId: string): Promise<OsgbTaskRecord[]> => {
   const { data, error } = await supabase
     .from("osgb_tasks")
@@ -727,6 +760,37 @@ export const listOsgbTasks = async (userId: string): Promise<OsgbTaskRecord[]> =
 
   if (error) throw error;
   return (data ?? []) as OsgbTaskRecord[];
+};
+
+export const listOsgbTasksPage = async (
+  userId: string,
+  params: OsgbTaskPageParams,
+): Promise<PagedResult<OsgbTaskRecord>> => {
+  const { page, pageSize, status, search } = params;
+  const from = Math.max(0, (page - 1) * pageSize);
+  const to = from + pageSize - 1;
+  let query = (supabase as any)
+    .from("osgb_tasks")
+    .select("*, company:isgkatip_companies(company_name)", { count: "exact" })
+    .eq("user_id", userId);
+
+  if (status && status !== "ALL") {
+    query = query.eq("status", status);
+  }
+  if (search?.trim()) {
+    const term = search.trim();
+    query = query.or(`title.ilike.%${term}%,description.ilike.%${term}%,assigned_to.ilike.%${term}%`);
+  }
+
+  const { data, error, count } = await query
+    .order("created_at", { ascending: false })
+    .range(from, to);
+
+  if (error) throw error;
+  return {
+    rows: (data ?? []) as OsgbTaskRecord[],
+    count: count ?? 0,
+  };
 };
 
 export const listOsgbBatchLogs = async (userId: string): Promise<OsgbBatchLogRecord[]> => {

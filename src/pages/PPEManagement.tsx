@@ -24,12 +24,16 @@ import {
   listPpeAssignments,
   listPpeEmployeeOptions,
   listPpeInventory,
+  listPpeAssignmentsPage,
+  listPpeInventoryOptions,
+  listPpeInventoryPage,
   markPpeAssignmentReturned,
   upsertPpeAssignment,
   upsertPpeInventory,
   type PpeAssignmentInput,
   type PpeAssignmentRecord,
   type PpeEmployeeOption,
+  type PpeInventoryOption,
   type PpeInventoryInput,
   type PpeInventoryRecord,
 } from "@/lib/ppeOperations";
@@ -110,6 +114,7 @@ export default function PPEManagement() {
   const [inventory, setInventory] = useState<PpeInventoryRecord[]>([]);
   const [assignments, setAssignments] = useState<PpeAssignmentRecord[]>([]);
   const [employees, setEmployees] = useState<PpeEmployeeOption[]>([]);
+  const [inventoryOptions, setInventoryOptions] = useState<PpeInventoryOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -124,6 +129,8 @@ export default function PPEManagement() {
   const [assignmentPage, setAssignmentPage] = useState(1);
   const [inventoryPage, setInventoryPage] = useState(1);
   const [employeePage, setEmployeePage] = useState(1);
+  const [assignmentTotalCount, setAssignmentTotalCount] = useState(0);
+  const [inventoryTotalCount, setInventoryTotalCount] = useState(0);
 
   const loadData = async () => {
     if (!user?.id) return;
@@ -133,38 +140,54 @@ export default function PPEManagement() {
       inventory: PpeInventoryRecord[];
       assignments: PpeAssignmentRecord[];
       employees: PpeEmployeeOption[];
+      inventoryOptions: PpeInventoryOption[];
+      assignmentTotalCount: number;
+      inventoryTotalCount: number;
     }>(cacheKey, PPE_CACHE_TTL);
 
     if (cached) {
       setInventory(cached.inventory);
       setAssignments(cached.assignments);
       setEmployees(cached.employees);
+      setInventoryOptions(cached.inventoryOptions);
+      setAssignmentTotalCount(cached.assignmentTotalCount);
+      setInventoryTotalCount(cached.inventoryTotalCount);
       setError(null);
       setLoading(false);
     }
 
     setLoading(true);
     try {
-      const [inventoryRows, assignmentRows, employeeRows] = await Promise.all([
-        listPpeInventory(user.id),
-        listPpeAssignments(user.id),
+      const [inventoryRows, assignmentRows, employeeRows, inventoryOptionRows] = await Promise.all([
+        listPpeInventoryPage(user.id, {
+          page: inventoryPage,
+          pageSize: PPE_INVENTORY_PAGE_SIZE,
+          search,
+        }),
+        listPpeAssignmentsPage(user.id, {
+          page: assignmentPage,
+          pageSize: PPE_ASSIGNMENT_PAGE_SIZE,
+          employeeId: employeeFilter,
+        }),
         listPpeEmployeeOptions(),
+        listPpeInventoryOptions(user.id),
       ]);
 
-      setInventory(inventoryRows);
-      setAssignments(assignmentRows);
+      setInventory(inventoryRows.rows);
+      setAssignments(assignmentRows.rows);
       setEmployees(employeeRows);
+      setInventoryOptions(inventoryOptionRows);
+      setAssignmentTotalCount(assignmentRows.count);
+      setInventoryTotalCount(inventoryRows.count);
       setError(null);
       writePageSessionCache(cacheKey, {
-        inventory: inventoryRows,
-        assignments: assignmentRows,
+        inventory: inventoryRows.rows,
+        assignments: assignmentRows.rows,
         employees: employeeRows,
+        inventoryOptions: inventoryOptionRows,
+        assignmentTotalCount: assignmentRows.count,
+        inventoryTotalCount: inventoryRows.count,
       });
-
-      const taskResult = await createPpeRenewalTasks(user.id, inventoryRows, assignmentRows, employeeRows);
-      if (taskResult.created > 0) {
-        toast.success(`${taskResult.created} adet KKD yenileme görevi oluşturuldu.`);
-      }
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "KKD verileri yüklenemedi.");
     } finally {
@@ -174,9 +197,22 @@ export default function PPEManagement() {
 
   useEffect(() => {
     void loadData();
-  }, [user?.id]);
+  }, [user?.id, search, employeeFilter, assignmentPage, inventoryPage]);
 
-  const inventoryMap = useMemo(() => new Map(inventory.map((item) => [item.id, item])), [inventory]);
+  const inventoryMap = useMemo(
+    () =>
+      new Map(
+        inventoryOptions.map((item) => [
+          item.id,
+          {
+            item_name: item.itemName,
+            default_renewal_days: item.defaultRenewalDays,
+            is_active: item.isActive,
+          },
+        ]),
+      ),
+    [inventoryOptions],
+  );
   const employeeMap = useMemo(() => new Map(employees.map((item) => [item.id, item])), [employees]);
 
   const summary = useMemo(() => {
@@ -197,32 +233,6 @@ export default function PPEManagement() {
     };
   }, [assignments, inventory]);
 
-  const filteredAssignments = useMemo(() => {
-    const query = search.trim().toLocaleLowerCase("tr-TR");
-    return assignments.filter((item) => {
-      const employee = employeeMap.get(item.employee_id);
-      const inventoryItem = inventoryMap.get(item.inventory_id);
-      const matchesEmployee = employeeFilter === "ALL" || item.employee_id === employeeFilter;
-      const matchesQuery =
-        !query ||
-        [employee?.fullName || "", employee?.companyName || "", inventoryItem?.item_name || ""].some((value) =>
-          value.toLocaleLowerCase("tr-TR").includes(query),
-        );
-      return matchesEmployee && matchesQuery;
-    });
-  }, [assignments, employeeFilter, employeeMap, inventoryMap, search]);
-
-  const filteredInventory = useMemo(() => {
-    const query = search.trim().toLocaleLowerCase("tr-TR");
-    return inventory.filter(
-      (item) =>
-        !query ||
-        [item.item_name, item.category, item.standard_code || ""].some((value) =>
-          value.toLocaleLowerCase("tr-TR").includes(query),
-        ),
-    );
-  }, [inventory, search]);
-
   const employeeOverview = useMemo(
     () => buildPpeEmployeeOverview(employees, inventory, assignments),
     [employees, inventory, assignments],
@@ -231,17 +241,9 @@ export default function PPEManagement() {
     () => employeeOverview.filter((item) => employeeFilter === "ALL" || item.employeeId === employeeFilter),
     [employeeFilter, employeeOverview],
   );
-  const assignmentTotalPages = Math.max(1, Math.ceil(filteredAssignments.length / PPE_ASSIGNMENT_PAGE_SIZE));
-  const inventoryTotalPages = Math.max(1, Math.ceil(filteredInventory.length / PPE_INVENTORY_PAGE_SIZE));
+  const assignmentTotalPages = Math.max(1, Math.ceil(assignmentTotalCount / PPE_ASSIGNMENT_PAGE_SIZE));
+  const inventoryTotalPages = Math.max(1, Math.ceil(inventoryTotalCount / PPE_INVENTORY_PAGE_SIZE));
   const employeeTotalPages = Math.max(1, Math.ceil(filteredEmployeeOverview.length / PPE_EMPLOYEE_PAGE_SIZE));
-  const pagedAssignments = useMemo(
-    () => filteredAssignments.slice((assignmentPage - 1) * PPE_ASSIGNMENT_PAGE_SIZE, assignmentPage * PPE_ASSIGNMENT_PAGE_SIZE),
-    [assignmentPage, filteredAssignments],
-  );
-  const pagedInventory = useMemo(
-    () => filteredInventory.slice((inventoryPage - 1) * PPE_INVENTORY_PAGE_SIZE, inventoryPage * PPE_INVENTORY_PAGE_SIZE),
-    [filteredInventory, inventoryPage],
-  );
   const pagedEmployeeOverview = useMemo(
     () => filteredEmployeeOverview.slice((employeePage - 1) * PPE_EMPLOYEE_PAGE_SIZE, employeePage * PPE_EMPLOYEE_PAGE_SIZE),
     [employeePage, filteredEmployeeOverview],
@@ -413,7 +415,7 @@ export default function PPEManagement() {
     downloadCsv(
       "kkd-zimmet.csv",
       ["Çalışan", "Firma", "KKD", "Durum", "Yenileme Tarihi"],
-      filteredAssignments.map((item) => [
+          assignments.map((item) => [
         employeeMap.get(item.employee_id)?.fullName || "",
         employeeMap.get(item.employee_id)?.companyName || "",
         inventoryMap.get(item.inventory_id)?.item_name || "",
@@ -473,14 +475,14 @@ export default function PPEManagement() {
         <TabsContent value="assignments" className="mt-0">
           <Card className="border-slate-800 bg-slate-950/60">
             <CardHeader><CardTitle className="text-white">Aktif Zimmetler</CardTitle><CardDescription>Yenileme, gecikme ve iade akışını bu listeden yönetin.</CardDescription></CardHeader>
-            <CardContent><div className="rounded-2xl border border-slate-800"><Table><TableHeader><TableRow><TableHead>Çalışan</TableHead><TableHead>KKD</TableHead><TableHead>Durum</TableHead><TableHead>Yenileme</TableHead><TableHead className="text-right">İşlem</TableHead></TableRow></TableHeader><TableBody>{loading ? <TableRow><TableCell colSpan={5} className="py-12 text-center text-sm text-slate-400">Zimmet kayıtları yükleniyor...</TableCell></TableRow> : filteredAssignments.length === 0 ? <TableRow><TableCell colSpan={5} className="py-12 text-center text-sm text-slate-400">Zimmet kaydı bulunamadı.</TableCell></TableRow> : pagedAssignments.map((item) => { const employee = employeeMap.get(item.employee_id); const inventoryItem = inventoryMap.get(item.inventory_id); const overdue = item.status !== "returned" && new Date(item.due_date) < new Date(); return <TableRow key={item.id}><TableCell><div><p className="font-medium text-white">{employee?.fullName || "-"}</p><p className="text-xs text-slate-400">{employee?.companyName || "Firma yok"}</p></div></TableCell><TableCell><div><p className="font-medium text-white">{inventoryItem?.item_name || "-"}</p><p className="text-xs text-slate-400">{item.size_label || "Beden yok"} • {item.quantity} adet</p></div></TableCell><TableCell><Badge className={overdue ? "border-red-500/20 bg-red-500/10 text-red-200" : "border-slate-700 bg-slate-900 text-slate-100"}>{overdue ? "Süresi geçti" : item.status === "returned" ? "İade edildi" : item.status === "replacement_due" ? "Yenileme bekliyor" : "Zimmetli"}</Badge></TableCell><TableCell>{formatDate(item.due_date)}</TableCell><TableCell className="text-right"><div className="flex justify-end gap-2">{canManage && item.status !== "returned" && <Button variant="outline" size="sm" onClick={() => void handleMarkReturned(item)}><RotateCcw className="h-4 w-4" /></Button>}<Button variant="outline" size="sm" onClick={() => openAssignmentEdit(item)} disabled={!canManage}>Düzenle</Button>{canManage && <Button variant="outline" size="sm" className="text-red-300" onClick={() => void handleAssignmentDelete(item)}>Sil</Button>}</div></TableCell></TableRow>; })}</TableBody></Table></div>{filteredAssignments.length > PPE_ASSIGNMENT_PAGE_SIZE ? <div className="mt-4 flex items-center justify-between text-sm text-slate-400"><span>Sayfa {assignmentPage} / {assignmentTotalPages}</span><div className="flex gap-2"><Button variant="outline" size="sm" onClick={() => setAssignmentPage((page) => Math.max(1, page - 1))} disabled={assignmentPage === 1}>Önceki</Button><Button variant="outline" size="sm" onClick={() => setAssignmentPage((page) => Math.min(assignmentTotalPages, page + 1))} disabled={assignmentPage === assignmentTotalPages}>Sonraki</Button></div></div> : null}</CardContent>
+            <CardContent><div className="rounded-2xl border border-slate-800"><Table><TableHeader><TableRow><TableHead>Çalışan</TableHead><TableHead>KKD</TableHead><TableHead>Durum</TableHead><TableHead>Yenileme</TableHead><TableHead className="text-right">İşlem</TableHead></TableRow></TableHeader><TableBody>{loading ? <TableRow><TableCell colSpan={5} className="py-12 text-center text-sm text-slate-400">Zimmet kayıtları yükleniyor...</TableCell></TableRow> : assignments.length === 0 ? <TableRow><TableCell colSpan={5} className="py-12 text-center text-sm text-slate-400">Zimmet kaydı bulunamadı.</TableCell></TableRow> : assignments.map((item) => { const employee = employeeMap.get(item.employee_id); const inventoryItem = inventoryMap.get(item.inventory_id); const overdue = item.status !== "returned" && new Date(item.due_date) < new Date(); return <TableRow key={item.id}><TableCell><div><p className="font-medium text-white">{employee?.fullName || "-"}</p><p className="text-xs text-slate-400">{employee?.companyName || "Firma yok"}</p></div></TableCell><TableCell><div><p className="font-medium text-white">{inventoryItem?.item_name || "-"}</p><p className="text-xs text-slate-400">{item.size_label || "Beden yok"} • {item.quantity} adet</p></div></TableCell><TableCell><Badge className={overdue ? "border-red-500/20 bg-red-500/10 text-red-200" : "border-slate-700 bg-slate-900 text-slate-100"}>{overdue ? "Süresi geçti" : item.status === "returned" ? "İade edildi" : item.status === "replacement_due" ? "Yenileme bekliyor" : "Zimmetli"}</Badge></TableCell><TableCell>{formatDate(item.due_date)}</TableCell><TableCell className="text-right"><div className="flex justify-end gap-2">{canManage && item.status !== "returned" && <Button variant="outline" size="sm" onClick={() => void handleMarkReturned(item)}><RotateCcw className="h-4 w-4" /></Button>}<Button variant="outline" size="sm" onClick={() => openAssignmentEdit(item)} disabled={!canManage}>Düzenle</Button>{canManage && <Button variant="outline" size="sm" className="text-red-300" onClick={() => void handleAssignmentDelete(item)}>Sil</Button>}</div></TableCell></TableRow>; })}</TableBody></Table></div>{assignmentTotalCount > PPE_ASSIGNMENT_PAGE_SIZE ? <div className="mt-4 flex items-center justify-between text-sm text-slate-400"><span>Sayfa {assignmentPage} / {assignmentTotalPages}</span><div className="flex gap-2"><Button variant="outline" size="sm" onClick={() => setAssignmentPage((page) => Math.max(1, page - 1))} disabled={assignmentPage === 1}>Önceki</Button><Button variant="outline" size="sm" onClick={() => setAssignmentPage((page) => Math.min(assignmentTotalPages, page + 1))} disabled={assignmentPage === assignmentTotalPages}>Sonraki</Button></div></div> : null}</CardContent>
           </Card>
         </TabsContent>
 
         <TabsContent value="inventory" className="mt-0">
           <Card className="border-slate-800 bg-slate-950/60">
             <CardHeader><CardTitle className="text-white">KKD Envanteri</CardTitle><CardDescription>Stok miktarı, minimum eşik ve yenileme standardını izleyin.</CardDescription></CardHeader>
-            <CardContent><div className="rounded-2xl border border-slate-800"><Table><TableHeader><TableRow><TableHead>KKD</TableHead><TableHead>Standart</TableHead><TableHead>Stok</TableHead><TableHead>Yenileme</TableHead><TableHead className="text-right">İşlem</TableHead></TableRow></TableHeader><TableBody>{loading ? <TableRow><TableCell colSpan={5} className="py-12 text-center text-sm text-slate-400">Envanter yükleniyor...</TableCell></TableRow> : filteredInventory.length === 0 ? <TableRow><TableCell colSpan={5} className="py-12 text-center text-sm text-slate-400">KKD envanteri boş.</TableCell></TableRow> : pagedInventory.map((item) => <TableRow key={item.id}><TableCell><div><p className="font-medium text-white">{item.item_name}</p><p className="text-xs text-slate-400">{item.category}</p></div></TableCell><TableCell>{item.standard_code || "-"}</TableCell><TableCell><div><p className="font-medium text-white">{item.stock_quantity}</p><p className="text-xs text-slate-400">Minimum: {item.min_stock_level}</p></div></TableCell><TableCell>{item.default_renewal_days} gün</TableCell><TableCell className="text-right"><div className="flex justify-end gap-2"><Button variant="outline" size="sm" onClick={() => openInventoryEdit(item)} disabled={!canManage}>Düzenle</Button>{canManage && <Button variant="outline" size="sm" className="text-red-300" onClick={() => void handleInventoryDelete(item)}>Sil</Button>}</div></TableCell></TableRow>)}</TableBody></Table></div>{filteredInventory.length > PPE_INVENTORY_PAGE_SIZE ? <div className="mt-4 flex items-center justify-between text-sm text-slate-400"><span>Sayfa {inventoryPage} / {inventoryTotalPages}</span><div className="flex gap-2"><Button variant="outline" size="sm" onClick={() => setInventoryPage((page) => Math.max(1, page - 1))} disabled={inventoryPage === 1}>Önceki</Button><Button variant="outline" size="sm" onClick={() => setInventoryPage((page) => Math.min(inventoryTotalPages, page + 1))} disabled={inventoryPage === inventoryTotalPages}>Sonraki</Button></div></div> : null}</CardContent>
+            <CardContent><div className="rounded-2xl border border-slate-800"><Table><TableHeader><TableRow><TableHead>KKD</TableHead><TableHead>Standart</TableHead><TableHead>Stok</TableHead><TableHead>Yenileme</TableHead><TableHead className="text-right">İşlem</TableHead></TableRow></TableHeader><TableBody>{loading ? <TableRow><TableCell colSpan={5} className="py-12 text-center text-sm text-slate-400">Envanter yükleniyor...</TableCell></TableRow> : inventory.length === 0 ? <TableRow><TableCell colSpan={5} className="py-12 text-center text-sm text-slate-400">KKD envanteri boş.</TableCell></TableRow> : inventory.map((item) => <TableRow key={item.id}><TableCell><div><p className="font-medium text-white">{item.item_name}</p><p className="text-xs text-slate-400">{item.category}</p></div></TableCell><TableCell>{item.standard_code || "-"}</TableCell><TableCell><div><p className="font-medium text-white">{item.stock_quantity}</p><p className="text-xs text-slate-400">Minimum: {item.min_stock_level}</p></div></TableCell><TableCell>{item.default_renewal_days} gün</TableCell><TableCell className="text-right"><div className="flex justify-end gap-2"><Button variant="outline" size="sm" onClick={() => openInventoryEdit(item)} disabled={!canManage}>Düzenle</Button>{canManage && <Button variant="outline" size="sm" className="text-red-300" onClick={() => void handleInventoryDelete(item)}>Sil</Button>}</div></TableCell></TableRow>)}</TableBody></Table></div>{inventoryTotalCount > PPE_INVENTORY_PAGE_SIZE ? <div className="mt-4 flex items-center justify-between text-sm text-slate-400"><span>Sayfa {inventoryPage} / {inventoryTotalPages}</span><div className="flex gap-2"><Button variant="outline" size="sm" onClick={() => setInventoryPage((page) => Math.max(1, page - 1))} disabled={inventoryPage === 1}>Önceki</Button><Button variant="outline" size="sm" onClick={() => setInventoryPage((page) => Math.min(inventoryTotalPages, page + 1))} disabled={inventoryPage === inventoryTotalPages}>Sonraki</Button></div></div> : null}</CardContent>
           </Card>
         </TabsContent>
 
@@ -518,7 +520,7 @@ export default function PPEManagement() {
         <DialogContent className="max-w-2xl">
           <DialogHeader><DialogTitle>{editingAssignment ? "KKD Zimmetini Düzenle" : "Yeni KKD Zimmeti"}</DialogTitle><DialogDescription>Çalışana teslim edilen KKD kaydını oluşturun veya güncelleyin.</DialogDescription></DialogHeader>
           <div className="grid gap-4 md:grid-cols-2">
-            <div className="space-y-2"><Label>KKD</Label><Select value={assignmentForm.inventoryId} onValueChange={(value) => { const item = inventoryMap.get(value); const assigned = assignmentForm.assignedDate || new Date().toISOString().slice(0, 10); const suggestedDue = item ? new Date(new Date(assigned).getTime() + item.default_renewal_days * 86400000).toISOString().slice(0, 10) : ""; setAssignmentForm((prev) => ({ ...prev, inventoryId: value, dueDate: prev.dueDate || suggestedDue })); }}><SelectTrigger><SelectValue placeholder="KKD seçin" /></SelectTrigger><SelectContent>{inventory.filter((item) => item.is_active).map((item) => <SelectItem key={item.id} value={item.id}>{item.item_name}</SelectItem>)}</SelectContent></Select></div>
+            <div className="space-y-2"><Label>KKD</Label><Select value={assignmentForm.inventoryId} onValueChange={(value) => { const item = inventoryMap.get(value); const assigned = assignmentForm.assignedDate || new Date().toISOString().slice(0, 10); const suggestedDue = item ? new Date(new Date(assigned).getTime() + item.default_renewal_days * 86400000).toISOString().slice(0, 10) : ""; setAssignmentForm((prev) => ({ ...prev, inventoryId: value, dueDate: prev.dueDate || suggestedDue })); }}><SelectTrigger><SelectValue placeholder="KKD seçin" /></SelectTrigger><SelectContent>{inventoryOptions.filter((item) => item.isActive).map((item) => <SelectItem key={item.id} value={item.id}>{item.itemName}</SelectItem>)}</SelectContent></Select></div>
             <div className="space-y-2"><Label>Çalışan</Label><Select value={assignmentForm.employeeId} onValueChange={(value) => setAssignmentForm((prev) => ({ ...prev, employeeId: value }))}><SelectTrigger><SelectValue placeholder="Çalışan seçin" /></SelectTrigger><SelectContent>{employees.filter((item) => item.isActive).map((item) => <SelectItem key={item.id} value={item.id}>{item.fullName} • {item.companyName || "Firma yok"}</SelectItem>)}</SelectContent></Select></div>
             <div className="space-y-2"><Label>Zimmet tarihi</Label><Input type="date" value={assignmentForm.assignedDate} onChange={(e) => setAssignmentForm((p) => ({ ...p, assignedDate: e.target.value }))} /></div>
             <div className="space-y-2"><Label>Yenileme tarihi</Label><Input type="date" value={assignmentForm.dueDate} onChange={(e) => setAssignmentForm((p) => ({ ...p, dueDate: e.target.value }))} /></div>

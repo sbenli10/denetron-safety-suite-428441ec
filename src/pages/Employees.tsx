@@ -5,7 +5,6 @@ import { ArrowLeft, FileSpreadsheet, Plus, RefreshCcw, Shield, Trash2, Upload, U
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { downloadCsv } from "@/lib/csvExport";
-import { readPageSessionCache, writePageSessionCache } from "@/lib/pageSessionCache";
 import { useAuth } from "@/contexts/AuthContext";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -81,7 +80,6 @@ const emptyForm: EmployeeFormState = {
   email: "",
 };
 
-const EMPLOYEES_CACHE_TTL = 5 * 60 * 1000;
 const PAGE_SIZE = 10;
 
 const normalizeHeader = (value: string) =>
@@ -150,7 +148,11 @@ export default function Employees() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [companies, setCompanies] = useState<CompanyOption[]>([]);
-  const [employees, setEmployees] = useState<EmployeeRecord[]>([]);
+  const [activeEmployees, setActiveEmployees] = useState<EmployeeRecord[]>([]);
+  const [passiveEmployees, setPassiveEmployees] = useState<EmployeeRecord[]>([]);
+  const [activeCount, setActiveCount] = useState(0);
+  const [passiveCount, setPassiveCount] = useState(0);
+  const [selectedEmployee, setSelectedEmployee] = useState<EmployeeRecord | null>(null);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -164,54 +166,89 @@ export default function Employees() {
   const addInputRef = useRef<HTMLInputElement | null>(null);
   const removeInputRef = useRef<HTMLInputElement | null>(null);
 
-  const loadData = async () => {
-    const cacheKey = user?.id ? `employees:${user.id}` : null;
-    const cached = cacheKey
-      ? readPageSessionCache<{ companies: CompanyOption[]; employees: EmployeeRecord[] }>(cacheKey, EMPLOYEES_CACHE_TTL)
-      : null;
+  const mapEmployeeRows = (
+    rows: Array<Record<string, unknown>>,
+    companyMap: Map<string, string>,
+  ): EmployeeRecord[] =>
+    rows.map((row) => ({
+      id: String(row.id),
+      company_id: String(row.company_id),
+      company_name: companyMap.get(String(row.company_id)) || null,
+      first_name: String(row.first_name || ""),
+      last_name: String(row.last_name || ""),
+      tc_number: row.tc_number ? String(row.tc_number) : null,
+      email: row.email ? String(row.email) : null,
+      phone: row.phone ? String(row.phone) : null,
+      job_title: String(row.job_title || ""),
+      department: row.department ? String(row.department) : null,
+      start_date: row.start_date ? String(row.start_date) : null,
+      employment_type: row.employment_type ? String(row.employment_type) : null,
+      is_active: Boolean(row.is_active),
+    }));
 
-    if (cached) {
-      setCompanies(cached.companies);
-      setEmployees(cached.employees);
-      setLoading(false);
+  const applyEmployeeFilters = (query: any, isActive: boolean) => {
+    const term = search.trim();
+    let next = query.eq("is_active", isActive);
+    if (companyFilter !== "ALL") {
+      next = next.eq("company_id", companyFilter);
     }
+    if (term) {
+      next = next.or(
+        `first_name.ilike.%${term}%,last_name.ilike.%${term}%,job_title.ilike.%${term}%,department.ilike.%${term}%,email.ilike.%${term}%,phone.ilike.%${term}%,tc_number.ilike.%${term}%`,
+      );
+    }
+    return next;
+  };
 
+  const loadData = async () => {
     setLoading(true);
     try {
-      const [{ data: companyRows, error: companyError }, { data: employeeRows, error: employeeError }] = await Promise.all([
+      const [{ data: companyRows, error: companyError }] = await Promise.all([
         (supabase as any).from("companies").select("id, name").eq("is_active", true).order("name", { ascending: true }),
-        (supabase as any).from("employees").select("*").order("first_name", { ascending: true }),
       ]);
 
       if (companyError) throw companyError;
-      if (employeeError) throw employeeError;
 
       const companyMap = new Map<string, string>((companyRows || []).map((row: { id: string; name: string }) => [row.id, row.name]));
       const mappedCompanies = (companyRows || []) as CompanyOption[];
-      const mappedEmployees = ((employeeRows || []) as Array<Record<string, unknown>>).map((row) => ({
-          id: String(row.id),
-          company_id: String(row.company_id),
-          company_name: companyMap.get(String(row.company_id)) || null,
-          first_name: String(row.first_name || ""),
-          last_name: String(row.last_name || ""),
-          tc_number: row.tc_number ? String(row.tc_number) : null,
-          email: row.email ? String(row.email) : null,
-          phone: row.phone ? String(row.phone) : null,
-          job_title: String(row.job_title || ""),
-          department: row.department ? String(row.department) : null,
-          start_date: row.start_date ? String(row.start_date) : null,
-          employment_type: row.employment_type ? String(row.employment_type) : null,
-          is_active: Boolean(row.is_active),
-        }));
 
       setCompanies(mappedCompanies);
-      setEmployees(mappedEmployees);
 
-      if (cacheKey) {
-        writePageSessionCache(cacheKey, {
-          companies: mappedCompanies,
-          employees: mappedEmployees,
-        });
+      if (id) {
+        const { data: selectedRow, error: selectedError } = await (supabase as any)
+          .from("employees")
+          .select("*")
+          .eq("id", id)
+          .single();
+        if (selectedError) throw selectedError;
+        const [mappedSelected] = mapEmployeeRows([selectedRow], companyMap);
+        setSelectedEmployee(mappedSelected || null);
+      } else {
+        const activeFrom = Math.max(0, (activePage - 1) * PAGE_SIZE);
+        const passiveFrom = Math.max(0, (passivePage - 1) * PAGE_SIZE);
+
+        const [activeResult, passiveResult] = await Promise.all([
+          applyEmployeeFilters(
+            (supabase as any).from("employees").select("*", { count: "exact" }),
+            true,
+          )
+            .order("first_name", { ascending: true })
+            .range(activeFrom, activeFrom + PAGE_SIZE - 1),
+          applyEmployeeFilters(
+            (supabase as any).from("employees").select("*", { count: "exact" }),
+            false,
+          )
+            .order("first_name", { ascending: true })
+            .range(passiveFrom, passiveFrom + PAGE_SIZE - 1),
+        ]);
+
+        if (activeResult.error) throw activeResult.error;
+        if (passiveResult.error) throw passiveResult.error;
+
+        setActiveEmployees(mapEmployeeRows((activeResult.data || []) as Array<Record<string, unknown>>, companyMap));
+        setPassiveEmployees(mapEmployeeRows((passiveResult.data || []) as Array<Record<string, unknown>>, companyMap));
+        setActiveCount(activeResult.count || 0);
+        setPassiveCount(passiveResult.count || 0);
       }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Çalışan verileri yüklenemedi.");
@@ -222,7 +259,7 @@ export default function Employees() {
 
   useEffect(() => {
     void loadData();
-  }, [user?.id]);
+  }, [user?.id, id, activePage, passivePage, search, companyFilter]);
 
   useEffect(() => {
     const loadEmployeePpe = async () => {
@@ -282,46 +319,17 @@ export default function Employees() {
     void loadEmployeeHealth();
   }, [id]);
 
-  const selectedEmployee = useMemo(() => employees.find((item) => item.id === id) || null, [employees, id]);
-  const filteredEmployees = useMemo(() => {
-    const query = search.trim().toLocaleLowerCase("tr-TR");
-    return employees.filter((employee) => {
-      const matchesCompany = companyFilter === "ALL" || employee.company_id === companyFilter;
-      const matchesQuery =
-        !query ||
-        [
-          employee.first_name,
-          employee.last_name,
-          employee.company_name || "",
-          employee.job_title,
-          employee.department || "",
-          employee.email || "",
-          employee.phone || "",
-          employee.tc_number || "",
-        ].some((value) => value.toLocaleLowerCase("tr-TR").includes(query));
-      return matchesCompany && matchesQuery;
-    });
-  }, [companyFilter, employees, search]);
-  const activeEmployees = useMemo(() => filteredEmployees.filter((item) => item.is_active), [filteredEmployees]);
-  const passiveEmployees = useMemo(() => filteredEmployees.filter((item) => !item.is_active), [filteredEmployees]);
-  const activeTotalPages = Math.max(1, Math.ceil(activeEmployees.length / PAGE_SIZE));
-  const passiveTotalPages = Math.max(1, Math.ceil(passiveEmployees.length / PAGE_SIZE));
-  const pagedActiveEmployees = useMemo(
-    () => activeEmployees.slice((activePage - 1) * PAGE_SIZE, activePage * PAGE_SIZE),
-    [activeEmployees, activePage],
-  );
-  const pagedPassiveEmployees = useMemo(
-    () => passiveEmployees.slice((passivePage - 1) * PAGE_SIZE, passivePage * PAGE_SIZE),
-    [passiveEmployees, passivePage],
-  );
+  const filteredEmployees = useMemo(() => [...activeEmployees, ...passiveEmployees], [activeEmployees, passiveEmployees]);
+  const activeTotalPages = Math.max(1, Math.ceil(activeCount / PAGE_SIZE));
+  const passiveTotalPages = Math.max(1, Math.ceil(passiveCount / PAGE_SIZE));
   const summary = useMemo(
     () => ({
-      total: employees.length,
-      active: employees.filter((item) => item.is_active).length,
-      passive: employees.filter((item) => !item.is_active).length,
-      filtered: filteredEmployees.length,
+      total: activeCount + passiveCount,
+      active: activeCount,
+      passive: passiveCount,
+      filtered: activeCount + passiveCount,
     }),
-    [employees, filteredEmployees],
+    [activeCount, passiveCount],
   );
 
   useEffect(() => {
@@ -336,6 +344,19 @@ export default function Employees() {
   useEffect(() => {
     if (passivePage > passiveTotalPages) setPassivePage(passiveTotalPages);
   }, [passivePage, passiveTotalPages]);
+
+  const fetchAllEmployees = async (): Promise<EmployeeRecord[]> => {
+    const [{ data: companyRows, error: companyError }, { data: employeeRows, error: employeeError }] = await Promise.all([
+      (supabase as any).from("companies").select("id, name"),
+      (supabase as any).from("employees").select("*").order("first_name", { ascending: true }),
+    ]);
+
+    if (companyError) throw companyError;
+    if (employeeError) throw employeeError;
+
+    const companyMap = new Map<string, string>((companyRows || []).map((row: { id: string; name: string }) => [row.id, row.name]));
+    return mapEmployeeRows((employeeRows || []) as Array<Record<string, unknown>>, companyMap);
+  };
 
   const handleCreateEmployee = async () => {
     if (!form.companyId || !form.firstName.trim() || !form.lastName.trim() || !form.jobTitle.trim()) {
@@ -382,8 +403,9 @@ export default function Employees() {
       }
 
       const companyMap = new Map(companies.map((item) => [item.name.toLocaleLowerCase("tr-TR"), item.id]));
-      const existingTc = new Set(employees.map((item) => item.tc_number).filter(Boolean));
-      const existingEmail = new Set(employees.map((item) => item.email?.toLocaleLowerCase("tr-TR")).filter(Boolean));
+      const directoryEmployees = await fetchAllEmployees();
+      const existingTc = new Set(directoryEmployees.map((item) => item.tc_number).filter(Boolean));
+      const existingEmail = new Set(directoryEmployees.map((item) => item.email?.toLocaleLowerCase("tr-TR")).filter(Boolean));
       const inserts: Record<string, unknown>[] = [];
       const errors: string[] = [];
 
@@ -450,10 +472,11 @@ export default function Employees() {
         return;
       }
 
-      const employeesById = new Map(employees.map((item) => [item.id, item.id]));
-      const employeesByTc = new Map(employees.filter((item) => item.tc_number).map((item) => [item.tc_number as string, item.id]));
+      const directoryEmployees = await fetchAllEmployees();
+      const employeesById = new Map(directoryEmployees.map((item) => [item.id, item.id]));
+      const employeesByTc = new Map(directoryEmployees.filter((item) => item.tc_number).map((item) => [item.tc_number as string, item.id]));
       const employeesByEmail = new Map(
-        employees.filter((item) => item.email).map((item) => [item.email!.toLocaleLowerCase("tr-TR"), item.id]),
+        directoryEmployees.filter((item) => item.email).map((item) => [item.email!.toLocaleLowerCase("tr-TR"), item.id]),
       );
       const ids = new Set<string>();
 
@@ -500,30 +523,50 @@ export default function Employees() {
   };
 
   const detailEmployee = selectedEmployee;
-  const exportEmployees = (rows: EmployeeRecord[], format: "csv" | "xlsx") => {
-    const headers = ["Ad", "Soyad", "Firma", "Görev", "Departman", "Telefon", "E-posta", "TC", "Başlangıç", "Durum"];
-    const body = rows.map((employee) => [
-      employee.first_name,
-      employee.last_name,
-      employee.company_name || "",
-      employee.job_title,
-      employee.department || "",
-      employee.phone || "",
-      employee.email || "",
-      employee.tc_number || "",
-      employee.start_date || "",
-      employee.is_active ? "Aktif" : "Pasif",
-    ]);
+  const exportEmployees = async (format: "csv" | "xlsx") => {
+    try {
+      const [{ data: companyRows, error: companyError }, activeResult, passiveResult] = await Promise.all([
+        (supabase as any).from("companies").select("id, name"),
+        applyEmployeeFilters((supabase as any).from("employees").select("*"), true).order("first_name", { ascending: true }),
+        applyEmployeeFilters((supabase as any).from("employees").select("*"), false).order("first_name", { ascending: true }),
+      ]);
 
-    if (format === "csv") {
-      downloadCsv("calisanlar.csv", headers, body);
-      return;
+      if (companyError) throw companyError;
+      if (activeResult.error) throw activeResult.error;
+      if (passiveResult.error) throw passiveResult.error;
+
+      const companyMap = new Map<string, string>((companyRows || []).map((row: { id: string; name: string }) => [row.id, row.name]));
+      const rows = [
+        ...mapEmployeeRows((activeResult.data || []) as Array<Record<string, unknown>>, companyMap),
+        ...mapEmployeeRows((passiveResult.data || []) as Array<Record<string, unknown>>, companyMap),
+      ];
+
+      const headers = ["Ad", "Soyad", "Firma", "Görev", "Departman", "Telefon", "E-posta", "TC", "Başlangıç", "Durum"];
+      const body = rows.map((employee) => [
+        employee.first_name,
+        employee.last_name,
+        employee.company_name || "",
+        employee.job_title,
+        employee.department || "",
+        employee.phone || "",
+        employee.email || "",
+        employee.tc_number || "",
+        employee.start_date || "",
+        employee.is_active ? "Aktif" : "Pasif",
+      ]);
+
+      if (format === "csv") {
+        downloadCsv("calisanlar.csv", headers, body);
+        return;
+      }
+
+      const sheet = XLSX.utils.aoa_to_sheet([headers, ...body]);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, sheet, "Calisanlar");
+      XLSX.writeFile(workbook, "calisanlar.xlsx");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Dışa aktarma başarısız.");
     }
-
-    const sheet = XLSX.utils.aoa_to_sheet([headers, ...body]);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, sheet, "Calisanlar");
-    XLSX.writeFile(workbook, "calisanlar.xlsx");
   };
 
   return (
@@ -564,11 +607,11 @@ export default function Employees() {
               <Trash2 className="h-4 w-4" />
               Excel ile Çıkar
             </Button>
-            <Button variant="outline" className="gap-2" onClick={() => exportEmployees(filteredEmployees, "csv")}>
+            <Button variant="outline" className="gap-2" onClick={() => void exportEmployees("csv")}>
               <FileSpreadsheet className="h-4 w-4" />
               CSV Dışa Aktar
             </Button>
-            <Button variant="outline" className="gap-2" onClick={() => exportEmployees(filteredEmployees, "xlsx")}>
+            <Button variant="outline" className="gap-2" onClick={() => void exportEmployees("xlsx")}>
               <FileSpreadsheet className="h-4 w-4" />
               Excel Dışa Aktar
             </Button>
@@ -800,8 +843,8 @@ export default function Employees() {
           <CardContent>
             <Tabs defaultValue="active" className="space-y-4">
               <TabsList className="h-auto w-full justify-start rounded-xl bg-slate-900/70 p-1">
-                <TabsTrigger value="active">Aktif Çalışanlar ({activeEmployees.length})</TabsTrigger>
-                <TabsTrigger value="passive">Pasif Çalışanlar ({passiveEmployees.length})</TabsTrigger>
+                <TabsTrigger value="active">Aktif Çalışanlar ({activeCount})</TabsTrigger>
+                <TabsTrigger value="passive">Pasif Çalışanlar ({passiveCount})</TabsTrigger>
               </TabsList>
 
               <TabsContent value="active" className="mt-0">
@@ -826,7 +869,7 @@ export default function Employees() {
                           <TableCell colSpan={5} className="py-12 text-center text-sm text-muted-foreground">Filtreye uygun aktif çalışan yok.</TableCell>
                         </TableRow>
                       ) : (
-                        pagedActiveEmployees.map((employee) => (
+                        activeEmployees.map((employee) => (
                           <TableRow key={employee.id} className="cursor-pointer" onClick={() => navigate(`/employees/${employee.id}`)}>
                             <TableCell>
                               <div>
@@ -844,7 +887,7 @@ export default function Employees() {
                     </TableBody>
                   </Table>
                 </div>
-                {activeEmployees.length > PAGE_SIZE ? (
+                {activeCount > PAGE_SIZE ? (
                   <div className="mt-4 flex items-center justify-between text-sm text-slate-400">
                     <span>Sayfa {activePage} / {activeTotalPages}</span>
                     <div className="flex gap-2">
@@ -881,7 +924,7 @@ export default function Employees() {
                           <TableCell colSpan={5} className="py-12 text-center text-sm text-muted-foreground">Filtreye uygun pasif çalışan yok.</TableCell>
                         </TableRow>
                       ) : (
-                        pagedPassiveEmployees.map((employee) => (
+                        passiveEmployees.map((employee) => (
                           <TableRow key={employee.id} className="cursor-pointer" onClick={() => navigate(`/employees/${employee.id}`)}>
                             <TableCell>
                               <div>
@@ -915,7 +958,7 @@ export default function Employees() {
                     </TableBody>
                   </Table>
                 </div>
-                {passiveEmployees.length > PAGE_SIZE ? (
+                {passiveCount > PAGE_SIZE ? (
                   <div className="mt-4 flex items-center justify-between text-sm text-slate-400">
                     <span>Sayfa {passivePage} / {passiveTotalPages}</span>
                     <div className="flex gap-2">

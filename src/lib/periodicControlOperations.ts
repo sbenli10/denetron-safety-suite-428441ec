@@ -136,6 +136,24 @@ export interface PeriodicControlTaskResult {
   skipped: number;
 }
 
+export interface PagedResult<T> {
+  rows: T[];
+  count: number;
+}
+
+export interface PeriodicControlsPageParams {
+  page: number;
+  pageSize: number;
+  search?: string;
+  status?: PeriodicControlStatus | "ALL";
+  companyId?: string;
+}
+
+export interface PeriodicControlReportPageParams {
+  page: number;
+  pageSize: number;
+}
+
 const ensureControlRow = (row: unknown) => row as PeriodicControlRow;
 const ensureReportRow = (row: unknown) => row as PeriodicControlReportRow;
 const ensureTaskRow = (row: unknown) => row as OsgbTaskLookupRow;
@@ -194,6 +212,40 @@ export const listPeriodicControls = async (
 
   if (error) throw error;
   return (data ?? []).map((row) => mapControl(ensureControlRow(row)));
+};
+
+export const listPeriodicControlsPage = async (
+  userId: string,
+  params: PeriodicControlsPageParams,
+): Promise<PagedResult<PeriodicControlRecord>> => {
+  const { page, pageSize, search, status, companyId } = params;
+  const from = Math.max(0, (page - 1) * pageSize);
+  const to = from + pageSize - 1;
+  let query = (supabase as any)
+    .from("periodic_controls")
+    .select("*, company:isgkatip_companies(company_name)", { count: "exact" })
+    .eq("user_id", userId);
+
+  if (status && status !== "ALL") {
+    query = query.eq("status", status);
+  }
+  if (companyId && companyId !== "ALL") {
+    query = query.eq("company_id", companyId);
+  }
+  if (search?.trim()) {
+    const term = search.trim();
+    query = query.or(`equipment_name.ilike.%${term}%,control_category.ilike.%${term}%,location.ilike.%${term}%`);
+  }
+
+  const { data, error, count } = await query
+    .order("next_control_date", { ascending: true })
+    .range(from, to);
+
+  if (error) throw error;
+  return {
+    rows: (data ?? []).map((row: unknown) => mapControl(ensureControlRow(row))),
+    count: count ?? 0,
+  };
 };
 
 export const upsertPeriodicControl = async (
@@ -257,6 +309,27 @@ export const listPeriodicControlReportHistory = async (
 
   if (error) throw error;
   return (data ?? []).map((row) => mapReport(ensureReportRow(row)));
+};
+
+export const listPeriodicControlReportHistoryPage = async (
+  userId: string,
+  params: PeriodicControlReportPageParams,
+): Promise<PagedResult<PeriodicControlReportRecord>> => {
+  const { page, pageSize } = params;
+  const from = Math.max(0, (page - 1) * pageSize);
+  const to = from + pageSize - 1;
+  const { data, error, count } = await (supabase as any)
+    .from("periodic_control_reports")
+    .select("*", { count: "exact" })
+    .eq("user_id", userId)
+    .order("report_date", { ascending: false })
+    .range(from, to);
+
+  if (error) throw error;
+  return {
+    rows: (data ?? []).map((row: unknown) => mapReport(ensureReportRow(row))),
+    count: count ?? 0,
+  };
 };
 
 export const uploadPeriodicControlReport = async (

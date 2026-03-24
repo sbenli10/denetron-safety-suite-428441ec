@@ -156,6 +156,19 @@ export interface HealthTaskResult {
   skipped: number;
 }
 
+export interface PagedResult<T> {
+  rows: T[];
+  count: number;
+}
+
+export interface HealthRecordsPageParams {
+  page: number;
+  pageSize: number;
+  status?: HealthWorkflowStatus | "ALL";
+  employeeId?: string;
+  search?: string;
+}
+
 const ensureHealthRow = (row: unknown) => row as HealthRow;
 const ensureHealthFileRow = (row: unknown) => row as HealthFileRow;
 const ensureEmployeeRow = (row: unknown) => row as EmployeeRow;
@@ -187,6 +200,40 @@ export const listHealthSurveillanceRecords = async (userId: string): Promise<Hea
 
   if (error) throw error;
   return (data ?? []).map((row) => mapRecord(ensureHealthRow(row)));
+};
+
+export const listHealthSurveillanceRecordsPage = async (
+  userId: string,
+  params: HealthRecordsPageParams,
+): Promise<PagedResult<HealthSurveillanceRecord>> => {
+  const { page, pageSize, status, employeeId, search } = params;
+  const from = Math.max(0, (page - 1) * pageSize);
+  const to = from + pageSize - 1;
+  let query = (supabase as any)
+    .from("health_surveillance_records")
+    .select("*, employee:employees(first_name,last_name), company:companies(name)", { count: "exact" })
+    .eq("user_id", userId);
+
+  if (status && status !== "ALL") {
+    query = query.eq("status", status);
+  }
+  if (employeeId && employeeId !== "ALL") {
+    query = query.eq("employee_id", employeeId);
+  }
+  if (search?.trim()) {
+    const term = search.trim();
+    query = query.or(`physician_name.ilike.%${term}%,summary.ilike.%${term}%,notes.ilike.%${term}%`);
+  }
+
+  const { data, error, count } = await query
+    .order("next_exam_date", { ascending: true })
+    .range(from, to);
+
+  if (error) throw error;
+  return {
+    rows: (data ?? []).map((row: unknown) => mapRecord(ensureHealthRow(row))),
+    count: count ?? 0,
+  };
 };
 
 export const upsertHealthSurveillanceRecord = async (

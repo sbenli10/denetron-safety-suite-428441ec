@@ -42,7 +42,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
-  getOsgbCompanyTracking,
+  getOsgbCompanyTrackingPage,
   listOsgbAssignments,
   listOsgbDocuments,
   listOsgbFinance,
@@ -157,25 +157,33 @@ export default function OSGBCompanyTracking() {
   const [editingFinanceId, setEditingFinanceId] = useState<string | null>(null);
   const [editingDocumentId, setEditingDocumentId] = useState<string | null>(null);
   const [page, setPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
 
   const loadData = async (silent = false) => {
     if (!user?.id) return;
     if (!silent) setLoading(true);
     try {
-      const [trackingRows, personnelRows, assignmentRows, financeRows, documentRows] = await Promise.all([
-        getOsgbCompanyTracking(user.id),
+      const [trackingResult, personnelRows, assignmentRows, financeRows, documentRows] = await Promise.all([
+        getOsgbCompanyTrackingPage(user.id, {
+          page,
+          pageSize: COMPANY_TRACKING_PAGE_SIZE,
+          search,
+          status: statusFilter,
+        }),
         listOsgbPersonnel(user.id),
         listOsgbAssignments(user.id),
         listOsgbFinance(user.id),
         listOsgbDocuments(user.id),
       ]);
-      setRecords(trackingRows);
+      setRecords(trackingResult.rows);
+      setTotalCount(trackingResult.count);
       setPersonnel(personnelRows.filter((item) => item.is_active));
       setAssignments(assignmentRows);
       setFinanceRecords(financeRows);
       setDocumentRecords(documentRows);
-      writeOsgbPageCache(getCacheKey(user.id), {
-        records: trackingRows,
+      writeOsgbPageCache(`${getCacheKey(user.id)}:${statusFilter}:${search}:${page}`, {
+        records: trackingResult.rows,
+        totalCount: trackingResult.count,
         personnel: personnelRows.filter((item) => item.is_active),
         assignments: assignmentRows,
         financeRecords: financeRows,
@@ -193,13 +201,15 @@ export default function OSGBCompanyTracking() {
     if (!user?.id) return;
     const cached = readOsgbPageCache<{
       records: OsgbCompanyTrackingRecord[];
+      totalCount: number;
       personnel: OsgbPersonnelRecord[];
       assignments: OsgbAssignmentRecord[];
       financeRecords: OsgbFinanceRecord[];
       documentRecords: OsgbDocumentRecord[];
-    }>(getCacheKey(user.id), CACHE_TTL_MS);
+    }>(`${getCacheKey(user.id)}:${statusFilter}:${search}:${page}`, CACHE_TTL_MS);
     if (cached) {
       setRecords(cached.records);
+      setTotalCount(cached.totalCount);
       setPersonnel(cached.personnel);
       setAssignments(cached.assignments);
       setFinanceRecords(cached.financeRecords);
@@ -209,38 +219,18 @@ export default function OSGBCompanyTracking() {
       return;
     }
     void loadData();
-  }, [user?.id]);
-
-  const filteredRecords = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    return records.filter((record) => {
-      const matchesStatus = statusFilter === "ALL" || record.assignmentStatus === statusFilter;
-      const matchesQuery =
-        !query ||
-        [
-          record.companyName,
-          record.hazardClass,
-          record.activeAssignment?.personnelName || "",
-          record.activeAssignment?.role || "",
-        ].some((value) => value.toLowerCase().includes(query));
-      return matchesStatus && matchesQuery;
-    });
-  }, [records, search, statusFilter]);
+  }, [user?.id, page, search, statusFilter]);
 
   const summary = useMemo(
     () => ({
-      tracked: records.length,
+      tracked: totalCount,
       withExpiredDocs: records.filter((item) => item.documentSummary.expired > 0).length,
       withOverdueFinance: records.filter((item) => item.financeSummary.overdueAmount > 0).length,
       assignmentRisk: records.filter((item) => item.assignmentStatus !== "atandi").length,
     }),
-    [records],
+    [records, totalCount],
   );
-  const totalPages = Math.max(1, Math.ceil(filteredRecords.length / COMPANY_TRACKING_PAGE_SIZE));
-  const pagedRecords = useMemo(
-    () => filteredRecords.slice((page - 1) * COMPANY_TRACKING_PAGE_SIZE, page * COMPANY_TRACKING_PAGE_SIZE),
-    [filteredRecords, page],
-  );
+  const totalPages = Math.max(1, Math.ceil(totalCount / COMPANY_TRACKING_PAGE_SIZE));
 
   const selectedCompanyAssignments = useMemo(
     () =>
@@ -482,7 +472,7 @@ export default function OSGBCompanyTracking() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {pagedRecords.map((record) => (
+                {records.map((record) => (
                   <TableRow key={record.companyId} className="border-slate-800">
                     <TableCell>
                       <div className="space-y-1">
@@ -543,7 +533,7 @@ export default function OSGBCompanyTracking() {
               </TableBody>
             </Table>
           )}
-          {filteredRecords.length > COMPANY_TRACKING_PAGE_SIZE ? (
+          {totalCount > COMPANY_TRACKING_PAGE_SIZE ? (
             <div className="mt-4 flex items-center justify-between text-sm text-slate-400">
               <span>Sayfa {page} / {totalPages}</span>
               <div className="flex gap-2">

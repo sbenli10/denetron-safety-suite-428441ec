@@ -48,7 +48,7 @@ import {
   createOsgbTask,
   deleteOsgbTask,
   getOsgbCompanyOptions,
-  listOsgbTasks,
+  listOsgbTasksPage,
   type OsgbCompanyOption,
   type OsgbTaskRecord,
   updateOsgbTaskStatus,
@@ -110,30 +110,40 @@ export default function OSGBTasks() {
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
 
   const loadData = async () => {
     if (!user?.id) return;
-    const cacheKey = `osgb-tasks:${user.id}`;
+    const cacheKey = `osgb-tasks:${user.id}:${statusFilter}:${search}:${page}`;
     const cached = readOsgbPageCache<{
       records: OsgbTaskRecord[];
       companies: OsgbCompanyOption[];
+      totalCount: number;
     }>(cacheKey, OSGB_TASKS_CACHE_TTL);
     if (cached) {
       setRecords(cached.records);
       setCompanies(cached.companies);
+      setTotalCount(cached.totalCount);
       setLoading(false);
     }
     setLoading(true);
     try {
-      const [taskRows, companyRows] = await Promise.all([
-        listOsgbTasks(user.id),
+      const [taskResult, companyRows] = await Promise.all([
+        listOsgbTasksPage(user.id, {
+          page,
+          pageSize: OSGB_TASKS_PAGE_SIZE,
+          status: statusFilter,
+          search,
+        }),
         getOsgbCompanyOptions(user.id),
       ]);
-      setRecords(taskRows);
+      setRecords(taskResult.rows);
       setCompanies(companyRows);
+      setTotalCount(taskResult.count);
       writeOsgbPageCache(cacheKey, {
-        records: taskRows,
+        records: taskResult.rows,
         companies: companyRows,
+        totalCount: taskResult.count,
       });
       setError(null);
     } catch (err) {
@@ -145,7 +155,7 @@ export default function OSGBTasks() {
 
   useEffect(() => {
     void loadData();
-  }, [user?.id]);
+  }, [user?.id, page, search, statusFilter]);
 
   useEffect(() => {
     setPage(1);
@@ -155,25 +165,12 @@ export default function OSGBTasks() {
     if (page > totalPages) setPage(totalPages);
   }, [page, totalPages]);
 
-  const filteredRecords = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    return records.filter((record) => {
-      const matchesStatus = statusFilter === "ALL" || record.status === statusFilter;
-      const matchesQuery = !query || [record.title, record.description || "", record.assigned_to || "", record.company?.company_name || ""].some((value) => value.toLowerCase().includes(query));
-      return matchesStatus && matchesQuery;
-    });
-  }, [records, search, statusFilter]);
-
   const summary = useMemo(() => ({
     open: records.filter((item) => item.status === "open").length,
     inProgress: records.filter((item) => item.status === "in_progress").length,
     completed: records.filter((item) => item.status === "completed").length,
   }), [records]);
-  const totalPages = Math.max(1, Math.ceil(filteredRecords.length / OSGB_TASKS_PAGE_SIZE));
-  const pagedRecords = useMemo(
-    () => filteredRecords.slice((page - 1) * OSGB_TASKS_PAGE_SIZE, page * OSGB_TASKS_PAGE_SIZE),
-    [filteredRecords, page],
-  );
+  const totalPages = Math.max(1, Math.ceil(totalCount / OSGB_TASKS_PAGE_SIZE));
 
   const openCreate = () => {
     if (!canManage) {
@@ -267,7 +264,7 @@ export default function OSGBTasks() {
               downloadCsv(
                 "osgb-gorevler.csv",
                 ["Firma", "Başlık", "Öncelik", "Durum", "Termin", "Atanan"],
-                filteredRecords.map((record) => [
+                records.map((record) => [
                   record.company?.company_name || "",
                   record.title,
                   priorityLabel[record.priority],
@@ -343,10 +340,10 @@ export default function OSGBTasks() {
             <TableBody>
               {loading ? (
                 <TableRow><TableCell colSpan={7} className="py-12 text-center text-sm text-slate-400">Yükleniyor...</TableCell></TableRow>
-              ) : filteredRecords.length === 0 ? (
+              ) : records.length === 0 ? (
                 <TableRow><TableCell colSpan={7} className="py-12 text-center text-sm text-slate-400">Eşleşen görev bulunamadı.</TableCell></TableRow>
               ) : (
-                pagedRecords.map((record) => (
+                records.map((record) => (
                   <TableRow key={record.id} className="border-slate-800">
                     <TableCell>
                       <div className="font-medium text-white">{record.title}</div>
@@ -376,7 +373,7 @@ export default function OSGBTasks() {
               )}
             </TableBody>
           </Table>
-          {filteredRecords.length > OSGB_TASKS_PAGE_SIZE ? (
+          {totalCount > OSGB_TASKS_PAGE_SIZE ? (
             <div className="mt-4 flex items-center justify-between text-sm text-slate-400">
               <span>Sayfa {page} / {totalPages}</span>
               <div className="flex gap-2">

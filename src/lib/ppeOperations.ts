@@ -129,6 +129,13 @@ export interface PpeEmployeeOption {
   isActive: boolean;
 }
 
+export interface PpeInventoryOption {
+  id: string;
+  itemName: string;
+  isActive: boolean;
+  defaultRenewalDays: number;
+}
+
 export interface PpeInventoryInput {
   itemName: string;
   category: string;
@@ -175,6 +182,23 @@ export interface PpeRenewalTaskResult {
   skipped: number;
 }
 
+export interface PagedResult<T> {
+  rows: T[];
+  count: number;
+}
+
+export interface PpeInventoryPageParams {
+  page: number;
+  pageSize: number;
+  search?: string;
+}
+
+export interface PpeAssignmentPageParams {
+  page: number;
+  pageSize: number;
+  employeeId?: string;
+}
+
 const mapInventory = (row: PpeInventoryRow): PpeInventoryRecord => ({
   ...row,
   default_renewal_days: Number(row.default_renewal_days),
@@ -202,6 +226,34 @@ export const listPpeInventory = async (userId: string): Promise<PpeInventoryReco
 
   if (error) throw error;
   return (data ?? []).map((row) => mapInventory(ensureInventoryRow(row)));
+};
+
+export const listPpeInventoryPage = async (
+  userId: string,
+  params: PpeInventoryPageParams,
+): Promise<PagedResult<PpeInventoryRecord>> => {
+  const { page, pageSize, search } = params;
+  const from = Math.max(0, (page - 1) * pageSize);
+  const to = from + pageSize - 1;
+  let query = (supabase as any)
+    .from("ppe_inventory")
+    .select("*", { count: "exact" })
+    .eq("user_id", userId);
+
+  if (search?.trim()) {
+    const term = search.trim();
+    query = query.or(`item_name.ilike.%${term}%,category.ilike.%${term}%,standard_code.ilike.%${term}%`);
+  }
+
+  const { data, error, count } = await query
+    .order("updated_at", { ascending: false })
+    .range(from, to);
+
+  if (error) throw error;
+  return {
+    rows: (data ?? []).map((row: unknown) => mapInventory(ensureInventoryRow(row))),
+    count: count ?? 0,
+  };
 };
 
 export const upsertPpeInventory = async (
@@ -244,6 +296,33 @@ export const listPpeAssignments = async (userId: string): Promise<PpeAssignmentR
 
   if (error) throw error;
   return (data ?? []).map((row) => mapAssignment(ensureAssignmentRow(row)));
+};
+
+export const listPpeAssignmentsPage = async (
+  userId: string,
+  params: PpeAssignmentPageParams,
+): Promise<PagedResult<PpeAssignmentRecord>> => {
+  const { page, pageSize, employeeId } = params;
+  const from = Math.max(0, (page - 1) * pageSize);
+  const to = from + pageSize - 1;
+  let query = (supabase as any)
+    .from("ppe_assignments")
+    .select("*", { count: "exact" })
+    .eq("user_id", userId);
+
+  if (employeeId && employeeId !== "ALL") {
+    query = query.eq("employee_id", employeeId);
+  }
+
+  const { data, error, count } = await query
+    .order("due_date", { ascending: true })
+    .range(from, to);
+
+  if (error) throw error;
+  return {
+    rows: (data ?? []).map((row: unknown) => mapAssignment(ensureAssignmentRow(row))),
+    count: count ?? 0,
+  };
 };
 
 export const upsertPpeAssignment = async (
@@ -326,6 +405,23 @@ export const listPpeEmployeeOptions = async (): Promise<PpeEmployeeOption[]> => 
       isActive: Boolean(employee.is_active ?? true),
     };
   });
+};
+
+export const listPpeInventoryOptions = async (userId: string): Promise<PpeInventoryOption[]> => {
+  const { data, error } = await (supabase as any)
+    .from("ppe_inventory")
+    .select("id, item_name, is_active, default_renewal_days")
+    .eq("user_id", userId)
+    .order("item_name", { ascending: true });
+
+  if (error) throw error;
+
+  return (data ?? []).map((row: any) => ({
+    id: row.id,
+    itemName: row.item_name,
+    isActive: Boolean(row.is_active),
+    defaultRenewalDays: Number(row.default_renewal_days ?? 0),
+  }));
 };
 
 export const buildPpeEmployeeOverview = (

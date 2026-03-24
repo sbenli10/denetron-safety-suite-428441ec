@@ -2,6 +2,7 @@
 import {
   AlertTriangle,
   Briefcase,
+  Download,
   Gauge,
   Plus,
   RefreshCcw,
@@ -44,9 +45,11 @@ import {
 import {
   deleteOsgbAssignment,
   getAssignmentRecommendation,
+  getOsgbCompanyAssignedMinutesTotal,
   getOsgbCompanyOptions,
-  listOsgbAssignments,
-  listOsgbPersonnel,
+  getOsgbPersonnelAssignedMinutesTotal,
+  listActiveOsgbPersonnel,
+  listOsgbAssignmentsPage,
   type OsgbAssignmentInput,
   type OsgbAssignmentRecord,
   type OsgbCompanyOption,
@@ -108,6 +111,7 @@ const formatDate = (value: string | null) => {
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const getCacheKey = (userId: string) => `assignments:${userId}`;
+const ASSIGNMENT_PAGE_SIZE = 20;
 
 export default function OSGBAssignments() {
   const { user } = useAuth();
@@ -116,30 +120,40 @@ export default function OSGBAssignments() {
   const [companies, setCompanies] = useState<OsgbCompanyOption[]>([]);
   const [personnel, setPersonnel] = useState<OsgbPersonnelRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  const [personnelLoading, setPersonnelLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<OsgbAssignmentRecord | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
+  const [page, setPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
   const [form, setForm] = useState<AssignmentFormState>(emptyForm);
+  const [personnelAssignedMinutes, setPersonnelAssignedMinutes] = useState(0);
+  const [companyAssignedMinutes, setCompanyAssignedMinutes] = useState(0);
 
   const loadData = async (silent = false) => {
     if (!user?.id) return;
     if (!silent) setLoading(true);
     try {
-      const [assignmentRows, companyRows, personnelRows] = await Promise.all([
-        listOsgbAssignments(user.id),
-        getOsgbCompanyOptions(user.id),
-        listOsgbPersonnel(user.id),
+      const cacheKey = `${getCacheKey(user.id)}:${statusFilter}:${search}:${page}`;
+      const [assignmentResult, companyRows] = await Promise.all([
+        listOsgbAssignmentsPage(user.id, {
+          page,
+          pageSize: ASSIGNMENT_PAGE_SIZE,
+          status: statusFilter,
+          search,
+        }),
+        companies.length > 0 ? Promise.resolve(companies) : getOsgbCompanyOptions(user.id),
       ]);
-      setRecords(assignmentRows);
+      setRecords(assignmentResult.rows);
+      setTotalCount(assignmentResult.count);
       setCompanies(companyRows);
-      setPersonnel(personnelRows.filter((item) => item.is_active));
-      writeOsgbPageCache(getCacheKey(user.id), {
-        records: assignmentRows,
+      writeOsgbPageCache(cacheKey, {
+        records: assignmentResult.rows,
         companies: companyRows,
-        personnel: personnelRows.filter((item) => item.is_active),
+        totalCount: assignmentResult.count,
       });
       setError(null);
     } catch (err) {
@@ -154,30 +168,99 @@ export default function OSGBAssignments() {
     const cached = readOsgbPageCache<{
       records: OsgbAssignmentRecord[];
       companies: OsgbCompanyOption[];
-      personnel: OsgbPersonnelRecord[];
-    }>(getCacheKey(user.id), CACHE_TTL_MS);
+      totalCount: number;
+    }>(`${getCacheKey(user.id)}:${statusFilter}:${search}:${page}`, CACHE_TTL_MS);
     if (cached) {
       setRecords(cached.records);
       setCompanies(cached.companies);
-      setPersonnel(cached.personnel);
+      setTotalCount(cached.totalCount);
       setLoading(false);
       void loadData(true);
       return;
     }
     void loadData();
-  }, [user?.id]);
+  }, [page, search, statusFilter, user?.id]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, statusFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(totalCount / ASSIGNMENT_PAGE_SIZE));
+
+  useEffect(() => {
+    if (page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [page, totalPages]);
+
+  const ensurePersonnelOptions = async () => {
+    if (!user?.id || personnel.length > 0) return;
+    setPersonnelLoading(true);
+    try {
+      const personnelRows = await listActiveOsgbPersonnel(user.id);
+      setPersonnel(personnelRows);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Aktif personel listesi yüklenemedi.");
+    } finally {
+      setPersonnelLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!user?.id || !form.personnelId) {
+      setPersonnelAssignedMinutes(0);
+      return;
+    }
+
+    let active = true;
+    void getOsgbPersonnelAssignedMinutesTotal(user.id, form.personnelId, editing?.id)
+      .then((value) => {
+        if (active) {
+          setPersonnelAssignedMinutes(value);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setPersonnelAssignedMinutes(0);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [editing?.id, form.personnelId, user?.id]);
+
+  useEffect(() => {
+    if (!user?.id || !form.companyId) {
+      setCompanyAssignedMinutes(0);
+      return;
+    }
+
+    let active = true;
+    void getOsgbCompanyAssignedMinutesTotal(user.id, form.companyId, editing?.id)
+      .then((value) => {
+        if (active) {
+          setCompanyAssignedMinutes(value);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setCompanyAssignedMinutes(0);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [editing?.id, form.companyId, user?.id]);
 
   const livePersonnelCapacity = useMemo(() => {
     if (!form.personnelId) return null;
     const selected = personnel.find((item) => item.id === form.personnelId);
     if (!selected) return null;
 
-    const currentAssigned = records
-      .filter((record) => record.personnel_id === form.personnelId && record.status === "active" && record.id !== editing?.id)
-      .reduce((sum, record) => sum + record.assigned_minutes, 0);
-
     const requested = Number(form.assignedMinutes || 0);
-    const totalProjected = currentAssigned + requested;
+    const totalProjected = personnelAssignedMinutes + requested;
     const remaining = selected.monthly_capacity_minutes - totalProjected;
     const ratio = selected.monthly_capacity_minutes > 0
       ? Math.round((totalProjected / selected.monthly_capacity_minutes) * 100)
@@ -185,39 +268,35 @@ export default function OSGBAssignments() {
 
     return {
       selected,
-      currentAssigned,
+      currentAssigned: personnelAssignedMinutes,
       totalProjected,
       remaining,
       ratio,
       exceeded: remaining < 0,
     };
-  }, [editing?.id, form.assignedMinutes, form.personnelId, personnel, records]);
+  }, [form.assignedMinutes, form.personnelId, personnel, personnelAssignedMinutes]);
 
   const liveCompanyRequirement = useMemo(() => {
     if (!form.companyId) return null;
     const selected = companies.find((item) => item.id === form.companyId);
     if (!selected) return null;
 
-    const currentAssigned = records
-      .filter((record) => record.company_id === form.companyId && record.status === "active" && record.id !== editing?.id)
-      .reduce((sum, record) => sum + record.assigned_minutes, 0);
-
     const requested = Number(form.assignedMinutes || 0);
-    const totalProjected = currentAssigned + requested;
+    const totalProjected = companyAssignedMinutes + requested;
     const required = selected.requiredMinutes || 0;
     const gap = Math.max(0, required - totalProjected);
     const ratio = required > 0 ? Math.round((totalProjected / required) * 100) : 0;
 
     return {
       selected,
-      currentAssigned,
+      currentAssigned: companyAssignedMinutes,
       totalProjected,
       required,
       gap,
       ratio,
       stillInsufficient: gap > 0,
     };
-  }, [companies, editing?.id, form.assignedMinutes, form.companyId, records]);
+  }, [companies, companyAssignedMinutes, form.assignedMinutes, form.companyId]);
 
   const regulationRecommendation = useMemo(() => {
     const selectedCompany = companies.find((item) => item.id === form.companyId);
@@ -229,48 +308,39 @@ export default function OSGBAssignments() {
   }, [companies, form.assignedRole, form.companyId, liveCompanyRequirement?.currentAssigned]);
 
   const filteredRecords = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    return records.filter((record) => {
-      const matchesStatus = statusFilter === "ALL" || record.status === statusFilter;
-      const matchesQuery =
-        !query ||
-        [
-          record.company?.company_name || "",
-          record.personnel?.full_name || "",
-          record.notes || "",
-          roleLabel[record.assigned_role],
-        ].some((value) => value.toLowerCase().includes(query));
-      return matchesStatus && matchesQuery;
-    });
-  }, [records, search, statusFilter]);
+    return records;
+  }, [records]);
 
   const summary = useMemo(() => {
-    const active = records.filter((item) => item.status === "active").length;
-    const pendingCompanyIds = new Set(
-      companies.filter((company) => !records.some((record) => record.company_id === company.id && record.status === "active")).map((company) => company.id),
-    );
+    const active = filteredRecords.filter((item) => item.status === "active").length;
+    const passive = filteredRecords.filter((item) => item.status === "passive").length;
+    const completedOrCancelled = filteredRecords.filter((item) => item.status === "completed" || item.status === "cancelled").length;
     return {
       active,
-      total: records.length,
-      unassignedCompanies: pendingCompanyIds.size,
+      passive,
+      completedOrCancelled,
     };
-  }, [companies, records]);
+  }, [filteredRecords]);
 
-  const openCreate = () => {
+  const openCreate = async () => {
     if (!canManage) {
       toast.error("Bu işlem için düzenleme yetkisi gerekiyor.");
       return;
     }
+    await ensurePersonnelOptions();
     setEditing(null);
     setForm(emptyForm);
+    setCompanyAssignedMinutes(0);
+    setPersonnelAssignedMinutes(0);
     setDialogOpen(true);
   };
 
-  const openEdit = (record: OsgbAssignmentRecord) => {
+  const openEdit = async (record: OsgbAssignmentRecord) => {
     if (!canManage) {
       toast.error("Bu işlem için düzenleme yetkisi gerekiyor.");
       return;
     }
+    await ensurePersonnelOptions();
     setEditing(record);
     setForm({
       companyId: record.company_id,
@@ -319,8 +389,8 @@ export default function OSGBAssignments() {
         status: form.status,
         notes: form.notes,
       };
-      const saved = await upsertOsgbAssignment(user.id, payload, editing?.id);
-      setRecords((prev) => (editing ? prev.map((item) => (item.id === saved.id ? saved : item)) : [saved, ...prev]));
+      await upsertOsgbAssignment(user.id, payload, editing?.id);
+      await loadData(true);
       setDialogOpen(false);
       setEditing(null);
       setForm(emptyForm);
@@ -340,7 +410,7 @@ export default function OSGBAssignments() {
     if (!confirm("Bu görevlendirmeyi silmek istiyor musunuz?")) return;
     try {
       await deleteOsgbAssignment(id);
-      setRecords((prev) => prev.filter((item) => item.id !== id));
+      await loadData(true);
       toast.success("Görevlendirme silindi.");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Görevlendirme silinemedi.");
@@ -364,11 +434,33 @@ export default function OSGBAssignments() {
           </div>
         </div>
         <div className="flex gap-2">
+          <Button
+            variant="outline"
+            onClick={() =>
+              downloadCsv(
+                "osgb-gorevlendirmeler.csv",
+                ["Firma", "Personel", "Rol", "Atanan Dakika", "Baslangic", "Bitis", "Durum", "Not"],
+                filteredRecords.map((record) => [
+                  record.company?.company_name || "",
+                  record.personnel?.full_name || "",
+                  roleLabel[record.assigned_role],
+                  record.assigned_minutes,
+                  record.start_date || "",
+                  record.end_date || "",
+                  statusLabel[record.status],
+                  record.notes || "",
+                ]),
+              )
+            }
+          >
+            <Download className="mr-2 h-4 w-4" />
+            Dışa Aktar
+          </Button>
           <Button variant="outline" onClick={() => void loadData()}>
             <RefreshCcw className="mr-2 h-4 w-4" />
             Yenile
           </Button>
-          <Button onClick={openCreate} disabled={!canManage}>
+          <Button onClick={() => void openCreate()} disabled={!canManage}>
             <Plus className="mr-2 h-4 w-4" />
             Görevlendirme oluştur
           </Button>
@@ -377,8 +469,8 @@ export default function OSGBAssignments() {
 
       <div className="grid gap-4 md:grid-cols-3">
         <Card className="border-slate-800 bg-slate-950/70"><CardHeader className="pb-2"><CardDescription>Aktif atama</CardDescription><CardTitle className="text-3xl text-white">{summary.active}</CardTitle></CardHeader><CardContent className="text-xs text-slate-400">Şu an aktif durumda olan firma atamaları.</CardContent></Card>
-        <Card className="border-slate-800 bg-slate-950/70"><CardHeader className="pb-2"><CardDescription>Toplam kayıt</CardDescription><CardTitle className="text-3xl text-white">{summary.total}</CardTitle></CardHeader><CardContent className="text-xs text-slate-400">Aktif, pasif, tamamlanan ve iptal edilen tüm kayıtlar.</CardContent></Card>
-        <Card className="border-slate-800 bg-slate-950/70"><CardHeader className="pb-2"><CardDescription>Atanmamış firma</CardDescription><CardTitle className="text-3xl text-white">{summary.unassignedCompanies}</CardTitle></CardHeader><CardContent className="text-xs text-slate-400">Henüz aktif personel atanmamış firma sayısı.</CardContent></Card>
+        <Card className="border-slate-800 bg-slate-950/70"><CardHeader className="pb-2"><CardDescription>Toplam kayıt</CardDescription><CardTitle className="text-3xl text-white">{totalCount}</CardTitle></CardHeader><CardContent className="text-xs text-slate-400">Sunucu tarafında filtrelenen toplam görevlendirme sayısı.</CardContent></Card>
+        <Card className="border-slate-800 bg-slate-950/70"><CardHeader className="pb-2"><CardDescription>Bu sayfadaki pasif/tamamlanan</CardDescription><CardTitle className="text-3xl text-white">{summary.passive + summary.completedOrCancelled}</CardTitle></CardHeader><CardContent className="text-xs text-slate-400">Görüntülenen sayfadaki aktif dışı görevlendirmeler.</CardContent></Card>
       </div>
 
       <Alert>
@@ -446,7 +538,13 @@ export default function OSGBAssignments() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredRecords.map((record) => (
+                {filteredRecords.length === 0 ? (
+                  <TableRow className="border-slate-800">
+                    <TableCell colSpan={7} className="py-12 text-center text-sm text-slate-400">
+                      Görevlendirme bulunamadı.
+                    </TableCell>
+                  </TableRow>
+                ) : filteredRecords.map((record) => (
                   <TableRow key={record.id} className="border-slate-800">
                     <TableCell className="font-medium text-white">{record.company?.company_name || "Firma"}</TableCell>
                     <TableCell>
@@ -461,7 +559,7 @@ export default function OSGBAssignments() {
                     <TableCell><Badge className={statusClass[record.status]}>{statusLabel[record.status]}</Badge></TableCell>
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-2">
-                        <Button size="sm" variant="outline" onClick={() => openEdit(record)}>Düzenle</Button>
+                        <Button size="sm" variant="outline" onClick={() => void openEdit(record)}>Düzenle</Button>
                         <Button size="sm" variant="ghost" className="text-rose-300 hover:text-rose-200" onClick={() => void handleDelete(record.id)}>
                           <Trash2 className="h-4 w-4" />
                         </Button>
@@ -472,6 +570,29 @@ export default function OSGBAssignments() {
               </TableBody>
             </Table>
           )}
+          {totalCount > ASSIGNMENT_PAGE_SIZE ? (
+            <div className="mt-4 flex items-center justify-between text-sm text-slate-400">
+              <span>Sayfa {page} / {totalPages} • Toplam kayıt {totalCount}</span>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage((current) => Math.max(1, current - 1))}
+                  disabled={page === 1}
+                >
+                  Önceki
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+                  disabled={page === totalPages}
+                >
+                  Sonraki
+                </Button>
+              </div>
+            </div>
+          ) : null}
         </CardContent>
       </Card>
 
@@ -493,7 +614,11 @@ export default function OSGBAssignments() {
               <Label>Personel</Label>
               <Select value={form.personnelId} onValueChange={(value) => setForm((prev) => ({ ...prev, personnelId: value }))}>
                 <SelectTrigger><SelectValue placeholder="Personel seçin" /></SelectTrigger>
-                <SelectContent>{personnel.map((item) => <SelectItem key={item.id} value={item.id}>{item.full_name} • {item.role.toUpperCase()}</SelectItem>)}</SelectContent>
+                <SelectContent>
+                  {personnelLoading ? (
+                    <SelectItem value="__loading" disabled>Yükleniyor...</SelectItem>
+                  ) : personnel.map((item) => <SelectItem key={item.id} value={item.id}>{item.full_name} • {item.role.toUpperCase()}</SelectItem>)}
+                </SelectContent>
               </Select>
             </div>
             <div className="space-y-2">

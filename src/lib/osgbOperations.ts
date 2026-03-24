@@ -186,6 +186,21 @@ export interface OsgbPersonnelInput {
   notes?: string | null;
 }
 
+export interface OsgbPersonnelPageParams {
+  page: number;
+  pageSize: number;
+  role?: string;
+  status?: string;
+  search?: string;
+}
+
+export interface OsgbAssignmentPageParams {
+  page: number;
+  pageSize: number;
+  status?: string;
+  search?: string;
+}
+
 export interface OsgbAssignmentInput {
   companyId: string;
   personnelId: string;
@@ -351,6 +366,57 @@ export const listOsgbPersonnel = async (userId: string): Promise<OsgbPersonnelRe
   return (data ?? []) as OsgbPersonnelRecord[];
 };
 
+export const listOsgbPersonnelPage = async (
+  userId: string,
+  params: OsgbPersonnelPageParams,
+): Promise<PagedResult<OsgbPersonnelRecord>> => {
+  const { page, pageSize, role, status, search } = params;
+  const from = Math.max(0, (page - 1) * pageSize);
+  const to = from + pageSize - 1;
+
+  let query = (supabase as any)
+    .from("osgb_personnel")
+    .select("*", { count: "exact" })
+    .eq("user_id", userId);
+
+  if (role && role !== "ALL") {
+    query = query.eq("role", role);
+  }
+
+  if (status && status !== "ALL") {
+    query = query.eq("is_active", status === "active");
+  }
+
+  if (search?.trim()) {
+    const term = search.trim().replace(/,/g, " ");
+    query = query.or(
+      `full_name.ilike.%${term}%,email.ilike.%${term}%,phone.ilike.%${term}%,certificate_no.ilike.%${term}%`,
+    );
+  }
+
+  const { data, error, count } = await query
+    .order("full_name", { ascending: true })
+    .range(from, to);
+
+  if (error) throw error;
+  return {
+    rows: (data ?? []) as OsgbPersonnelRecord[],
+    count: count ?? 0,
+  };
+};
+
+export const listOsgbPersonnelIdentity = async (
+  userId: string,
+): Promise<Array<Pick<OsgbPersonnelRecord, "email" | "certificate_no">>> => {
+  const { data, error } = await supabase
+    .from("osgb_personnel")
+    .select("email, certificate_no")
+    .eq("user_id", userId);
+
+  if (error) throw error;
+  return (data ?? []) as Array<Pick<OsgbPersonnelRecord, "email" | "certificate_no">>;
+};
+
 export const listActiveOsgbPersonnel = async (userId: string): Promise<OsgbPersonnelRecord[]> => {
   const { data, error } = await supabase
     .from("osgb_personnel")
@@ -404,6 +470,138 @@ export const listOsgbAssignments = async (userId: string): Promise<OsgbAssignmen
 
   if (error) throw error;
   return (data ?? []) as OsgbAssignmentRecord[];
+};
+
+export const listOsgbAssignmentsPage = async (
+  userId: string,
+  params: OsgbAssignmentPageParams,
+): Promise<PagedResult<OsgbAssignmentRecord>> => {
+  const { page, pageSize, status, search } = params;
+  const from = Math.max(0, (page - 1) * pageSize);
+  const to = from + pageSize - 1;
+
+  let query = (supabase as any)
+    .from("osgb_assignments")
+    .select("*, company:isgkatip_companies(company_name), personnel:osgb_personnel(full_name, role)", { count: "exact" })
+    .eq("user_id", userId);
+
+  if (status && status !== "ALL") {
+    query = query.eq("status", status);
+  }
+
+  if (search?.trim()) {
+    const term = search.trim().replace(/,/g, " ");
+    const [companyResult, personnelResult] = await Promise.all([
+      supabase
+        .from("isgkatip_companies")
+        .select("id")
+        .eq("org_id", userId)
+        .eq("is_deleted", false)
+        .ilike("company_name", `%${term}%`)
+        .limit(100),
+      supabase
+        .from("osgb_personnel")
+        .select("id")
+        .eq("user_id", userId)
+        .ilike("full_name", `%${term}%`)
+        .limit(100),
+    ]);
+
+    if (companyResult.error) throw companyResult.error;
+    if (personnelResult.error) throw personnelResult.error;
+
+    const companyIds = (companyResult.data ?? []).map((item: any) => item.id);
+    const personnelIds = (personnelResult.data ?? []).map((item: any) => item.id);
+    const conditions = [
+      `notes.ilike.%${term}%`,
+      `assigned_role.ilike.%${term}%`,
+    ];
+
+    if (companyIds.length > 0) {
+      conditions.push(`company_id.in.(${companyIds.join(",")})`);
+    }
+
+    if (personnelIds.length > 0) {
+      conditions.push(`personnel_id.in.(${personnelIds.join(",")})`);
+    }
+
+    query = query.or(conditions.join(","));
+  }
+
+  const { data, error, count } = await query
+    .order("created_at", { ascending: false })
+    .range(from, to);
+
+  if (error) throw error;
+  return {
+    rows: (data ?? []) as OsgbAssignmentRecord[],
+    count: count ?? 0,
+  };
+};
+
+export const getOsgbPersonnelAssignedMinutes = async (
+  userId: string,
+  personnelIds: string[],
+): Promise<Record<string, number>> => {
+  if (personnelIds.length === 0) return {};
+
+  const { data, error } = await supabase
+    .from("osgb_assignments")
+    .select("personnel_id, assigned_minutes")
+    .eq("user_id", userId)
+    .eq("status", "active")
+    .in("personnel_id", personnelIds);
+
+  if (error) throw error;
+
+  return (data ?? []).reduce<Record<string, number>>((acc, item: any) => {
+    acc[item.personnel_id] = (acc[item.personnel_id] || 0) + Number(item.assigned_minutes || 0);
+    return acc;
+  }, {});
+};
+
+export const getOsgbPersonnelAssignedMinutesTotal = async (
+  userId: string,
+  personnelId: string,
+  assignmentId?: string,
+): Promise<number> => {
+  let query = supabase
+    .from("osgb_assignments")
+    .select("assigned_minutes")
+    .eq("user_id", userId)
+    .eq("personnel_id", personnelId)
+    .eq("status", "active");
+
+  if (assignmentId) {
+    query = query.neq("id", assignmentId);
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+
+  return (data ?? []).reduce((sum: number, item: any) => sum + Number(item.assigned_minutes || 0), 0);
+};
+
+export const getOsgbCompanyAssignedMinutesTotal = async (
+  userId: string,
+  companyId: string,
+  assignmentId?: string,
+): Promise<number> => {
+  let query = supabase
+    .from("osgb_assignments")
+    .select("assigned_minutes")
+    .eq("user_id", userId)
+    .eq("company_id", companyId)
+    .eq("status", "active");
+
+  if (assignmentId) {
+    query = query.neq("id", assignmentId);
+  }
+
+  const { data, error } = await query;
+  if (error) throw error;
+
+  return (data ?? []).reduce((sum: number, item: any) => sum + Number(item.assigned_minutes || 0), 0);
 };
 
 export const listCompanyOsgbAssignments = async (

@@ -51,9 +51,9 @@ import {
 } from "@/components/ui/table";
 import {
   deleteOsgbPersonnel,
-  listOsgbAssignments,
-  listOsgbPersonnel,
-  type OsgbAssignmentRecord,
+  getOsgbPersonnelAssignedMinutes,
+  listOsgbPersonnelIdentity,
+  listOsgbPersonnelPage,
   type OsgbPersonnelInput,
   type OsgbPersonnelRecord,
   upsertOsgbPersonnel,
@@ -121,6 +121,7 @@ const formatDate = (value: string | null) => {
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const getCacheKey = (userId: string) => `personnel:${userId}`;
+const PERSONNEL_PAGE_SIZE = 20;
 
 const expectedColumns = [
   { key: "full_name", required: true, description: "Personelin ad soyadı" },
@@ -289,7 +290,7 @@ export default function OSGBPersonnel() {
   const { canManage } = useAccessRole();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [records, setRecords] = useState<OsgbPersonnelRecord[]>([]);
-  const [assignments, setAssignments] = useState<OsgbAssignmentRecord[]>([]);
+  const [assignedMinutesByPersonnel, setAssignedMinutesByPersonnel] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -299,6 +300,8 @@ export default function OSGBPersonnel() {
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState<string>("ALL");
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
+  const [page, setPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
   const [form, setForm] = useState<PersonnelFormState>(emptyForm);
   const [importSummary, setImportSummary] = useState<ImportSummary | null>(null);
   const [summaryDialogOpen, setSummaryDialogOpen] = useState(false);
@@ -307,15 +310,24 @@ export default function OSGBPersonnel() {
     if (!user?.id) return;
     if (!silent) setLoading(true);
     try {
-      const [personnelRows, assignmentRows] = await Promise.all([
-        listOsgbPersonnel(user.id),
-        listOsgbAssignments(user.id),
-      ]);
-      setRecords(personnelRows);
-      setAssignments(assignmentRows);
-      writeOsgbPageCache(getCacheKey(user.id), {
-        records: personnelRows,
-        assignments: assignmentRows,
+      const personnelResult = await listOsgbPersonnelPage(user.id, {
+        page,
+        pageSize: PERSONNEL_PAGE_SIZE,
+        role: roleFilter,
+        status: statusFilter,
+        search,
+      });
+      const assignmentSummary = await getOsgbPersonnelAssignedMinutes(
+        user.id,
+        personnelResult.rows.map((item) => item.id),
+      );
+      setRecords(personnelResult.rows);
+      setAssignedMinutesByPersonnel(assignmentSummary);
+      setTotalCount(personnelResult.count);
+      writeOsgbPageCache(`${getCacheKey(user.id)}:${roleFilter}:${statusFilter}:${search}:${page}`, {
+        records: personnelResult.rows,
+        assignedMinutesByPersonnel: assignmentSummary,
+        totalCount: personnelResult.count,
       });
       setError(null);
     } catch (err) {
@@ -327,49 +339,28 @@ export default function OSGBPersonnel() {
 
   useEffect(() => {
     if (!user?.id) return;
-    const cached = readOsgbPageCache<{ records: OsgbPersonnelRecord[]; assignments: OsgbAssignmentRecord[] }>(
-      getCacheKey(user.id),
+    const cached = readOsgbPageCache<{
+      records: OsgbPersonnelRecord[];
+      assignedMinutesByPersonnel: Record<string, number>;
+      totalCount: number;
+    }>(
+      `${getCacheKey(user.id)}:${roleFilter}:${statusFilter}:${search}:${page}`,
       CACHE_TTL_MS,
     );
     if (cached) {
       setRecords(cached.records);
-      setAssignments(cached.assignments);
+      setAssignedMinutesByPersonnel(cached.assignedMinutesByPersonnel);
+      setTotalCount(cached.totalCount);
       setLoading(false);
       void loadData(true);
       return;
     }
     void loadData();
-  }, [user?.id]);
+  }, [page, roleFilter, search, statusFilter, user?.id]);
 
-  const loadByPersonnelId = useMemo(
-    () =>
-      assignments
-        .filter((assignment) => assignment.status === "active")
-        .reduce<Record<string, number>>((acc, assignment) => {
-          acc[assignment.personnel_id] = (acc[assignment.personnel_id] || 0) + assignment.assigned_minutes;
-          return acc;
-        }, {}),
-    [assignments],
-  );
-
-  const filteredRecords = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    return records.filter((record) => {
-      const matchesRole = roleFilter === "ALL" || record.role === roleFilter;
-      const matchesStatus = statusFilter === "ALL" || (statusFilter === "active" ? record.is_active : !record.is_active);
-      const matchesQuery =
-        !query ||
-        [
-          record.full_name,
-          record.email || "",
-          record.phone || "",
-          record.certificate_no || "",
-          ...(record.expertise_areas || []),
-          roleLabels[record.role],
-        ].some((value) => value.toLowerCase().includes(query));
-      return matchesRole && matchesStatus && matchesQuery;
-    });
-  }, [records, roleFilter, search, statusFilter]);
+  useEffect(() => {
+    setPage(1);
+  }, [roleFilter, search, statusFilter]);
 
   const summary = useMemo(() => {
     const active = records.filter((item) => item.is_active).length;
@@ -386,6 +377,14 @@ export default function OSGBPersonnel() {
       expiringSoon,
     };
   }, [records]);
+
+  const totalPages = Math.max(1, Math.ceil(totalCount / PERSONNEL_PAGE_SIZE));
+
+  useEffect(() => {
+    if (page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [page, totalPages]);
 
   const openCreate = () => {
     if (!canManage) {
@@ -442,8 +441,8 @@ export default function OSGBPersonnel() {
         notes: form.notes,
       };
 
-      const saved = await upsertOsgbPersonnel(user.id, payload, editing?.id);
-      setRecords((prev) => (editing ? prev.map((item) => (item.id === saved.id ? saved : item)) : [saved, ...prev]));
+      await upsertOsgbPersonnel(user.id, payload, editing?.id);
+      await loadData(true);
       setDialogOpen(false);
       setEditing(null);
       setForm(emptyForm);
@@ -463,8 +462,7 @@ export default function OSGBPersonnel() {
     if (!confirm("Bu personeli havuzdan silmek istiyor musunuz?")) return;
     try {
       await deleteOsgbPersonnel(id);
-      setRecords((prev) => prev.filter((item) => item.id !== id));
-      setAssignments((prev) => prev.filter((item) => item.personnel_id !== id));
+      await loadData(true);
       toast.success("Personel kaydı silindi.");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Personel kaydı silinemedi.");
@@ -481,11 +479,12 @@ export default function OSGBPersonnel() {
     setImporting(true);
     try {
       const rows = await parsePersonnelExcel(file);
+      const identityRows = await listOsgbPersonnelIdentity(user.id);
       const existingEmails = new Set(
-        records.map((record) => normalizeIdentityValue(record.email)).filter(Boolean),
+        identityRows.map((record) => normalizeIdentityValue(record.email)).filter(Boolean),
       );
       const existingCertificateNos = new Set(
-        records.map((record) => normalizeIdentityValue(record.certificate_no)).filter(Boolean),
+        identityRows.map((record) => normalizeIdentityValue(record.certificate_no)).filter(Boolean),
       );
       const batchEmails = new Set<string>();
       const batchCertificateNos = new Set<string>();
@@ -517,7 +516,7 @@ export default function OSGBPersonnel() {
         savedRows.push(saved);
       }
 
-      setRecords((prev) => [...savedRows, ...prev]);
+      await loadData(true);
       setImportSummary({
         addedCount: savedRows.length,
         errorCount: importErrors.length,
@@ -590,7 +589,7 @@ export default function OSGBPersonnel() {
               downloadCsv(
                 "osgb-personel.csv",
                 ["Ad Soyad", "Rol", "Belge No", "Belge Bitiş", "Uzmanlık", "Kapasite"],
-                filteredRecords.map((record) => [
+                records.map((record) => [
                   record.full_name,
                   roleLabels[record.role],
                   record.certificate_no || "",
@@ -657,11 +656,11 @@ export default function OSGBPersonnel() {
       </Card>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-        <Card className="border-slate-800 bg-slate-950/70"><CardHeader className="pb-2"><CardDescription>Aktif personel</CardDescription><CardTitle className="text-3xl text-white">{summary.active}</CardTitle></CardHeader></Card>
-        <Card className="border-slate-800 bg-slate-950/70"><CardHeader className="pb-2"><CardDescription>İGU</CardDescription><CardTitle className="text-3xl text-white">{summary.igu}</CardTitle></CardHeader></Card>
-        <Card className="border-slate-800 bg-slate-950/70"><CardHeader className="pb-2"><CardDescription>İşyeri hekimi</CardDescription><CardTitle className="text-3xl text-white">{summary.hekim}</CardTitle></CardHeader></Card>
-        <Card className="border-slate-800 bg-slate-950/70"><CardHeader className="pb-2"><CardDescription>DSP</CardDescription><CardTitle className="text-3xl text-white">{summary.dsp}</CardTitle></CardHeader></Card>
-        <Card className="border-slate-800 bg-slate-950/70"><CardHeader className="pb-2"><CardDescription>Belgesi yaklaşan</CardDescription><CardTitle className="text-3xl text-white">{summary.expiringSoon}</CardTitle></CardHeader></Card>
+        <Card className="border-slate-800 bg-slate-950/70"><CardHeader className="pb-2"><CardDescription>Toplam kayıt</CardDescription><CardTitle className="text-3xl text-white">{totalCount}</CardTitle></CardHeader></Card>
+        <Card className="border-slate-800 bg-slate-950/70"><CardHeader className="pb-2"><CardDescription>Bu sayfadaki İGU</CardDescription><CardTitle className="text-3xl text-white">{summary.igu}</CardTitle></CardHeader></Card>
+        <Card className="border-slate-800 bg-slate-950/70"><CardHeader className="pb-2"><CardDescription>Bu sayfadaki işyeri hekimi</CardDescription><CardTitle className="text-3xl text-white">{summary.hekim}</CardTitle></CardHeader></Card>
+        <Card className="border-slate-800 bg-slate-950/70"><CardHeader className="pb-2"><CardDescription>Bu sayfadaki DSP</CardDescription><CardTitle className="text-3xl text-white">{summary.dsp}</CardTitle></CardHeader></Card>
+        <Card className="border-slate-800 bg-slate-950/70"><CardHeader className="pb-2"><CardDescription>Bu sayfadaki belgesi yaklaşan</CardDescription><CardTitle className="text-3xl text-white">{summary.expiringSoon}</CardTitle></CardHeader></Card>
       </div>
 
       {error ? (
@@ -733,8 +732,14 @@ export default function OSGBPersonnel() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredRecords.map((record) => {
-                  const assignedMinutes = loadByPersonnelId[record.id] || 0;
+                {records.length === 0 ? (
+                  <TableRow className="border-slate-800">
+                    <TableCell colSpan={7} className="py-12 text-center text-sm text-slate-400">
+                      Personel bulunamadı.
+                    </TableCell>
+                  </TableRow>
+                ) : records.map((record) => {
+                  const assignedMinutes = assignedMinutesByPersonnel[record.id] || 0;
                   const ratio = record.monthly_capacity_minutes > 0 ? Math.round((assignedMinutes / record.monthly_capacity_minutes) * 100) : 0;
                   const RoleIcon = roleIcons[record.role];
 
@@ -790,6 +795,29 @@ export default function OSGBPersonnel() {
               </TableBody>
             </Table>
           )}
+          {totalCount > PERSONNEL_PAGE_SIZE ? (
+            <div className="mt-4 flex items-center justify-between text-sm text-slate-400">
+              <span>Sayfa {page} / {totalPages} • Toplam kayıt {totalCount}</span>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage((current) => Math.max(1, current - 1))}
+                  disabled={page === 1}
+                >
+                  Önceki
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+                  disabled={page === totalPages}
+                >
+                  Sonraki
+                </Button>
+              </div>
+            </div>
+          ) : null}
         </CardContent>
       </Card>
 

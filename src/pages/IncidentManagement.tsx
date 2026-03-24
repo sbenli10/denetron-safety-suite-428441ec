@@ -29,7 +29,7 @@ import {
   getIncidentCompanyOptions,
   listIncidentActions,
   listIncidentAttachments,
-  listIncidentReports,
+  listIncidentReportsPage,
   type IncidentClosureDecision,
   type IncidentActionInput,
   type IncidentActionRecord,
@@ -154,6 +154,7 @@ const emptyCloseForm: IncidentCloseFormState = {
 };
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
+const INCIDENT_PAGE_SIZE = 20;
 
 const typeLabel: Record<IncidentType, string> = {
   work_accident: "İş Kazası",
@@ -244,23 +245,51 @@ export default function IncidentManagement() {
   const [statusFilter, setStatusFilter] = useState<IncidentStatus | "ALL">(
     "ALL",
   );
+  const [page, setPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
   const canDelete = role === "admin" || role === "inspector";
   const canClose = role === "admin" || role === "inspector";
   const canCreateCapa = role === "admin" || role === "inspector";
+
+  const loadCompanies = async () => {
+    if (!user?.id) return;
+
+    try {
+      const companyRows = await getIncidentCompanyOptions(user.id);
+      setCompanies(companyRows);
+      writeOsgbPageCache(`${getCacheKey(user.id)}:companies`, { companyRows });
+      setError(null);
+    } catch (loadError) {
+      setError(
+        loadError instanceof Error
+          ? loadError.message
+          : "Firma seçenekleri yüklenemedi.",
+      );
+    }
+  };
 
   const loadData = async (silent = false) => {
     if (!user?.id) return;
     if (!silent) setLoading(true);
 
     try {
-      const [incidentRows, companyRows] = await Promise.all([
-        listIncidentReports(user.id),
-        getIncidentCompanyOptions(user.id),
-      ]);
+      const incidentResult = await listIncidentReportsPage(user.id, {
+        page,
+        pageSize: INCIDENT_PAGE_SIZE,
+        search,
+        type: typeFilter,
+        status: statusFilter,
+      });
 
-      setRecords(incidentRows);
-      setCompanies(companyRows);
-      writeOsgbPageCache(getCacheKey(user.id), { incidentRows, companyRows });
+      setRecords(incidentResult.rows);
+      setTotalCount(incidentResult.count);
+      writeOsgbPageCache(
+        `${getCacheKey(user.id)}:${typeFilter}:${statusFilter}:${search}:${page}`,
+        {
+          incidentRows: incidentResult.rows,
+          totalCount: incidentResult.count,
+        },
+      );
       setError(null);
     } catch (loadError) {
       setError(
@@ -277,53 +306,42 @@ export default function IncidentManagement() {
     if (!user?.id) return;
 
     const cached = readOsgbPageCache<{
-      incidentRows: IncidentReportRecord[];
       companyRows: OsgbCompanyOption[];
-    }>(getCacheKey(user.id), CACHE_TTL_MS);
+    }>(`${getCacheKey(user.id)}:companies`, CACHE_TTL_MS);
+
+    if (cached) {
+      setCompanies(cached.companyRows);
+      void loadCompanies();
+    } else {
+      void loadCompanies();
+    }
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!user?.id) return;
+    const cached = readOsgbPageCache<{
+      incidentRows: IncidentReportRecord[];
+      totalCount: number;
+    }>(`${getCacheKey(user.id)}:${typeFilter}:${statusFilter}:${search}:${page}`, CACHE_TTL_MS);
 
     if (cached) {
       setRecords(cached.incidentRows);
-      setCompanies(cached.companyRows);
+      setTotalCount(cached.totalCount);
       setLoading(false);
       void loadData(true);
       return;
     }
 
     void loadData();
-  }, [user?.id]);
+  }, [page, search, statusFilter, typeFilter, user?.id]);
 
   useEffect(() => {
-    if (!user?.id) return;
-    writeOsgbPageCache(getCacheKey(user.id), {
-      incidentRows: records,
-      companyRows: companies,
-    });
-  }, [companies, records, user?.id]);
-
-  const filteredRecords = useMemo(() => {
-    const query = search.trim().toLocaleLowerCase("tr-TR");
-
-    return records.filter((record) => {
-      const matchesType =
-        typeFilter === "ALL" || record.incident_type === typeFilter;
-      const matchesStatus =
-        statusFilter === "ALL" || record.status === statusFilter;
-      const matchesQuery =
-        !query ||
-        [
-          record.title,
-          record.description,
-          record.location || "",
-          record.company?.company_name || "",
-        ].some((value) => value.toLocaleLowerCase("tr-TR").includes(query));
-
-      return matchesType && matchesStatus && matchesQuery;
-    });
-  }, [records, search, statusFilter, typeFilter]);
+    setPage(1);
+  }, [search, statusFilter, typeFilter]);
 
   const summary = useMemo(
     () => ({
-      total: records.length,
+      total: totalCount,
       workAccident: records.filter(
         (item) => item.incident_type === "work_accident",
       ).length,
@@ -333,8 +351,16 @@ export default function IncidentManagement() {
         (item) => item.severity === "critical" && item.status !== "closed",
       ).length,
     }),
-    [records],
+    [records, totalCount],
   );
+
+  const totalPages = Math.max(1, Math.ceil(totalCount / INCIDENT_PAGE_SIZE));
+
+  useEffect(() => {
+    if (page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [page, totalPages]);
 
   const operationalInsights = useMemo(
     () => ({
@@ -530,13 +556,8 @@ export default function IncidentManagement() {
         requiresNotification: form.requiresNotification,
       };
 
-      const saved = await upsertIncidentReport(user.id, payload, editing?.id);
-
-      setRecords((prev) =>
-        editing
-          ? prev.map((item) => (item.id === saved.id ? saved : item))
-          : [saved, ...prev],
-      );
+      await upsertIncidentReport(user.id, payload, editing?.id);
+      await loadData(true);
 
       setDialogOpen(false);
       resetIncidentForm();
@@ -564,7 +585,7 @@ export default function IncidentManagement() {
 
     try {
       await deleteIncidentReport(record.id);
-      setRecords((prev) => prev.filter((item) => item.id !== record.id));
+      await loadData(true);
       if (selected?.id === record.id) {
         setSelected(null);
         setDetailOpen(false);
@@ -701,7 +722,7 @@ export default function IncidentManagement() {
       );
 
       setSelected(saved);
-      setRecords((prev) => prev.map((item) => (item.id === saved.id ? saved : item)));
+      await loadData(true);
       toast.success("Incident kaydından otomatik DÖF oluşturuldu.");
     } catch (capaError) {
       toast.error(
@@ -840,7 +861,7 @@ export default function IncidentManagement() {
       });
 
       setSelected(saved);
-      setRecords((prev) => prev.map((item) => (item.id === saved.id ? saved : item)));
+      await loadData(true);
       setCloseDialogOpen(false);
       toast.success("Olay kapatıldı.");
     } catch (closeError) {
@@ -879,7 +900,7 @@ export default function IncidentManagement() {
               downloadCsv(
                 "is-kazasi-ramak-kala.csv",
                 ["Tür", "Başlık", "Firma", "Şiddet", "Durum", "Tarih"],
-                filteredRecords.map((record) => [
+                records.map((record) => [
                   typeLabel[record.incident_type],
                   record.title,
                   record.company?.company_name || "",
@@ -919,7 +940,7 @@ export default function IncidentManagement() {
         </Card>
         <Card className="border-slate-800 bg-slate-950/60">
           <CardHeader className="pb-2">
-            <CardDescription>İş kazası</CardDescription>
+            <CardDescription>Bu sayfadaki iş kazası</CardDescription>
             <CardTitle className="text-3xl text-white">
               {summary.workAccident}
             </CardTitle>
@@ -927,7 +948,7 @@ export default function IncidentManagement() {
         </Card>
         <Card className="border-slate-800 bg-slate-950/60">
           <CardHeader className="pb-2">
-            <CardDescription>Ramak kala</CardDescription>
+            <CardDescription>Bu sayfadaki ramak kala</CardDescription>
             <CardTitle className="text-3xl text-white">
               {summary.nearMiss}
             </CardTitle>
@@ -935,7 +956,7 @@ export default function IncidentManagement() {
         </Card>
         <Card className="border-red-500/20 bg-red-500/5">
           <CardHeader className="pb-2">
-            <CardDescription>Kritik açık olay</CardDescription>
+            <CardDescription>Bu sayfadaki kritik açık olay</CardDescription>
             <CardTitle className="text-3xl text-white">
               {summary.criticalOpen}
             </CardTitle>
@@ -1137,7 +1158,7 @@ export default function IncidentManagement() {
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
                 className="pl-9"
-                placeholder="Başlık, firma veya lokasyon ile ara"
+                placeholder="Başlık, açıklama, lokasyon veya kişi ile ara"
               />
             </div>
             <Select
@@ -1194,7 +1215,7 @@ export default function IncidentManagement() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredRecords.length === 0 ? (
+                  {records.length === 0 ? (
                     <TableRow>
                       <TableCell
                         colSpan={7}
@@ -1204,7 +1225,7 @@ export default function IncidentManagement() {
                       </TableCell>
                     </TableRow>
                   ) : (
-                    filteredRecords.map((record) => (
+                    records.map((record) => (
                       <TableRow key={record.id}>
                         <TableCell>{typeLabel[record.incident_type]}</TableCell>
                         <TableCell>
@@ -1302,6 +1323,29 @@ export default function IncidentManagement() {
               </Table>
             </div>
           )}
+          {totalCount > INCIDENT_PAGE_SIZE ? (
+            <div className="flex items-center justify-between text-sm text-slate-400">
+              <span>Sayfa {page} / {totalPages} • Toplam kayıt {totalCount}</span>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage((current) => Math.max(1, current - 1))}
+                  disabled={page === 1}
+                >
+                  Önceki
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+                  disabled={page === totalPages}
+                >
+                  Sonraki
+                </Button>
+              </div>
+            </div>
+          ) : null}
         </CardContent>
       </Card>
 

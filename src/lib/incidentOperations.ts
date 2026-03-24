@@ -215,6 +215,19 @@ export interface IncidentClosureInput {
   createCapa?: boolean;
 }
 
+export interface IncidentReportPageParams {
+  page: number;
+  pageSize: number;
+  search?: string;
+  type?: IncidentType | "ALL";
+  status?: IncidentStatus | "ALL";
+}
+
+export interface PagedIncidentReportResult {
+  rows: IncidentReportRecord[];
+  count: number;
+}
+
 const ensureIncidentReportRow = (row: unknown): IncidentReportRow =>
   row as IncidentReportRow;
 
@@ -302,6 +315,46 @@ export const listIncidentReports = async (
 
   if (error) throw error;
   return (data ?? []).map((row) => mapIncident(ensureIncidentReportRow(row)));
+};
+
+export const listIncidentReportsPage = async (
+  userId: string,
+  params: IncidentReportPageParams,
+): Promise<PagedIncidentReportResult> => {
+  const { page, pageSize, search, type, status } = params;
+  const from = Math.max(0, (page - 1) * pageSize);
+  const to = from + pageSize - 1;
+
+  let query = (supabase as any)
+    .from("incident_reports")
+    .select("*, company:isgkatip_companies(company_name)", { count: "exact" })
+    .eq("user_id", userId);
+
+  if (type && type !== "ALL") {
+    query = query.eq("incident_type", type);
+  }
+
+  if (status && status !== "ALL") {
+    query = query.eq("status", status);
+  }
+
+  if (search?.trim()) {
+    const term = search.trim();
+    query = query.or(
+      `title.ilike.%${term}%,description.ilike.%${term}%,location.ilike.%${term}%,affected_person.ilike.%${term}%,reported_by.ilike.%${term}%`,
+    );
+  }
+
+  const { data, error, count } = await query
+    .order("incident_date", { ascending: false })
+    .range(from, to);
+
+  if (error) throw error;
+
+  return {
+    rows: (data ?? []).map((row: unknown) => mapIncident(ensureIncidentReportRow(row))),
+    count: count ?? 0,
+  };
 };
 
 export const upsertIncidentReport = async (

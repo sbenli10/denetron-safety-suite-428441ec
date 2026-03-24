@@ -18,6 +18,7 @@ Bu klasorde testler uc gruba ayrildi:
 | --- | --- | --- |
 | smoke | `routes-smoke.js` | shell route ve HTML donus kontrolu |
 | realistic | `supabase-authenticated.js` | auth + dashboard/core/osgb karmasi gercekci akis |
+| realistic-capacity | `capacity-realistic.js` | constant-VUs ile 100/250/500/1000 aktif kullanici kapasite testi |
 | targeted | `incident-management.js` | IncidentManagement page/filter/detail |
 | targeted | `osgb-personnel.js` | OSGBPersonnel page/filter/load-summary |
 | targeted | `osgb-assignments.js` | OSGBAssignments page/filter/form-helper |
@@ -62,6 +63,76 @@ Bu klasorde testler uc gruba ayrildi:
   -TestPassword "YOUR_PASSWORD" `
   -Suites @("osgb-dashboard","osgb-assignments")
 ```
+
+## Capacity Test
+
+`capacity-realistic.js`, ayni anda aktif kullanici sayisini taklit etmek icin `constant-vus` kullanir.
+
+Varsayilanlar:
+
+- `TARGET_VUS=100`
+- `TEST_DURATION=15m`
+
+### 100 aktif kullanici
+
+```powershell
+& "C:\Users\benli\OneDrive\Desktop\k6.exe" run .\load-tests\k6\capacity-realistic.js `
+  -e SUPABASE_URL=https://YOUR_PROJECT.supabase.co `
+  -e SUPABASE_ANON_KEY=YOUR_ANON_KEY `
+  -e TEST_EMAIL=YOUR_EMAIL `
+  -e TEST_PASSWORD=YOUR_PASSWORD `
+  -e TARGET_VUS=100 `
+  -e TEST_DURATION=15m
+```
+
+### 250 aktif kullanici
+
+```powershell
+& "C:\Users\benli\OneDrive\Desktop\k6.exe" run .\load-tests\k6\capacity-realistic.js `
+  -e SUPABASE_URL=https://YOUR_PROJECT.supabase.co `
+  -e SUPABASE_ANON_KEY=YOUR_ANON_KEY `
+  -e TEST_EMAIL=YOUR_EMAIL `
+  -e TEST_PASSWORD=YOUR_PASSWORD `
+  -e TARGET_VUS=250 `
+  -e TEST_DURATION=20m
+```
+
+### 500 aktif kullanici
+
+```powershell
+& "C:\Users\benli\OneDrive\Desktop\k6.exe" run .\load-tests\k6\capacity-realistic.js `
+  -e SUPABASE_URL=https://YOUR_PROJECT.supabase.co `
+  -e SUPABASE_ANON_KEY=YOUR_ANON_KEY `
+  -e TEST_EMAIL=YOUR_EMAIL `
+  -e TEST_PASSWORD=YOUR_PASSWORD `
+  -e TARGET_VUS=500 `
+  -e TEST_DURATION=20m
+```
+
+### 1000 aktif kullanici
+
+```powershell
+& "C:\Users\benli\OneDrive\Desktop\k6.exe" run .\load-tests\k6\capacity-realistic.js `
+  -e SUPABASE_URL=https://YOUR_PROJECT.supabase.co `
+  -e SUPABASE_ANON_KEY=YOUR_ANON_KEY `
+  -e TEST_EMAIL=YOUR_EMAIL `
+  -e TEST_PASSWORD=YOUR_PASSWORD `
+  -e TARGET_VUS=1000 `
+  -e TEST_DURATION=10m
+```
+
+### Yorumlama
+
+- `100`: taban cizgisi
+- `250`: orta yuk
+- `500`: yuksek yuk
+- `1000`: sinir / kirilma noktasi testi
+
+Her kosuda su metrikleri kaydet:
+
+- `THRESHOLDS`
+- `HTTP`
+- `EXECUTION`
 
 ## Last Known Results
 

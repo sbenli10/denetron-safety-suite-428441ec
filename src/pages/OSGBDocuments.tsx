@@ -46,9 +46,12 @@ import {
   createUpcomingDocumentTasks,
   deleteOsgbDocument,
   getOsgbCompanyOptions,
-  listOsgbDocuments,
+  getOsgbDocumentsOverview,
+  listActionableOsgbDocuments,
+  listOsgbDocumentsPage,
   type OsgbCompanyOption,
   type OsgbDocumentInput,
+  type OsgbDocumentsOverview,
   type OsgbDocumentRecord,
   upsertOsgbDocument,
 } from "@/lib/osgbOperations";
@@ -101,6 +104,7 @@ const formatDate = (value: string | null) => {
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const getCacheKey = (userId: string) => `documents:${userId}`;
+const DOCUMENT_PAGE_SIZE = 20;
 
 export default function OSGBDocuments() {
   const { user } = useAuth();
@@ -108,6 +112,7 @@ export default function OSGBDocuments() {
   const [searchParams] = useSearchParams();
   const [records, setRecords] = useState<OsgbDocumentRecord[]>([]);
   const [companies, setCompanies] = useState<OsgbCompanyOption[]>([]);
+  const [overview, setOverview] = useState<OsgbDocumentsOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [creatingTasks, setCreatingTasks] = useState(false);
@@ -119,6 +124,8 @@ export default function OSGBDocuments() {
   const [companyFilter, setCompanyFilter] = useState<string>("ALL");
   const [search, setSearch] = useState("");
   const [batchInfo, setBatchInfo] = useState<{ created: number; skipped: number } | null>(null);
+  const [page, setPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
 
   useEffect(() => {
     const status = searchParams.get("status");
@@ -131,15 +138,27 @@ export default function OSGBDocuments() {
     if (!user?.id) return;
     if (!silent) setLoading(true);
     try {
-      const [documentRows, companyRows] = await Promise.all([
-        listOsgbDocuments(user.id),
-        getOsgbCompanyOptions(user.id),
+      const cacheKey = `${getCacheKey(user.id)}:${statusFilter}:${companyFilter}:${search}:${page}`;
+      const [documentResult, companyRows, documentOverview] = await Promise.all([
+        listOsgbDocumentsPage(user.id, {
+          page,
+          pageSize: DOCUMENT_PAGE_SIZE,
+          status: statusFilter,
+          companyId: companyFilter,
+          search,
+        }),
+        companies.length > 0 ? Promise.resolve(companies) : getOsgbCompanyOptions(user.id),
+        getOsgbDocumentsOverview(user.id),
       ]);
-      setRecords(documentRows);
+      setRecords(documentResult.rows);
       setCompanies(companyRows);
-      writeOsgbPageCache(getCacheKey(user.id), {
-        records: documentRows,
+      setOverview(documentOverview);
+      setTotalCount(documentResult.count);
+      writeOsgbPageCache(cacheKey, {
+        records: documentResult.rows,
         companies: companyRows,
+        overview: documentOverview,
+        totalCount: documentResult.count,
       });
       setError(null);
     } catch (err) {
@@ -154,32 +173,39 @@ export default function OSGBDocuments() {
     const cached = readOsgbPageCache<{
       records: OsgbDocumentRecord[];
       companies: OsgbCompanyOption[];
-    }>(getCacheKey(user.id), CACHE_TTL_MS);
+      overview: OsgbDocumentsOverview;
+      totalCount: number;
+    }>(`${getCacheKey(user.id)}:${statusFilter}:${companyFilter}:${search}:${page}`, CACHE_TTL_MS);
     if (cached) {
       setRecords(cached.records);
       setCompanies(cached.companies);
+      setOverview(cached.overview);
+      setTotalCount(cached.totalCount);
       setLoading(false);
       void loadData(true);
       return;
     }
     void loadData();
-  }, [user?.id]);
+  }, [companyFilter, page, search, statusFilter, user?.id]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [companyFilter, search, statusFilter]);
 
   const summary = useMemo(() => ({
-    active: records.filter((item) => item.status === "active").length,
-    warning: records.filter((item) => item.status === "warning").length,
-    expired: records.filter((item) => item.status === "expired").length,
-  }), [records]);
+    active: overview?.activeCount || 0,
+    warning: overview?.warningCount || 0,
+    expired: overview?.expiredCount || 0,
+  }), [overview]);
 
-  const filteredRecords = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    return records.filter((record) => {
-      const matchesStatus = statusFilter === "ALL" || record.status === statusFilter;
-      const matchesCompany = companyFilter === "ALL" || record.company_id === companyFilter;
-      const matchesQuery = !query || [record.document_name, record.document_type, record.company?.company_name || "", record.notes || ""].some((value) => value.toLowerCase().includes(query));
-      return matchesStatus && matchesCompany && matchesQuery;
-    });
-  }, [records, search, statusFilter, companyFilter]);
+  const filteredRecords = useMemo(() => records, [records]);
+  const totalPages = Math.max(1, Math.ceil(totalCount / DOCUMENT_PAGE_SIZE));
+
+  useEffect(() => {
+    if (page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [page, totalPages]);
 
   const openCreate = () => {
     if (!canManage) {
@@ -236,8 +262,8 @@ export default function OSGBDocuments() {
         fileUrl: form.fileUrl,
         notes: form.notes,
       };
-      const saved = await upsertOsgbDocument(user.id, payload, editing?.id);
-      setRecords((prev) => editing ? prev.map((item) => (item.id === saved.id ? saved : item)) : [saved, ...prev]);
+      await upsertOsgbDocument(user.id, payload, editing?.id);
+      await loadData(true);
       setDialogOpen(false);
       setEditing(null);
       setForm(emptyForm);
@@ -257,7 +283,7 @@ export default function OSGBDocuments() {
     if (!confirm("Bu evrak kaydını silmek istiyor musunuz?")) return;
     try {
       await deleteOsgbDocument(id);
-      setRecords((prev) => prev.filter((item) => item.id !== id));
+      await loadData(true);
       toast.success("Evrak kaydı silindi.");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Evrak kaydı silinemedi.");
@@ -272,7 +298,8 @@ export default function OSGBDocuments() {
     if (!user?.id) return;
     setCreatingTasks(true);
     try {
-      const result = await createUpcomingDocumentTasks(user.id, records);
+      const actionableDocuments = await listActionableOsgbDocuments(user.id);
+      const result = await createUpcomingDocumentTasks(user.id, actionableDocuments);
       setBatchInfo(result);
       if (result.created === 0 && result.skipped === 0) {
         toast.message("Görev üretilecek yaklaşan evrak bulunamadı.");
@@ -424,6 +451,27 @@ export default function OSGBDocuments() {
               )}
             </TableBody>
           </Table>
+          <div className="flex flex-col gap-3 border-t border-slate-800 pt-4 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-slate-400">
+              Toplam {totalCount} kayıt, sayfa {page} / {totalPages}
+            </p>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setPage((current) => Math.max(1, current - 1))}
+                disabled={page <= 1}
+              >
+                Önceki
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+                disabled={page >= totalPages}
+              >
+                Sonraki
+              </Button>
+            </div>
+          </div>
         </CardContent>
       </Card>
 

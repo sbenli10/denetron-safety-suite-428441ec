@@ -209,6 +209,14 @@ export interface OsgbFinancePageParams {
   search?: string;
 }
 
+export interface OsgbDocumentPageParams {
+  page: number;
+  pageSize: number;
+  status?: string;
+  companyId?: string;
+  search?: string;
+}
+
 export interface OsgbAssignmentInput {
   companyId: string;
   personnelId: string;
@@ -313,6 +321,12 @@ export interface OsgbFinanceOverview {
   paidAmount: number;
   overdueAmount: number;
   calendarItems: OsgbFinanceCalendarItem[];
+}
+
+export interface OsgbDocumentsOverview {
+  activeCount: number;
+  warningCount: number;
+  expiredCount: number;
 }
 
 export interface PagedResult<T> {
@@ -916,6 +930,92 @@ export const listOsgbDocuments = async (userId: string): Promise<OsgbDocumentRec
   return (data ?? []) as OsgbDocumentRecord[];
 };
 
+export const listOsgbDocumentsPage = async (
+  userId: string,
+  params: OsgbDocumentPageParams,
+): Promise<PagedResult<OsgbDocumentRecord>> => {
+  const { page, pageSize, status, companyId, search } = params;
+  const from = Math.max(0, (page - 1) * pageSize);
+  const to = from + pageSize - 1;
+
+  let query = (supabase as any)
+    .from("osgb_document_tracking")
+    .select("*, company:isgkatip_companies(company_name)", { count: "exact" })
+    .eq("user_id", userId);
+
+  if (status && status !== "ALL") {
+    query = query.eq("status", status);
+  }
+
+  if (companyId && companyId !== "ALL") {
+    query = query.eq("company_id", companyId);
+  }
+
+  if (search?.trim()) {
+    const term = search.trim().replace(/,/g, " ");
+    const companyResult = await supabase
+      .from("isgkatip_companies")
+      .select("id")
+      .eq("org_id", userId)
+      .eq("is_deleted", false)
+      .ilike("company_name", `%${term}%`)
+      .limit(100);
+
+    if (companyResult.error) throw companyResult.error;
+
+    const companyIds = (companyResult.data ?? []).map((item: any) => item.id);
+    const conditions = [
+      `document_name.ilike.%${term}%`,
+      `document_type.ilike.%${term}%`,
+      `notes.ilike.%${term}%`,
+    ];
+
+    if (companyIds.length > 0) {
+      conditions.push(`company_id.in.(${companyIds.join(",")})`);
+    }
+
+    query = query.or(conditions.join(","));
+  }
+
+  const { data, error, count } = await query
+    .order("created_at", { ascending: false })
+    .range(from, to);
+
+  if (error) throw error;
+  return {
+    rows: (data ?? []) as OsgbDocumentRecord[],
+    count: count ?? 0,
+  };
+};
+
+export const getOsgbDocumentsOverview = async (userId: string): Promise<OsgbDocumentsOverview> => {
+  const { data, error } = await supabase
+    .from("osgb_document_tracking")
+    .select("status")
+    .eq("user_id", userId);
+
+  if (error) throw error;
+
+  const rows = (data ?? []) as Array<{ status: OsgbDocumentRecord["status"] }>;
+  return {
+    activeCount: rows.filter((item) => item.status === "active").length,
+    warningCount: rows.filter((item) => item.status === "warning").length,
+    expiredCount: rows.filter((item) => item.status === "expired").length,
+  };
+};
+
+export const listActionableOsgbDocuments = async (userId: string): Promise<OsgbDocumentRecord[]> => {
+  const { data, error } = await supabase
+    .from("osgb_document_tracking")
+    .select("*, company:isgkatip_companies(company_name)")
+    .eq("user_id", userId)
+    .in("status", ["warning", "expired"])
+    .order("created_at", { ascending: false });
+
+  if (error) throw error;
+  return (data ?? []) as OsgbDocumentRecord[];
+};
+
 export const listCompanyOsgbDocuments = async (
   userId: string,
   companyId: string,
@@ -1331,7 +1431,9 @@ export const createOsgbTask = async (userId: string, input: OsgbTaskInput) => {
 };
 
 export const createUpcomingDocumentTasks = async (userId: string, documents: OsgbDocumentRecord[]) => {
-  const actionableDocuments = documents.filter((record) => record.status === "warning" || record.status === "expired");
+  const actionableDocuments = documents.length > 0
+    ? documents.filter((record) => record.status === "warning" || record.status === "expired")
+    : await listActionableOsgbDocuments(userId);
   if (actionableDocuments.length === 0) {
     return { created: 0, skipped: 0 };
   }

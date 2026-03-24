@@ -9,6 +9,22 @@ const TEST_PASSWORD = __ENV.TEST_PASSWORD;
 
 const TARGET_VUS = Number(__ENV.TARGET_VUS || 100);
 const TEST_DURATION = __ENV.TEST_DURATION || "15m";
+const ENDPOINTS = [
+  "notifications",
+  "inspections",
+  "findings",
+  "employees_page_active",
+  "incident_reports",
+  "health_surveillance_records_page",
+  "periodic_controls_page",
+  "ppe_inventory_page",
+  "ppe_assignments_page",
+  "osgb_personnel_page",
+  "osgb_assignments_page",
+  "osgb_tasks_page",
+  "isgkatip_companies_page",
+  "osgb_company_tracking_rpc",
+];
 
 function requireEnv(name, value) {
   if (!value) {
@@ -92,6 +108,12 @@ export const options = {
   thresholds: {
     http_req_failed: ["rate<0.03"],
     http_req_duration: ["p(95)<1500", "p(99)<3000"],
+    ...Object.fromEntries(
+      ENDPOINTS.map((endpoint) => [
+        `http_req_duration{endpoint:${endpoint}}`,
+        ["p(95)<1500", "p(99)<10000"],
+      ]),
+    ),
   },
 };
 
@@ -157,14 +179,14 @@ function runDashboardFlow(data) {
   const notificationsRes = get(
     "/rest/v1/notifications?select=id,is_read,priority,created_at&order=created_at.desc&limit=10",
     data.accessToken,
-    { module: "capacity-dashboard", query: "notifications" },
+    { module: "capacity-dashboard", query: "notifications", endpoint: "notifications" },
   );
   checkJson(notificationsRes, "notifications");
 
   const inspectionsRes = get(
     `/rest/v1/inspections?select=id,location_name,risk_level,status,created_at,org_id&org_id=eq.${data.orgId}&order=created_at.desc&limit=20`,
     data.accessToken,
-    { module: "capacity-dashboard", query: "inspections" },
+    { module: "capacity-dashboard", query: "inspections", endpoint: "inspections" },
   );
   checkJson(inspectionsRes, "inspections");
 
@@ -173,6 +195,7 @@ function runDashboardFlow(data) {
     const findingsRes = get(findingsPath, data.accessToken, {
       module: "capacity-dashboard",
       query: "findings",
+      endpoint: "findings",
     });
     checkJson(findingsRes, "findings");
   }
@@ -210,6 +233,7 @@ function runCoreFlow(data) {
   const res = get(flow.path, data.accessToken, {
     module: "capacity-core",
     query: flow.label,
+    endpoint: flow.label,
   });
   checkJson(res, flow.label);
 }
@@ -251,10 +275,12 @@ function runOsgbFlow(data) {
     ? postRpc(flow.fnName, flow.payload, data.accessToken, {
         module: "capacity-osgb",
         query: flow.label,
+        endpoint: flow.label,
       })
     : get(flow.path, data.accessToken, {
         module: "capacity-osgb",
         query: flow.label,
+        endpoint: flow.label,
       });
   checkJson(res, flow.label);
 }

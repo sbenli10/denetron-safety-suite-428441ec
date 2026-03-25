@@ -10,7 +10,8 @@ import { AppLayout } from "@/components/AppLayout";
 import { OsgbAccessGate } from "@/components/OsgbAccessGate";
 import { RouteTimingObserver } from "@/components/RouteTimingObserver";
 import { ThemeProvider } from "@/components/theme-provider";
-import { Suspense, lazy } from "react";
+import { lazyWithRetry } from "@/lib/lazyWithRetry";
+import { Suspense } from "react";
 import { Loader2 } from "lucide-react";
 import BoardMeetings from "@/pages/BoardMeetings";
 import BoardMeetingForm from "@/pages/BoardMeetingForm";
@@ -25,40 +26,40 @@ import EmailHistory from "@/pages/EmailHistory";
 // ============================================
 // CORE PAGES
 // ============================================
-const Dashboard = lazy(() => import("./pages/Dashboard"));
-const Inspections = lazy(() => import("./pages/Inspections"));
-const FormBuilder = lazy(() => import("./pages/FormBuilder"));
-const Reports = lazy(() => import("./pages/Reports"));
-const CAPA = lazy(() => import("./pages/CAPA"));
-const BulkCAPA = lazy(() => import("./pages/BulkCAPA"));
-const BulkCAPAHowTo = lazy(() => import("./pages/BulkCAPAHowTo"));
-const IncidentManagement = lazy(() => import("./pages/IncidentManagement"));
-const SafetyLibrary = lazy(() => import("./pages/SafetyLibrary"));
-const SafetyLibraryGuide = lazy(() => import("./pages/SafetyLibraryGuide"));
-const Settings = lazy(() => import("./pages/Settings"));
-const Profile = lazy(() => import("./pages/Profile"));
-const CompanyManager = lazy(() => import("./pages/CompanyManager"));
-const AssignmentLetters = lazy(() => import("./pages/AssignmentLetters"));
-const OSGBModule = lazy(() => import("./pages/OSGBModule"));
-const OSGBDashboard = lazy(() => import("./pages/OSGBDashboard"));
-const OSGBPersonnel = lazy(() => import("./pages/OSGBPersonnel"));
-const OSGBAssignments = lazy(() => import("./pages/OSGBAssignments"));
-const OSGBCompanyTracking = lazy(() => import("./pages/OSGBCompanyTracking"));
-const OSGBCapacity = lazy(() => import("./pages/OSGBCapacity"));
-const OSGBAlerts = lazy(() => import("./pages/OSGBAlerts"));
-const OSGBFinance = lazy(() => import("./pages/OSGBFinance"));
-const OSGBDocuments = lazy(() => import("./pages/OSGBDocuments"));
-const OSGBTasks = lazy(() => import("./pages/OSGBTasks"));
-const OSGBNotes = lazy(() => import("./pages/OSGBNotes"));
-const OSGBAnalytics = lazy(() => import("./pages/OSGBAnalytics"));
-const CertificatesDashboard = lazy(() => import("./pages/CertificatesDashboard"));
-const CertificatesHistory = lazy(() => import("./pages/CertificatesHistory"));
-const CertificateJobDetail = lazy(() => import("./pages/CertificateJobDetail"));
-const CertificateVerifyPage = lazy(() => import("./pages/CertificateVerifyPage"));
-const Auth = lazy(() => import("./pages/Auth"));
-const NotFound = lazy(() => import("./pages/NotFound"));
-const ISGBotSetup = lazy(() => import("@/pages/ISGBotSetup"));
-const ISGBot = lazy(() => import("@/pages/ISGBot"));
+const Dashboard = lazyWithRetry("dashboard", () => import("./pages/Dashboard"));
+const Inspections = lazyWithRetry("inspections", () => import("./pages/Inspections"));
+const FormBuilder = lazyWithRetry("form-builder", () => import("./pages/FormBuilder"));
+const Reports = lazyWithRetry("reports", () => import("./pages/Reports"));
+const CAPA = lazyWithRetry("capa", () => import("./pages/CAPA"));
+const BulkCAPA = lazyWithRetry("bulk-capa", () => import("./pages/BulkCAPA"));
+const BulkCAPAHowTo = lazyWithRetry("bulk-capa-how-to", () => import("./pages/BulkCAPAHowTo"));
+const IncidentManagement = lazyWithRetry("incident-management", () => import("./pages/IncidentManagement"));
+const SafetyLibrary = lazyWithRetry("safety-library", () => import("./pages/SafetyLibrary"));
+const SafetyLibraryGuide = lazyWithRetry("safety-library-guide", () => import("./pages/SafetyLibraryGuide"));
+const Settings = lazyWithRetry("settings", () => import("./pages/Settings"));
+const Profile = lazyWithRetry("profile", () => import("./pages/Profile"));
+const CompanyManager = lazyWithRetry("company-manager", () => import("./pages/CompanyManager"));
+const AssignmentLetters = lazyWithRetry("assignment-letters", () => import("./pages/AssignmentLetters"));
+const OSGBModule = lazyWithRetry("osgb-module", () => import("./pages/OSGBModule"));
+const OSGBDashboard = lazyWithRetry("osgb-dashboard", () => import("./pages/OSGBDashboard"));
+const OSGBPersonnel = lazyWithRetry("osgb-personnel", () => import("./pages/OSGBPersonnel"));
+const OSGBAssignments = lazyWithRetry("osgb-assignments", () => import("./pages/OSGBAssignments"));
+const OSGBCompanyTracking = lazyWithRetry("osgb-company-tracking", () => import("./pages/OSGBCompanyTracking"));
+const OSGBCapacity = lazyWithRetry("osgb-capacity", () => import("./pages/OSGBCapacity"));
+const OSGBAlerts = lazyWithRetry("osgb-alerts", () => import("./pages/OSGBAlerts"));
+const OSGBFinance = lazyWithRetry("osgb-finance", () => import("./pages/OSGBFinance"));
+const OSGBDocuments = lazyWithRetry("osgb-documents", () => import("./pages/OSGBDocuments"));
+const OSGBTasks = lazyWithRetry("osgb-tasks", () => import("./pages/OSGBTasks"));
+const OSGBNotes = lazyWithRetry("osgb-notes", () => import("./pages/OSGBNotes"));
+const OSGBAnalytics = lazyWithRetry("osgb-analytics", () => import("./pages/OSGBAnalytics"));
+const CertificatesDashboard = lazyWithRetry("certificates-dashboard", () => import("./pages/CertificatesDashboard"));
+const CertificatesHistory = lazyWithRetry("certificates-history", () => import("./pages/CertificatesHistory"));
+const CertificateJobDetail = lazyWithRetry("certificate-job-detail", () => import("./pages/CertificateJobDetail"));
+const CertificateVerifyPage = lazyWithRetry("certificate-verify", () => import("./pages/CertificateVerifyPage"));
+const Auth = lazyWithRetry("auth", () => import("./pages/Auth"));
+const NotFound = lazyWithRetry("not-found", () => import("./pages/NotFound"));
+const ISGBotSetup = lazyWithRetry("isg-bot-setup", () => import("@/pages/ISGBotSetup"));
+const ISGBot = lazyWithRetry("isg-bot", () => import("@/pages/ISGBot"));
 // ✅ NACE Module Pages
 const NaceHazardQuery = lazy(() => import("@/components/nace/NaceHazardQuery"));
 const NaceSectorList = lazy(() => import("@/components/nace/NaceSectorList"));
@@ -67,40 +68,40 @@ const NaceSectorList = lazy(() => import("@/components/nace/NaceSectorList"));
 // RISK ASSESSMENT
 // ============================================
 
-const RiskAssessmentWizard = lazy(() => import("@/components/RiskAssessmentWizard"));
-const RiskAssessmentEditor = lazy(() => import("@/pages/RiskAssessmentEditor"));
-const RiskAssessments = lazy(() => import("@/pages/RiskAssessments"));
+const RiskAssessmentWizard = lazyWithRetry("risk-assessment-wizard", () => import("@/components/RiskAssessmentWizard"));
+const RiskAssessmentEditor = lazyWithRetry("risk-assessment-editor", () => import("@/pages/RiskAssessmentEditor"));
+const RiskAssessments = lazyWithRetry("risk-assessments", () => import("@/pages/RiskAssessments"));
 
 // ============================================
 // BLUEPRINT ANALYZER
 // ============================================
-const BlueprintAnalyzer = lazy(() => import("@/pages/BlueprintAnalyzer"));
-const BlueprintAnalyzerGuide = lazy(() => import("@/pages/BlueprintAnalyzerGuide"));
-const EvacuationEditor = lazy(() => import("@/pages/EvacuationEditor"));
-const EvacuationHistory = lazy(() => import("@/pages/EvacuationHistory"));
+const BlueprintAnalyzer = lazyWithRetry("blueprint-analyzer", () => import("@/pages/BlueprintAnalyzer"));
+const BlueprintAnalyzerGuide = lazyWithRetry("blueprint-analyzer-guide", () => import("@/pages/BlueprintAnalyzerGuide"));
+const EvacuationEditor = lazyWithRetry("evacuation-editor", () => import("@/pages/EvacuationEditor"));
+const EvacuationHistory = lazyWithRetry("evacuation-history", () => import("@/pages/EvacuationHistory"));
 
 // ============================================
 // ✅ ADEP (Acil Durum Eylem Planı) - 13 MODÜL
 // ============================================
-const ADEPWizard = lazy(() => import("@/pages/ADEPWizard"));
-const ADEPList = lazy(() => import("@/pages/ADEPList"));
-const ADEPPlans = lazy(() => import("@/pages/ADEPPlans"));
-const ADEPPlanForm = lazy(() => import("@/pages/ADEPPlanForm"));
+const ADEPWizard = lazyWithRetry("adep-wizard", () => import("@/pages/ADEPWizard"));
+const ADEPList = lazyWithRetry("adep-list", () => import("@/pages/ADEPList"));
+const ADEPPlans = lazyWithRetry("adep-plans", () => import("@/pages/ADEPPlans"));
+const ADEPPlanForm = lazyWithRetry("adep-plan-form", () => import("@/pages/ADEPPlanForm"));
 
 // ============================================
 // ANNUAL PLANS
 // ============================================
-const AnnualPlans = lazy(() => import("@/pages/AnnualPlans"));
+const AnnualPlans = lazyWithRetry("annual-plans", () => import("@/pages/AnnualPlans"));
 
 // ============================================
 // FINDINGS & EMPLOYEES
 // ============================================
-const Findings = lazy(() => import("@/pages/Findings"));
-const Employees = lazy(() => import("@/pages/Employees"));
-const PPEManagement = lazy(() => import("@/pages/PPEManagement"));
-const PeriodicControls = lazy(() => import("@/pages/PeriodicControls"));
-const PeriodicControlsGuide = lazy(() => import("@/pages/PeriodicControlsGuide"));
-const HealthSurveillance = lazy(() => import("@/pages/HealthSurveillance"));
+const Findings = lazyWithRetry("findings", () => import("@/pages/Findings"));
+const Employees = lazyWithRetry("employees", () => import("@/pages/Employees"));
+const PPEManagement = lazyWithRetry("ppe-management", () => import("@/pages/PPEManagement"));
+const PeriodicControls = lazyWithRetry("periodic-controls", () => import("@/pages/PeriodicControls"));
+const PeriodicControlsGuide = lazyWithRetry("periodic-controls-guide", () => import("@/pages/PeriodicControlsGuide"));
+const HealthSurveillance = lazyWithRetry("health-surveillance", () => import("@/pages/HealthSurveillance"));
 
 // ============================================
 // QUERY CLIENT CONFIGURATION

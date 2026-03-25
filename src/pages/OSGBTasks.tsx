@@ -161,16 +161,16 @@ export default function OSGBTasks() {
     setPage(1);
   }, [search, statusFilter]);
 
-  useEffect(() => {
-    if (page > totalPages) setPage(totalPages);
-  }, [page, totalPages]);
-
   const summary = useMemo(() => ({
     open: records.filter((item) => item.status === "open").length,
     inProgress: records.filter((item) => item.status === "in_progress").length,
     completed: records.filter((item) => item.status === "completed").length,
   }), [records]);
   const totalPages = Math.max(1, Math.ceil(totalCount / OSGB_TASKS_PAGE_SIZE));
+
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
 
   const openCreate = () => {
     if (!canManage) {

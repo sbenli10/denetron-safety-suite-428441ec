@@ -1,5 +1,5 @@
 ﻿//src\pages\Inspections.tsx
-import { useState, useEffect, useRef } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Search,
   Plus,
@@ -13,12 +13,8 @@ import {
   Eye,
   FileText,
   MapPin,
-  User,
   Calendar,
-  TrendingUp,
-  CheckCircle2,
   AlertTriangle,
-  Trash2,
   Share2,
   X,
 } from "lucide-react";
@@ -40,41 +36,25 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { InspectionRow } from "@/components/InspectionRow";
 import { FineKinneyWizard } from "@/components/FineKinneyWizard";
 import { ImageUpload } from "@/components/ImageUpload";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePageDataTiming } from "@/hooks/usePageDataTiming";
+import {
+  getInspectionSummary,
+  listInspectionsPage,
+  type InspectionListItem,
+  type InspectionStatus,
+  type RiskLevel,
+  type InspectionSummary,
+} from "@/lib/inspectionOperations";
 import { uploadInspectionPhoto } from "@/lib/storage";
 import { generateInspectionsPDF } from "@/lib/inspectionPdfExport";
 import { SendReportModal } from "@/components/SendReportModal";
 import { toast } from "sonner";
 import { useLocation } from "react-router-dom";
 import jsPDF from "jspdf";
-
-type InspectionStatus = "completed" | "draft" | "in_progress" | "cancelled";
-type RiskLevel = "low" | "medium" | "high" | "critical";
-
-interface Inspection {
-  id: string;
-  org_id: string;
-  user_id: string;
-  location_name: string;
-  equipment_category?: string | null;
-  status: InspectionStatus;
-  risk_level: RiskLevel;
-  answers: Record<string, any>;
-  media_urls: string[];
-  notes?: string | null;
-  completed_at?: string | null;
-  created_at: string;
-}
-
-interface InspectionCachePayload {
-  data: Inspection[];
-  timestamp: number;
-}
 
 interface StatCard {
   title: string;
@@ -84,77 +64,8 @@ interface StatCard {
   trend?: string;
 }
 
-const INSPECTIONS_CACHE_TTL = 10 * 60 * 1000;
-const INSPECTIONS_CACHE_LIMIT = 75;
-
-const getInspectionsCacheKey = (userId: string) =>
-  `denetron:inspections:${userId}:v2`;
-
-const getInspectionsSessionCacheKey = (userId: string) =>
-  `denetron:inspections:${userId}:session:v2`;
-
-const createCacheableInspections = (data: Inspection[]): Inspection[] =>
-  data.slice(0, INSPECTIONS_CACHE_LIMIT).map((inspection) => ({
-    ...inspection,
-    answers: {},
-    media_urls: inspection.media_urls?.slice(0, 1) ?? [],
-    notes: inspection.notes ? inspection.notes.slice(0, 500) : inspection.notes,
-  }));
-
-const parseInspectionCache = (raw: string | null): Inspection[] | null => {
-  if (!raw) return null;
-
-  try {
-    const parsed = JSON.parse(raw) as InspectionCachePayload;
-
-    if (Date.now() - parsed.timestamp > INSPECTIONS_CACHE_TTL) {
-      return null;
-    }
-
-    return parsed.data ?? null;
-  } catch {
-    return null;
-  }
-};
-
-const readCachedInspections = (userId: string): Inspection[] | null => {
-  const localKey = getInspectionsCacheKey(userId);
-  const sessionKey = getInspectionsSessionCacheKey(userId);
-
-  const localCached = parseInspectionCache(localStorage.getItem(localKey));
-  if (localCached) return localCached;
-
-  localStorage.removeItem(localKey);
-
-  const sessionCached = parseInspectionCache(sessionStorage.getItem(sessionKey));
-  if (sessionCached) return sessionCached;
-
-  sessionStorage.removeItem(sessionKey);
-  return null;
-};
-
-const writeCachedInspections = (userId: string, data: Inspection[]) => {
-  const payload: InspectionCachePayload = {
-    data: createCacheableInspections(data),
-    timestamp: Date.now(),
-  };
-
-  try {
-    localStorage.setItem(getInspectionsCacheKey(userId), JSON.stringify(payload));
-  } catch {
-    try {
-      sessionStorage.setItem(
-        getInspectionsSessionCacheKey(userId),
-        JSON.stringify(payload)
-      );
-    } catch {
-      sessionStorage.removeItem(getInspectionsSessionCacheKey(userId));
-      localStorage.removeItem(getInspectionsCacheKey(userId));
-    }
-  }
-};
-
 const statusFilters = ["all", "completed", "in_progress", "draft", "cancelled"] as const;
+const PAGE_SIZE = 24;
 
 const statusConfig = {
   completed: { label: "Tamamlandı", color: "bg-success/10 text-success border-success/30", icon: "✅" },
@@ -174,14 +85,19 @@ export default function Inspections() {
   const { user } = useAuth();
   const activeUserId = user?.id ?? null;
   const [search, setSearch] = useState("");
-  const [activeFilter, setActiveFilter] = useState<string>("all");
-  const [inspections, setInspections] = useState<Inspection[]>([]);
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [activeFilter, setActiveFilter] = useState<(typeof statusFilters)[number]>("all");
+  const [inspections, setInspections] = useState<InspectionListItem[]>([]);
+  const [summary, setSummary] = useState<InspectionSummary | null>(null);
   const [loading, setLoading] = useState(true);
   usePageDataTiming(loading);
+  const [summaryLoading, setSummaryLoading] = useState(true);
+  const [page, setPage] = useState(0);
+  const [hasNextPage, setHasNextPage] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
-  const [selectedInspection, setSelectedInspection] = useState<Inspection | null>(null);
+  const [selectedInspection, setSelectedInspection] = useState<InspectionListItem | null>(null);
   const [sendModalOpen, setSendModalOpen] = useState(false);
   const [sharePreparing, setSharePreparing] = useState(false);
   const [currentReportUrl, setCurrentReportUrl] = useState("");
@@ -197,8 +113,6 @@ export default function Inspections() {
   const [exporting, setExporting] = useState(false);
   const [aiAnalyzing, setAiAnalyzing] = useState(false);
   const location = useLocation();
-  const isFetchingRef = useRef(false);
-  const lastFetchedAtRef = useRef<number>(0);
 
   useEffect(() => {
     if (location.state?.prefilledNotes) {
@@ -207,51 +121,66 @@ export default function Inspections() {
   }, [location.state]);
 
   useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setDebouncedSearch(search.trim());
+    }, 250);
+
+    return () => window.clearTimeout(timer);
+  }, [search]);
+
+  useEffect(() => {
+    setPage(0);
+  }, [debouncedSearch, activeFilter]);
+
+  const fetchInspections = useCallback(async () => {
     if (!activeUserId) return;
 
-    const cached = readCachedInspections(activeUserId);
-    if (cached) {
-      setInspections(cached);
-      setLoading(false);
-      void fetchInspections(true);
-      return;
-    }
-
-    void fetchInspections();
-  }, [activeUserId]);
-
-  const fetchInspections = async (silent = false, force = false) => {
-    if (!activeUserId || isFetchingRef.current) return;
-
-    const now = Date.now();
-    if (!force && now - lastFetchedAtRef.current < 60_000) {
-      return;
-    }
-
-    isFetchingRef.current = true;
-    if (!silent) {
-      setLoading(true);
-    }
+    setLoading(true);
     try {
-      const { data, error } = await supabase
-        .from("inspections")
-        .select("*")
-        .eq("user_id", activeUserId)
-        .order("created_at", { ascending: false });
+      const pageData = await listInspectionsPage(activeUserId, {
+        page,
+        pageSize: PAGE_SIZE,
+        search: debouncedSearch,
+        status: activeFilter === "all" ? null : activeFilter,
+      });
 
-      if (error) throw error;
-      const nextInspections = (data as Inspection[]) || [];
-      setInspections(nextInspections);
-      writeCachedInspections(activeUserId, nextInspections);
-      lastFetchedAtRef.current = Date.now();
+      setInspections(pageData.items);
+      setHasNextPage(pageData.hasNextPage);
     } catch (error: any) {
       toast.error("Denetimler yüklenirken hata oluştu");
       console.error(error);
     } finally {
-      isFetchingRef.current = false;
       setLoading(false);
     }
-  };
+  }, [activeFilter, activeUserId, debouncedSearch, page]);
+
+  const fetchSummary = useCallback(async () => {
+    if (!activeUserId) return;
+
+    setSummaryLoading(true);
+    try {
+      const nextSummary = await getInspectionSummary(activeUserId);
+      setSummary(nextSummary);
+    } catch (error) {
+      console.error("Inspection summary load error:", error);
+    } finally {
+      setSummaryLoading(false);
+    }
+  }, [activeUserId]);
+
+  useEffect(() => {
+    if (!activeUserId) return;
+    void fetchInspections();
+  }, [activeUserId, fetchInspections]);
+
+  useEffect(() => {
+    if (!activeUserId) return;
+    void fetchSummary();
+  }, [activeUserId, fetchSummary]);
+
+  const refreshInspectionData = useCallback(async () => {
+    await Promise.all([fetchInspections(), fetchSummary()]);
+  }, [fetchInspections, fetchSummary]);
 
   const handleAIAnalysis = async () => {
     if (!notes.trim()) {
@@ -320,17 +249,14 @@ export default function Inspections() {
         media_urls: photoUrl ? [photoUrl] : [],
       };
 
-      const { data: newInspection, error: insertError } = await supabase
+      const { error: insertError } = await supabase
         .from("inspections")
         .insert(newInspectionData)
-        .select()
+        .select("id")
         .single();
 
       if (insertError) throw insertError;
 
-      const nextInspections = [newInspection as Inspection, ...inspections];
-      setInspections(nextInspections);
-      writeCachedInspections(user.id, nextInspections);
       toast.success("✅ Denetim başarıyla oluşturuldu");
 
       setLocationName("");
@@ -339,6 +265,8 @@ export default function Inspections() {
       setRiskLevel("low");
       setSelectedFile(null);
       setDialogOpen(false);
+      setPage(0);
+      await refreshInspectionData();
     } catch (error: any) {
       toast.error(error.message || "Denetim oluşturulurken hata oluştu");
       console.error(error);
@@ -357,14 +285,10 @@ export default function Inspections() {
         .eq("id", id);
 
       if (error) throw error;
-      
-      const nextInspections = inspections.filter(i => i.id !== id);
-      setInspections(nextInspections);
-      if (user?.id) {
-        writeCachedInspections(user.id, nextInspections);
-      }
+
       setDetailsOpen(false);
       setSelectedInspection(null);
+      await refreshInspectionData();
       toast.success("✅ Denetim silindi");
     } catch (error) {
       toast.error("❌ Denetim silinemedi");
@@ -411,7 +335,7 @@ export default function Inspections() {
     }
   };
 
-  const openInspectionDetails = async (inspection: Inspection) => {
+  const openInspectionDetails = async (inspection: InspectionListItem) => {
     setSelectedInspection(inspection);
     setDetailsOpen(true);
     await loadLinkedReport(inspection.id);
@@ -517,14 +441,14 @@ export default function Inspections() {
     }
   };
   const handleExport = async () => {
-    if (filtered.length === 0) {
+    if (inspections.length === 0) {
       toast.error("Dışa aktarılacak denetim bulunamadı");
       return;
     }
 
     setExporting(true);
     try {
-      const exportData = filtered.map((i) => ({
+      const exportData = inspections.map((i) => ({
         id: i.id,
         site_name: i.location_name,
         inspector_name: i.equipment_category || "N/A",
@@ -544,41 +468,32 @@ export default function Inspections() {
       setExporting(false);
     }
   };
-
-  const filtered = inspections.filter((i) => {
-    const matchesSearch =
-      i.location_name.toLowerCase().includes(search.toLowerCase());
-    const matchesFilter = activeFilter === "all" || i.status === activeFilter;
-    return matchesSearch && matchesFilter;
-  });
+  const currentPageLabel = page + 1;
+  const visibleCount = inspections.length;
 
   const stats: StatCard[] = [
     {
       title: "Toplam Denetim",
-      value: inspections.length,
+      value: summary?.totalCount ?? inspections.length,
       icon: <Activity className="h-5 w-5" />,
       color: "from-blue-500 to-blue-600",
-      trend: `${filtered.length} sonuç`,
+      trend: `${visibleCount} kayıt görüntüleniyor`,
     },
     {
       title: "Kritik Risk",
-      value: inspections.filter(
-        (i) => i.risk_level === "high" || i.risk_level === "critical"
-      ).length,
+      value: summary?.criticalOrHighCount ?? 0,
       icon: <AlertTriangle className="h-5 w-5" />,
       color: "from-red-500 to-red-600",
-      trend: inspections.filter((i) => i.risk_level === "critical").length > 0
+      trend: summaryLoading ? "Yukleniyor..." : summary && summary.criticalOrHighCount > 0
         ? "⚠️ Acil Dikkat!"
-        : "✅ Güvenli",
+        : "✅ Guvenli",
     },
     {
       title: "Devam Eden",
-      value: inspections.filter(
-        (i) => i.status === "in_progress" || i.status === "draft"
-      ).length,
+      value: summary?.openCount ?? 0,
       icon: <Clock className="h-5 w-5" />,
       color: "from-orange-500 to-orange-600",
-      trend: inspections.filter((i) => i.status === "in_progress").length > 0
+      trend: summaryLoading ? "Yukleniyor..." : summary && summary.openCount > 0
         ? "🔔 Tamamla!"
         : "✅ Yok",
     },
@@ -595,7 +510,7 @@ export default function Inspections() {
           <p className="text-sm text-muted-foreground mt-2">
             {loading
               ? "Yükleniyor..."
-              : `${inspections.length} toplam denetim • ${filtered.length} sonuç`}
+              : `${summary?.totalCount ?? inspections.length} toplam denetim • sayfa ${currentPageLabel} • ${visibleCount} kayıt`}
           </p>
         </div>
         <div className="flex gap-2 flex-wrap">
@@ -604,7 +519,7 @@ export default function Inspections() {
             size="sm"
             className="gap-2"
             onClick={handleExport}
-            disabled={exporting || loading || filtered.length === 0}
+            disabled={exporting || loading || inspections.length === 0}
           >
             {exporting ? (
               <Loader2 className="h-4 w-4 animate-spin" />
@@ -823,9 +738,9 @@ export default function Inspections() {
           <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto mb-3" />
           <p className="text-sm text-muted-foreground">Denetimler yükleniyor...</p>
         </div>
-      ) : filtered.length > 0 ? (
+      ) : inspections.length > 0 ? (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filtered.map((inspection) => (
+          {inspections.map((inspection) => (
             <div
               key={inspection.id}
               onClick={() => {
@@ -911,6 +826,32 @@ export default function Inspections() {
           <div>
             <p className="text-foreground font-semibold">Denetim Bulunamadı</p>
             <p className="text-sm text-muted-foreground mt-1">Kriterlere uygun denetim yok. Yeni bir denetim oluşturabilirsiniz.</p>
+          </div>
+        </div>
+      )}
+
+      {!loading && (
+        <div className="flex flex-col gap-3 rounded-xl border border-border/50 bg-card/40 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="text-sm text-muted-foreground">
+            Sayfa {currentPageLabel} • {visibleCount} kayit
+          </div>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={page === 0}
+              onClick={() => setPage((current) => Math.max(0, current - 1))}
+            >
+              Onceki Sayfa
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={!hasNextPage}
+              onClick={() => setPage((current) => current + 1)}
+            >
+              Sonraki Sayfa
+            </Button>
           </div>
         </div>
       )}

@@ -1,5 +1,4 @@
 import {
-  AlarmClock,
   ArrowRight,
   BadgeCheck,
   BellRing,
@@ -7,16 +6,12 @@ import {
   Briefcase,
   Building2,
   CheckCircle2,
-  FileCheck,
-  FileSpreadsheet,
-  FolderKanban,
+  ClipboardCheck,
+  FileCheck2,
   Gauge,
-  Layers3,
   LayoutDashboard,
   LineChart,
-  ScanSearch,
   ShieldAlert,
-  Sparkles,
   Users,
   Workflow,
 } from "lucide-react";
@@ -24,153 +19,140 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
-const featureColumns = [
+const primaryFeatures = [
   {
-    title: "Saha ve Uygunsuzluk",
-    eyebrow: "Denetim akisi",
-    items: [
-      "Denetimler ve kontrol listeleri",
-      "Dof ve bulk Dof surecleri",
-      "Incident ve aksiyon yonetimi",
-      "Rapor uretimi ve paylasim",
-    ],
-    icon: ScanSearch,
-    tint: "from-cyan-500/20 via-sky-500/10 to-transparent",
-  },
-  {
-    title: "OSGB Operasyonu",
-    eyebrow: "Portfoy kontrolu",
-    items: [
-      "OSGB dashboard ve sirket takibi",
-      "Personel, atama ve kapasite gorunumu",
-      "Uyari merkezi, finans ve evrak takibi",
-      "Gorev motoru ve operasyon notlari",
-    ],
-    icon: Briefcase,
-    tint: "from-emerald-500/20 via-teal-500/10 to-transparent",
-  },
-  {
-    title: "Belge ve Planlama",
-    eyebrow: "Yonetim kati",
-    items: [
-      "Atama yazilari ve sertifika merkezi",
-      "Kurul toplantilari ve yillik planlar",
-      "ADEP ve tahliye editorleri",
-      "Risk sihirbazi, NACE ve bilgi kutuphanesi",
-    ],
-    icon: FileCheck,
-    tint: "from-amber-500/20 via-orange-500/10 to-transparent",
-  },
-];
-
-const moduleGrid = [
-  {
-    title: "Yonetici Dashboard",
-    description: "Kritik risk, geciken is ve saha ritmini tek hikayede gosteren karar paneli.",
+    title: "Yönetici paneli",
+    description:
+      "Kritik riskler, geciken işler ve operasyon yoğunluğu tek bakışta görünür.",
     icon: LayoutDashboard,
   },
   {
-    title: "Denetimler",
-    description: "Liste-first hizli acilis, detay talep aninda ve rapora dogrudan cikis.",
-    icon: ShieldAlert,
+    title: "Denetim ve DÖF akışı",
+    description:
+      "Denetimler, uygunsuzluklar, rapor üretimi ve takip aksiyonları aynı akışta ilerler.",
+    icon: ClipboardCheck,
   },
   {
-    title: "OSGB Modulu",
-    description: "Portfoy, personel, atama, finans, uyari ve kapasiteyi ayni sistemde toplar.",
-    icon: Building2,
-  },
-  {
-    title: "Belgeler ve Evrak",
-    description: "Evrak gecerlilik takibi, sorumluluk ve yenileme gorevlerini merkezi izler.",
-    icon: FolderKanban,
-  },
-  {
-    title: "Risk ve ADEP",
-    description: "Sihirbaz tabanli olusturma akislari ile plan cikislarini hizlandirir.",
-    icon: Workflow,
-  },
-  {
-    title: "ISG Bot",
-    description: "Operasyon sorulari ve yardimci analizler icin sistem icinden destek katmani.",
-    icon: Bot,
+    title: "OSGB operasyon modülü",
+    description:
+      "Personel, atama, kapasite, finans, uyarı ve firma takibi tek omurgada birleşir.",
+    icon: Briefcase,
   },
 ];
 
-const trustSignals = [
+const moduleGroups = [
   {
-    title: "Tek merkezden operasyon",
-    description: "Daginik Excel, not ve evrak trafigini tek urun akisina toplar.",
-    icon: Layers3,
+    title: "Saha yönetimi",
+    icon: ShieldAlert,
+    items: [
+      "Denetimler ve kontrol listeleri",
+      "DÖF ve toplu aksiyon yönetimi",
+      "Olay ve uygunsuzluk takibi",
+      "Rapor ve paylaşım çıktıları",
+    ],
+    tone: "border-cyan-500/15 bg-cyan-500/[0.05]",
   },
   {
-    title: "Hizli acilis, gecikmesiz his",
-    description: "Cache-first ekranlar kullaniciya bos bekleme yerine hemen baglam verir.",
+    title: "OSGB yönetimi",
+    icon: Building2,
+    items: [
+      "OSGB gösterge paneli",
+      "Personel ve görevlendirme",
+      "Kapasite ve süre analizi",
+      "Finans, evrak ve görev yönetimi",
+    ],
+    tone: "border-emerald-500/15 bg-emerald-500/[0.05]",
+  },
+  {
+    title: "Planlama ve belge",
+    icon: FileCheck2,
+    items: [
+      "Atama yazıları ve sertifika merkezi",
+      "Kurul toplantıları ve yıllık planlar",
+      "Acil durum planı ve tahliye editörü",
+      "Risk sihirbazı ve NACE araçları",
+    ],
+    tone: "border-amber-500/15 bg-amber-500/[0.05]",
+  },
+];
+
+const trustPoints = [
+  {
+    title: "Tek merkezden operasyon",
+    description:
+      "Dağınık Excel, not ve evrak trafiğini tek çalışma modeline indirir.",
+    icon: Workflow,
+  },
+  {
+    title: "Hızlı açılış deneyimi",
+    description:
+      "Kritik ekranlar son bilinen veriyi hemen gösterir, güncel veri arka planda yenilenir.",
     icon: Gauge,
   },
   {
-    title: "Yonetim dilinde gorunum",
-    description: "Veriyi sadece listelemez; oncelik, baski ve aksiyon cikarir.",
+    title: "Yönetim dilinde görünürlük",
+    description:
+      "Ham veri yerine öncelik, baskı ve aksiyon ihtiyacı gösterilir.",
     icon: LineChart,
   },
 ];
 
-const buyerPoints = [
-  "OSGB yoneticisi, operasyon sorumlusu ve saha ekibi ayni sistem uzerinde calisir.",
-  "Denetim, uygunsuzluk, belge ve plan surecleri birbirinden kopuk kalmaz.",
-  "Yakin bitis tarihleri, kritik riskler ve acik aksiyonlar manuel takibe kalmaz.",
-  "Musteri tarafina daha profesyonel, hizli ve standart bir hizmet sunulur.",
+const buyerReasons = [
+  "OSGB yöneticisi, operasyon sorumlusu ve saha ekibi aynı sistem üzerinde çalışır.",
+  "Denetim, belge, plan ve görev süreçleri birbirinden kopuk kalmaz.",
+  "Yaklaşan bitiş tarihleri ve kritik riskler manuel takibe bırakılmaz.",
+  "Müşteri tarafına daha hızlı, daha düzenli ve daha profesyonel hizmet sunulur.",
 ];
 
-const workflow = [
+const footerModules = [
   {
-    step: "01",
-    title: "Sisteme gir ve tabloyu gor",
-    description: "Ilk ekranda aktif risk, geciken isler, kritik firmalar ve operasyon baskisi net olsun.",
+    title: "Dashboard",
+    description: "Karar destekli ana panel",
+    icon: LayoutDashboard,
   },
   {
-    step: "02",
-    title: "Module gir ve isi bitir",
-    description: "Denetim, atama, evrak veya plan olusturma sureci ek ekran aramadan ilerlesin.",
+    title: "Denetimler",
+    description: "Saha kayıt ve rapor akışı",
+    icon: ShieldAlert,
   },
   {
-    step: "03",
-    title: "Raporu ve ciktisini ver",
-    description: "Olusan is dogrudan paylasim, cikti veya takip aksiyonuna donussun.",
+    title: "OSGB",
+    description: "Portföy ve operasyon katmanı",
+    icon: Users,
+  },
+  {
+    title: "İSG Bot",
+    description: "Yardımcı analiz ve destek",
+    icon: Bot,
   },
 ];
 
-const stats = [
-  { label: "Ana moduller", value: "12+" },
-  { label: "Calisma ekranlari", value: "35+" },
-  { label: "Operasyon katmanlari", value: "4" },
-];
-
-const Index = () => {
+export default function Index() {
   const navigate = useNavigate();
 
   return (
-    <div className="min-h-screen overflow-x-hidden bg-[#07111f] text-white">
-      <div className="fixed inset-0 -z-10 bg-[radial-gradient(circle_at_10%_10%,rgba(34,211,238,0.18),transparent_22%),radial-gradient(circle_at_85%_15%,rgba(56,189,248,0.14),transparent_24%),radial-gradient(circle_at_70%_70%,rgba(245,158,11,0.10),transparent_28%),linear-gradient(180deg,#04101d_0%,#081220_45%,#0b1320_100%)]" />
-      <div className="fixed inset-0 -z-10 opacity-20 [background-image:linear-gradient(rgba(255,255,255,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.05)_1px,transparent_1px)] [background-size:72px_72px]" />
+    <div className="min-h-screen overflow-x-hidden bg-[#06101a] text-white">
+      <div className="fixed inset-0 -z-10 bg-[radial-gradient(circle_at_top_left,rgba(56,189,248,0.10),transparent_24%),radial-gradient(circle_at_85%_12%,rgba(20,184,166,0.08),transparent_22%),linear-gradient(180deg,#07111b_0%,#0b1520_52%,#0d1722_100%)]" />
+      <div className="fixed inset-0 -z-10 opacity-[0.06] [background-image:linear-gradient(rgba(255,255,255,0.7)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.7)_1px,transparent_1px)] [background-size:96px_96px]" />
 
-      <div className="mx-auto flex min-h-screen max-w-[1480px] flex-col px-5 py-6 sm:px-8 lg:px-10">
-        <header className="flex items-center justify-between rounded-full border border-white/10 bg-white/5 px-4 py-3 backdrop-blur-xl">
+      <div className="mx-auto flex min-h-screen max-w-[1360px] flex-col px-5 py-6 sm:px-8 lg:px-10">
+        <header className="flex items-center justify-between rounded-full border border-white/10 bg-white/[0.04] px-4 py-3 backdrop-blur-xl">
           <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-cyan-400/20 bg-cyan-400/10 text-cyan-200 shadow-[0_0_40px_rgba(34,211,238,0.16)]">
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-cyan-400/15 bg-cyan-400/10 text-cyan-200">
               <ShieldAlert className="h-5 w-5" />
             </div>
             <div>
               <p className="text-sm font-semibold tracking-[0.18em] text-slate-100">DENETRON</p>
-              <p className="text-xs text-slate-400">ISG operasyon sistemi</p>
+              <p className="text-xs text-slate-400">İSG operasyon sistemi</p>
             </div>
           </div>
 
           <div className="hidden items-center gap-2 lg:flex">
-            <Badge className="border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-cyan-100">
+            <Badge className="border-cyan-400/15 bg-cyan-400/10 text-cyan-100">
               Premium operasyon paneli
             </Badge>
-            <Badge variant="outline" className="border-white/10 bg-white/5 px-3 py-1 text-slate-200">
-              Dashboard + OSGB + Belge + Plan
+            <Badge variant="outline" className="border-white/10 bg-white/[0.05] text-slate-200">
+              Dashboard + OSGB + Plan + Belge
             </Badge>
           </div>
 
@@ -180,172 +162,166 @@ const Index = () => {
               className="text-slate-200 hover:bg-white/10"
               onClick={() => navigate("/auth")}
             >
-              Giris yap
+              Giriş yap
             </Button>
             <Button
-              className="gap-2 bg-cyan-400 text-slate-950 hover:bg-cyan-300"
+              className="gap-2 bg-cyan-300 text-slate-950 hover:bg-cyan-200"
               onClick={() => navigate("/auth")}
             >
-              Demo akisini ac
+              Panele geç
               <ArrowRight className="h-4 w-4" />
             </Button>
           </div>
         </header>
 
-        <main className="flex flex-1 flex-col gap-12 py-8 lg:py-10">
-          <section className="grid gap-8 xl:grid-cols-[1.04fr_0.96fr] xl:items-stretch">
-            <div className="rounded-[34px] border border-white/10 bg-[linear-gradient(145deg,rgba(8,20,32,0.94),rgba(7,14,24,0.86))] p-7 shadow-[0_30px_120px_rgba(0,0,0,0.34)] sm:p-9">
+        <main className="flex flex-1 flex-col gap-10 py-8 lg:py-10">
+          <section className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+            <div className="rounded-[32px] border border-white/10 bg-[linear-gradient(160deg,rgba(8,18,29,0.95),rgba(10,18,28,0.88))] p-7 shadow-[0_24px_90px_rgba(0,0,0,0.28)] sm:p-9">
               <div className="flex flex-wrap items-center gap-3">
-                <Badge className="border-cyan-400/20 bg-cyan-400/10 text-cyan-100">
-                  Safety operations system
+                <Badge className="border-cyan-400/15 bg-cyan-400/10 text-cyan-100">
+                  Kurumsal kontrol katmanı
                 </Badge>
-                <Badge variant="outline" className="border-white/10 bg-white/5 text-slate-200">
-                  Cache-first yukleme modeli
+                <Badge variant="outline" className="border-white/10 bg-white/[0.05] text-slate-200">
+                  Hızlı açılış deneyimi
                 </Badge>
               </div>
 
               <div className="mt-8 max-w-4xl space-y-5">
-                <p className="text-xs uppercase tracking-[0.4em] text-cyan-200/70">
-                  Kurumsal kontrol kati
+                <p className="text-xs uppercase tracking-[0.34em] text-cyan-200/70">
+                  Safety operations platform
                 </p>
-                <h1 className="text-4xl font-semibold leading-[0.96] tracking-[-0.06em] text-white sm:text-5xl xl:text-[5.4rem]">
-                  Denetimden evraga, OSGB portfoyunden aksiyona kadar tum is akisiniz tek urunde toplansin.
+                <h1 className="max-w-4xl text-[2.65rem] font-semibold leading-[0.96] tracking-[-0.05em] text-white sm:text-[3.4rem] xl:text-[4.4rem]">
+                  Denetimden belge yönetimine, OSGB operasyonundan aksiyon takibine kadar tüm iş akışınızı tek üründe toplayın.
                 </h1>
-                <p className="max-w-3xl text-[15px] leading-8 text-slate-300 sm:text-[17px]">
-                  Denetron sadece kayit tutan bir ISG uygulamasi degil. Yoneticiye neyin geciktigini, hangi
-                  firmada baski olustugunu, hangi ekibin yuk altinda kaldigini ve hangi belgenin yenilenmesi
-                  gerektigini gosteren premium bir operasyon katmani.
+                <p className="max-w-2xl text-[15px] leading-8 text-slate-300 sm:text-base">
+                  Denetron; saha verisini yalnızca kaydetmez. Kritik riskleri, geciken işleri, operasyon yoğunluğunu
+                  ve yenilenmesi gereken belge akışlarını yöneticinin önüne düzenli, hızlı ve karar verilebilir bir
+                  yapıda çıkarır.
                 </p>
               </div>
 
-              <div className="mt-9 flex flex-col gap-4 sm:flex-row">
+              <div className="mt-8 flex flex-col gap-3 sm:flex-row">
                 <Button
                   size="lg"
-                  className="h-12 gap-2 bg-cyan-400 px-6 text-slate-950 hover:bg-cyan-300"
+                  className="h-12 gap-2 bg-cyan-300 px-6 text-slate-950 hover:bg-cyan-200"
                   onClick={() => navigate("/auth")}
                 >
-                  Panele gec
+                  Uygulamayı aç
                   <ArrowRight className="h-4 w-4" />
                 </Button>
                 <Button
                   size="lg"
                   variant="outline"
-                  className="h-12 border-white/10 bg-white/5 px-6 text-slate-100 hover:bg-white/10"
+                  className="h-12 border-white/10 bg-white/[0.05] px-6 text-slate-100 hover:bg-white/10"
                   onClick={() => navigate("/osgb")}
                 >
-                  OSGB modullerini gor
+                  OSGB modüllerini incele
                 </Button>
               </div>
 
-              <div className="mt-10 grid gap-4 sm:grid-cols-3">
-                {stats.map((stat) => (
-                  <div
-                    key={stat.label}
-                    className="rounded-[24px] border border-white/10 bg-white/5 p-5 backdrop-blur"
-                  >
-                    <p className="text-[11px] uppercase tracking-[0.26em] text-slate-400">{stat.label}</p>
-                    <p className="mt-3 text-3xl font-semibold tracking-[-0.05em] text-white">{stat.value}</p>
-                  </div>
-                ))}
+              <div className="mt-8 grid gap-4 md:grid-cols-3">
+                {primaryFeatures.map((feature) => {
+                  const Icon = feature.icon;
+                  return (
+                    <div
+                      key={feature.title}
+                      className="rounded-[24px] border border-white/10 bg-white/[0.04] p-5"
+                    >
+                      <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-cyan-400/15 bg-cyan-400/10 text-cyan-200">
+                        <Icon className="h-5 w-5" />
+                      </div>
+                      <p className="mt-4 text-base font-medium text-white">{feature.title}</p>
+                      <p className="mt-2 text-sm leading-6 text-slate-300">{feature.description}</p>
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
-            <div className="grid gap-5">
-              <div className="rounded-[34px] border border-white/10 bg-[linear-gradient(160deg,rgba(255,255,255,0.08),rgba(255,255,255,0.03))] p-6 backdrop-blur-xl">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-xs uppercase tracking-[0.28em] text-cyan-200/70">Neden satin alinabilir?</p>
-                    <h2 className="mt-3 text-3xl font-semibold tracking-[-0.05em] text-white">
-                      Musteriye profesyonel his veren, ekibe zaman kazandiran ekranlar.
-                    </h2>
-                  </div>
-                  <div className="hidden h-14 w-14 items-center justify-center rounded-2xl border border-cyan-400/20 bg-cyan-400/10 text-cyan-200 lg:flex">
-                    <Sparkles className="h-6 w-6" />
-                  </div>
-                </div>
+            <div className="grid gap-6">
+              <div className="rounded-[32px] border border-white/10 bg-[linear-gradient(160deg,rgba(255,255,255,0.06),rgba(255,255,255,0.02))] p-6 backdrop-blur-xl">
+                <p className="text-xs uppercase tracking-[0.3em] text-cyan-200/70">Neden tercih edilir?</p>
+                <h2 className="mt-3 text-[1.9rem] font-semibold leading-tight tracking-[-0.04em] text-white">
+                  Düzenli görünen, hızlı hissettiren ve müşteriye güven veren bir çalışma sistemi.
+                </h2>
 
                 <div className="mt-6 space-y-3">
-                  {buyerPoints.map((point) => (
+                  {buyerReasons.map((reason) => (
                     <div
-                      key={point}
+                      key={reason}
                       className="flex items-start gap-3 rounded-[22px] border border-white/10 bg-slate-950/35 p-4"
                     >
                       <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-300" />
-                      <p className="text-sm leading-6 text-slate-200">{point}</p>
+                      <p className="text-sm leading-6 text-slate-200">{reason}</p>
                     </div>
                   ))}
                 </div>
               </div>
 
-              <div className="rounded-[34px] border border-cyan-400/10 bg-[linear-gradient(155deg,rgba(34,211,238,0.10),rgba(8,15,23,0.88))] p-6">
-                <div className="grid gap-4 sm:grid-cols-3">
-                  {trustSignals.map((signal) => {
-                    const Icon = signal.icon;
-                    return (
-                      <div
-                        key={signal.title}
-                        className="rounded-[22px] border border-white/10 bg-black/20 p-4"
-                      >
-                        <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-cyan-400/20 bg-cyan-400/10 text-cyan-200">
-                          <Icon className="h-5 w-5" />
-                        </div>
-                        <p className="mt-4 text-base font-medium text-white">{signal.title}</p>
-                        <p className="mt-2 text-sm leading-6 text-slate-300">{signal.description}</p>
+              <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-1">
+                {trustPoints.map((point) => {
+                  const Icon = point.icon;
+                  return (
+                    <div
+                      key={point.title}
+                      className="rounded-[24px] border border-white/10 bg-white/[0.04] p-5"
+                    >
+                      <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-cyan-400/15 bg-cyan-400/10 text-cyan-200">
+                        <Icon className="h-5 w-5" />
                       </div>
-                    );
-                  })}
-                </div>
+                      <p className="mt-4 text-base font-medium text-white">{point.title}</p>
+                      <p className="mt-2 text-sm leading-6 text-slate-300">{point.description}</p>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           </section>
 
           <section className="space-y-5">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
               <div>
-                <p className="text-xs uppercase tracking-[0.34em] text-cyan-200/70">Tum urun gorunumu</p>
-                <h2 className="mt-3 text-3xl font-semibold tracking-[-0.05em] text-white sm:text-4xl">
-                  Kullanici urunde neler oldugunu tek bakista gorsun.
+                <p className="text-xs uppercase tracking-[0.34em] text-cyan-200/70">Ürün kapsamı</p>
+                <h2 className="mt-3 text-3xl font-semibold tracking-[-0.04em] text-white sm:text-[2.35rem]">
+                  Kullanıcı uygulamanın tüm yeteneklerini düzenli bir yapıda hemen görsün.
                 </h2>
               </div>
-              <p className="max-w-xl text-sm leading-7 text-slate-300">
-                Bu blok satis sayfasi gibi davranir: urunun kapsamini acikca gosterir, hangi ekipler icin
-                uygun oldugunu anlatir ve ziyaretciyi "bu urun bizim operasyonumu toplar" sonucuna goturur.
+              <p className="max-w-2xl text-sm leading-7 text-slate-300">
+                Ürün; denetim ekranları, OSGB operasyon modülü, planlama araçları ve belge katmanı ile birlikte
+                konumlanır. Ziyaretçi tek bakışta “bu sistem operasyonumu toplar” sonucuna varmalıdır.
               </p>
             </div>
 
             <div className="grid gap-5 xl:grid-cols-3">
-              {featureColumns.map((column) => {
-                const Icon = column.icon;
+              {moduleGroups.map((group) => {
+                const Icon = group.icon;
                 return (
                   <div
-                    key={column.title}
-                    className="relative overflow-hidden rounded-[30px] border border-white/10 bg-[linear-gradient(180deg,rgba(9,18,29,0.95),rgba(6,12,21,0.92))] p-6"
+                    key={group.title}
+                    className={`rounded-[28px] border p-6 ${group.tone}`}
                   >
-                    <div className={`pointer-events-none absolute inset-0 bg-gradient-to-br ${column.tint}`} />
-                    <div className="relative">
-                      <div className="flex items-center justify-between gap-4">
-                        <div>
-                          <p className="text-xs uppercase tracking-[0.26em] text-slate-400">{column.eyebrow}</p>
-                          <h3 className="mt-3 text-2xl font-semibold tracking-[-0.04em] text-white">
-                            {column.title}
-                          </h3>
-                        </div>
-                        <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-white/5 text-white">
-                          <Icon className="h-5 w-5" />
-                        </div>
+                    <div className="flex items-center justify-between gap-4">
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.24em] text-slate-400">Modül grubu</p>
+                        <h3 className="mt-3 text-2xl font-semibold tracking-[-0.03em] text-white">
+                          {group.title}
+                        </h3>
                       </div>
+                      <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.05] text-white">
+                        <Icon className="h-5 w-5" />
+                      </div>
+                    </div>
 
-                      <div className="mt-6 space-y-3">
-                        {column.items.map((item) => (
-                          <div
-                            key={item}
-                            className="flex items-start gap-3 rounded-[20px] border border-white/10 bg-black/20 p-4"
-                          >
-                            <BadgeCheck className="mt-0.5 h-4 w-4 shrink-0 text-cyan-300" />
-                            <p className="text-sm leading-6 text-slate-200">{item}</p>
-                          </div>
-                        ))}
-                      </div>
+                    <div className="mt-6 space-y-3">
+                      {group.items.map((item) => (
+                        <div
+                          key={item}
+                          className="flex items-start gap-3 rounded-[20px] border border-white/10 bg-black/20 p-4"
+                        >
+                          <BadgeCheck className="mt-0.5 h-4 w-4 shrink-0 text-cyan-300" />
+                          <p className="text-sm leading-6 text-slate-200">{item}</p>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 );
@@ -353,104 +329,82 @@ const Index = () => {
             </div>
           </section>
 
-          <section className="grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
-            <div className="rounded-[34px] border border-white/10 bg-[linear-gradient(145deg,rgba(8,18,31,0.94),rgba(7,14,23,0.88))] p-6 sm:p-8">
-              <div className="flex items-center gap-3">
-                <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-cyan-400/20 bg-cyan-400/10 text-cyan-200">
-                  <LayoutDashboard className="h-5 w-5" />
-                </div>
-                <div>
-                  <p className="text-xs uppercase tracking-[0.28em] text-slate-400">Modul vitrini</p>
-                  <h2 className="mt-2 text-3xl font-semibold tracking-[-0.05em] text-white">
-                    Uygulamanin en guclu alanlari
-                  </h2>
-                </div>
-              </div>
+          <section className="grid gap-6 xl:grid-cols-[1fr_0.9fr]">
+            <div className="rounded-[32px] border border-white/10 bg-[linear-gradient(160deg,rgba(8,18,30,0.92),rgba(10,16,26,0.88))] p-6 sm:p-8">
+              <p className="text-xs uppercase tracking-[0.3em] text-cyan-200/70">Öne çıkan alanlar</p>
+              <h2 className="mt-3 text-3xl font-semibold tracking-[-0.04em] text-white">
+                Ürünün güçlü görünen ekranları
+              </h2>
 
-              <div className="mt-7 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                {moduleGrid.map((module) => {
-                  const Icon = module.icon;
+              <div className="mt-7 grid gap-4 sm:grid-cols-2">
+                {footerModules.map((item) => {
+                  const Icon = item.icon;
                   return (
                     <div
-                      key={module.title}
-                      className="rounded-[24px] border border-white/10 bg-white/[0.04] p-5 transition-transform duration-300 hover:-translate-y-1"
+                      key={item.title}
+                      className="rounded-[24px] border border-white/10 bg-white/[0.04] p-5"
                     >
-                      <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-cyan-400/20 bg-cyan-400/10 text-cyan-200">
+                      <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-cyan-400/15 bg-cyan-400/10 text-cyan-200">
                         <Icon className="h-5 w-5" />
                       </div>
-                      <p className="mt-4 text-lg font-medium text-white">{module.title}</p>
-                      <p className="mt-2 text-sm leading-6 text-slate-300">{module.description}</p>
+                      <p className="mt-4 text-lg font-medium text-white">{item.title}</p>
+                      <p className="mt-2 text-sm leading-6 text-slate-300">{item.description}</p>
                     </div>
                   );
                 })}
               </div>
             </div>
 
-            <div className="rounded-[34px] border border-white/10 bg-[linear-gradient(160deg,rgba(255,255,255,0.07),rgba(255,255,255,0.02))] p-6 sm:p-8">
-              <p className="text-xs uppercase tracking-[0.28em] text-cyan-200/70">Musteri akisi</p>
-              <h2 className="mt-3 text-3xl font-semibold tracking-[-0.05em] text-white">
-                Satin alma kararina giden is mantigi
-              </h2>
-              <div className="mt-7 space-y-4">
-                {workflow.map((item) => (
-                  <div
-                    key={item.step}
-                    className="rounded-[24px] border border-white/10 bg-slate-950/30 p-5"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-full border border-cyan-400/20 bg-cyan-400/10 text-sm font-semibold text-cyan-100">
-                        {item.step}
-                      </div>
-                      <p className="text-lg font-medium text-white">{item.title}</p>
-                    </div>
-                    <p className="mt-3 text-sm leading-7 text-slate-300">{item.description}</p>
-                  </div>
-                ))}
-              </div>
-
-              <div className="mt-6 rounded-[24px] border border-emerald-400/15 bg-emerald-400/10 p-5">
-                <div className="flex items-center gap-3">
-                  <FileSpreadsheet className="h-5 w-5 text-emerald-200" />
-                  <p className="text-base font-medium text-white">Temel satis mesaji</p>
+            <div className="rounded-[32px] border border-white/10 bg-[linear-gradient(160deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))] p-6 sm:p-8">
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-cyan-400/15 bg-cyan-400/10 text-cyan-200">
+                  <BellRing className="h-5 w-5" />
                 </div>
-                <p className="mt-3 text-sm leading-7 text-emerald-50/90">
-                  Denetron; denetim, gorev, evrak, OSGB portfoyu ve planlama surecini ayrik ekranlar degil,
-                  tek operasyon omurgasi olarak sunar. Satin alma sebebi tam olarak budur.
-                </p>
-              </div>
-            </div>
-          </section>
-
-          <section className="rounded-[36px] border border-white/10 bg-[linear-gradient(130deg,rgba(34,211,238,0.13),rgba(8,14,23,0.94)_42%,rgba(245,158,11,0.08))] p-7 sm:p-10">
-            <div className="grid gap-8 xl:grid-cols-[1fr_auto] xl:items-center">
-              <div>
-                <p className="text-xs uppercase tracking-[0.34em] text-cyan-200/70">Hazir cagri</p>
-                <h2 className="mt-3 max-w-3xl text-3xl font-semibold tracking-[-0.05em] text-white sm:text-4xl">
-                  Uygulamanin tum gucunu bir bakista gosteren landing artik hazir. Siradaki adim, ziyaretciyi
-                  hizli demo ve urun akisina sokmak.
-                </h2>
-                <p className="mt-4 max-w-2xl text-sm leading-7 text-slate-200">
-                  Giris ekranina giden tek CTA yerine, daha sonra canli demo, fiyatlandirma veya talep formu
-                  eklemek icin uygun bir iskelet olusturuldu.
-                </p>
+                <div>
+                  <p className="text-xs uppercase tracking-[0.24em] text-slate-400">Satın alma mesajı</p>
+                  <h2 className="mt-2 text-3xl font-semibold tracking-[-0.04em] text-white">
+                    Bu sistem neyi çözüyor?
+                  </h2>
+                </div>
               </div>
 
-              <div className="flex flex-col gap-3 sm:flex-row xl:flex-col">
+              <div className="mt-6 space-y-4">
+                <div className="rounded-[24px] border border-white/10 bg-slate-950/30 p-5">
+                  <p className="text-sm leading-7 text-slate-200">
+                    Denetron; denetim, belge, görev, OSGB portföyü ve planlama süreçlerini ayrı araçlar yerine
+                    tek operasyon mimarisinde birleştirir.
+                  </p>
+                </div>
+                <div className="rounded-[24px] border border-white/10 bg-slate-950/30 p-5">
+                  <p className="text-sm leading-7 text-slate-200">
+                    Kullanıcı daha düzenli ekranlar görür, ekip daha az manuel takip yapar, yönetici ise
+                    önceliği yüksek konuları gecikmeden fark eder.
+                  </p>
+                </div>
+                <div className="rounded-[24px] border border-emerald-400/15 bg-emerald-400/10 p-5">
+                  <p className="text-sm leading-7 text-emerald-50/90">
+                    Doğru konumlama cümlesi: “İSG operasyonunu görünür, hızlı ve yönetilebilir hâle getiren
+                    birleşik çalışma sistemi.”
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-7 flex flex-col gap-3 sm:flex-row">
                 <Button
                   size="lg"
                   className="h-12 gap-2 bg-white text-slate-950 hover:bg-slate-100"
                   onClick={() => navigate("/auth")}
                 >
-                  Uygulamayi ac
+                  Uygulamayı aç
                   <ArrowRight className="h-4 w-4" />
                 </Button>
                 <Button
                   size="lg"
                   variant="outline"
-                  className="h-12 border-white/15 bg-white/5 text-slate-100 hover:bg-white/10"
+                  className="h-12 border-white/10 bg-white/[0.05] text-slate-100 hover:bg-white/10"
                   onClick={() => navigate("/osgb/dashboard")}
                 >
-                  OSGB dashboarda git
+                  OSGB panelini gör
                 </Button>
               </div>
             </div>
@@ -459,6 +413,4 @@ const Index = () => {
       </div>
     </div>
   );
-};
-
-export default Index;
+}

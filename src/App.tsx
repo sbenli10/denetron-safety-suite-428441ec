@@ -61,8 +61,8 @@ const NotFound = lazyWithRetry("not-found", () => import("./pages/NotFound"));
 const ISGBotSetup = lazyWithRetry("isg-bot-setup", () => import("@/pages/ISGBotSetup"));
 const ISGBot = lazyWithRetry("isg-bot", () => import("@/pages/ISGBot"));
 // ✅ NACE Module Pages
-const NaceHazardQuery = lazy(() => import("@/components/nace/NaceHazardQuery"));
-const NaceSectorList = lazy(() => import("@/components/nace/NaceSectorList"));
+const NaceHazardQuery = lazyWithRetry("nace-hazard-query", () => import("@/components/nace/NaceHazardQuery"));
+const NaceSectorList = lazyWithRetry("nace-sector-list", () => import("@/components/nace/NaceSectorList"));
 
 // ============================================
 // RISK ASSESSMENT

@@ -12,6 +12,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
+import { usePageDataTiming } from "@/hooks/usePageDataTiming";
 import NotificationWidget from "@/components/NotificationWidget";
 import { toast } from "sonner";
 import {
@@ -162,6 +163,7 @@ function AnimatedNumber({ value }: { value: number }) {
 export default function Dashboard() {
   const { user, profile } = useAuth();
   const [loading, setLoading] = useState(true);
+  usePageDataTiming(loading);
   const [refreshing, setRefreshing] = useState(false);
   const [, setOrgId] = useState<string | null>(null);
 

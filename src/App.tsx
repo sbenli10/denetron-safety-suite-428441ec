@@ -8,6 +8,7 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { AppLayout } from "@/components/AppLayout";
 import { OsgbAccessGate } from "@/components/OsgbAccessGate";
+import { RouteTimingObserver } from "@/components/RouteTimingObserver";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Suspense, lazy } from "react";
 import { Loader2 } from "lucide-react";
@@ -170,6 +171,7 @@ const App = () => (
           }}
         >
           <AuthProvider>
+            <RouteTimingObserver />
             <Routes>
               {/* ============================================ */}
               {/* PUBLIC ROUTES */}

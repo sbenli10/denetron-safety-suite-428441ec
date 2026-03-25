@@ -22,6 +22,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { supabase } from "@/integrations/supabase/client";
 import { fetchDashboardSnapshot, writeDashboardSnapshot } from "@/lib/dashboardCache";
+import { startNamedFlow } from "@/lib/perfTiming";
 import { toast } from "sonner";
 import { isDeviceTrusted, trustCurrentDevice } from "@/utils/deviceFingerprint";
 
@@ -168,6 +169,10 @@ const handleLogin = async (e: React.FormEvent) => {
   setLoading(true);
 
   try {
+    startNamedFlow("login", {
+      method: "password",
+      email: formData.email,
+    });
     console.log("🔐 Signing in...");
 
     // Check if this is extension callback

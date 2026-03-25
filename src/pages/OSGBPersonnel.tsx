@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
+import { usePageDataTiming } from "@/hooks/usePageDataTiming";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -292,6 +293,7 @@ export default function OSGBPersonnel() {
   const [records, setRecords] = useState<OsgbPersonnelRecord[]>([]);
   const [assignedMinutesByPersonnel, setAssignedMinutesByPersonnel] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
+  usePageDataTiming(loading);
   const [saving, setSaving] = useState(false);
   const [importing, setImporting] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);

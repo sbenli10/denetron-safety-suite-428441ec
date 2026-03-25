@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
+import { usePageDataTiming } from "@/hooks/usePageDataTiming";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -114,6 +115,7 @@ export default function OSGBDocuments() {
   const [companies, setCompanies] = useState<OsgbCompanyOption[]>([]);
   const [overview, setOverview] = useState<OsgbDocumentsOverview | null>(null);
   const [loading, setLoading] = useState(true);
+  usePageDataTiming(loading);
   const [saving, setSaving] = useState(false);
   const [creatingTasks, setCreatingTasks] = useState(false);
   const [error, setError] = useState<string | null>(null);

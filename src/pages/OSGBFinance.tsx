@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
+import { usePageDataTiming } from "@/hooks/usePageDataTiming";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -121,6 +122,7 @@ export default function OSGBFinance() {
   const [calendarItems, setCalendarItems] = useState<OsgbFinanceCalendarItem[]>([]);
   const [overview, setOverview] = useState<OsgbFinanceOverview | null>(null);
   const [loading, setLoading] = useState(true);
+  usePageDataTiming(loading);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);

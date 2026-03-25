@@ -19,6 +19,7 @@ import {
   Waypoints,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import { usePageDataTiming } from "@/hooks/usePageDataTiming";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -115,6 +116,7 @@ export default function OSGBDashboard() {
   const [data, setData] = useState<OsgbDashboardCatalogData | null>(null);
   const [operations, setOperations] = useState<OsgbDashboardOperationalSummary | null>(null);
   const [loading, setLoading] = useState(true);
+  usePageDataTiming(loading);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

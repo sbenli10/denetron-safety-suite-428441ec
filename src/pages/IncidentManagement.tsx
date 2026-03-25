@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
+import { usePageDataTiming } from "@/hooks/usePageDataTiming";
 import { useAccessRole } from "@/hooks/useAccessRole";
 import { downloadCsv } from "@/lib/csvExport";
 import { readOsgbPageCache, writeOsgbPageCache } from "@/lib/osgbPageCache";
@@ -223,6 +224,7 @@ export default function IncidentManagement() {
   >([]);
   const [actions, setActions] = useState<IncidentActionRecord[]>([]);
   const [loading, setLoading] = useState(true);
+  usePageDataTiming(loading);
   const [saving, setSaving] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [uploadingFile, setUploadingFile] = useState(false);

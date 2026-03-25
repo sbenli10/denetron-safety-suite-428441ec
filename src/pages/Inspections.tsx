@@ -45,6 +45,7 @@ import { FineKinneyWizard } from "@/components/FineKinneyWizard";
 import { ImageUpload } from "@/components/ImageUpload";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
+import { usePageDataTiming } from "@/hooks/usePageDataTiming";
 import { uploadInspectionPhoto } from "@/lib/storage";
 import { generateInspectionsPDF } from "@/lib/inspectionPdfExport";
 import { SendReportModal } from "@/components/SendReportModal";
@@ -176,6 +177,7 @@ export default function Inspections() {
   const [activeFilter, setActiveFilter] = useState<string>("all");
   const [inspections, setInspections] = useState<Inspection[]>([]);
   const [loading, setLoading] = useState(true);
+  usePageDataTiming(loading);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);

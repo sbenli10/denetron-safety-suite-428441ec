@@ -6,6 +6,7 @@ import {
   fetchDashboardSnapshot,
   writeDashboardSnapshot,
 } from "@/lib/dashboardCache";
+import { completeNamedFlow } from "@/lib/perfTiming";
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -51,6 +52,10 @@ export default function AuthCallback() {
 
         if (data.session) {
           if (isExtension) {
+            completeNamedFlow("login", {
+              method: "extension",
+              target: "extension",
+            });
             localStorage.setItem(
               "denetron_extension_auth",
               JSON.stringify({
@@ -71,6 +76,10 @@ export default function AuthCallback() {
           }
 
           setStatus("Oturum hazır. Yönlendiriliyorsunuz...");
+          completeNamedFlow("login", {
+            method: code ? "oauth-or-callback" : "password",
+            target: "/",
+          });
           navigate("/", { replace: true });
           return;
         }

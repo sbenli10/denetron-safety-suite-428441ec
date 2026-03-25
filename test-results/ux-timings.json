@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-03-25T00:29:42.767Z",
+  "generatedAt": "2026-03-25T22:16:07.609Z",
   "thresholds": {
     "loginMs": 2500,
     "routeShellMs": 800,
@@ -8,271 +8,264 @@
   "metrics": [
     {
       "metric": "login-ms",
-      "valueMs": 2047.9
+      "valueMs": 2188.5
     },
     {
       "metric": "route-shell-ms",
-      "valueMs": 156.6,
+      "valueMs": 107.2,
       "route": "/"
     },
     {
       "metric": "route-data-ms",
-      "valueMs": 1300.4,
+      "valueMs": 739.2,
       "route": "/"
     },
     {
       "metric": "route-shell-ms",
-      "valueMs": 21.5,
+      "valueMs": 20.1,
       "route": "/profile"
     },
     {
       "metric": "route-shell-ms",
-      "valueMs": 101.7,
+      "valueMs": 73.7,
       "route": "/email-history"
     },
     {
       "metric": "route-shell-ms",
-      "valueMs": 19.5,
+      "valueMs": 18.7,
       "route": "/inspections"
     },
     {
       "metric": "route-data-ms",
-      "valueMs": 10941,
+      "valueMs": 945.9,
       "route": "/inspections"
     },
     {
       "metric": "route-shell-ms",
-      "valueMs": 26.8,
+      "valueMs": 104.1,
       "route": "/board-meetings"
     },
     {
       "metric": "route-shell-ms",
-      "valueMs": 60.3,
+      "valueMs": 128.2,
       "route": "/assignment-letters"
     },
     {
       "metric": "route-shell-ms",
-      "valueMs": 23.1,
+      "valueMs": 19.8,
       "route": "/incidents"
     },
     {
       "metric": "route-data-ms",
-      "valueMs": 901,
+      "valueMs": 667.6,
       "route": "/incidents"
     },
     {
       "metric": "route-shell-ms",
-      "valueMs": 25,
+      "valueMs": 104.8,
       "route": "/periodic-controls"
     },
     {
       "metric": "route-shell-ms",
-      "valueMs": 23.6,
+      "valueMs": 121.3,
       "route": "/companies"
     },
     {
       "metric": "route-shell-ms",
-      "valueMs": 24,
+      "valueMs": 16.2,
       "route": "/employees"
     },
     {
       "metric": "route-data-ms",
-      "valueMs": 975.2,
+      "valueMs": 827.8,
       "route": "/employees"
     },
     {
       "metric": "route-shell-ms",
-      "valueMs": 24.8,
+      "valueMs": 20.1,
       "route": "/ppe-management"
     },
     {
       "metric": "route-shell-ms",
-      "valueMs": 25.1,
+      "valueMs": 74,
       "route": "/health-surveillance"
     },
     {
       "metric": "route-shell-ms",
-      "valueMs": 24.6,
+      "valueMs": 21.3,
       "route": "/osgb/dashboard"
     },
     {
       "metric": "route-data-ms",
-      "valueMs": 1214.5,
+      "valueMs": 1093,
       "route": "/osgb/dashboard"
     },
     {
       "metric": "route-shell-ms",
-      "valueMs": 25.9,
+      "valueMs": 19.1,
       "route": "/osgb/personnel"
     },
     {
       "metric": "route-data-ms",
-      "valueMs": 1248.3,
+      "valueMs": 1029.5,
       "route": "/osgb/personnel"
     },
     {
       "metric": "route-shell-ms",
-      "valueMs": 30.5,
+      "valueMs": 117.1,
       "route": "/osgb/assignments"
     },
     {
       "metric": "route-data-ms",
-      "valueMs": 1113.2,
+      "valueMs": 923.1,
       "route": "/osgb/assignments"
     },
     {
       "metric": "route-shell-ms",
-      "valueMs": 50.9,
+      "valueMs": 61.2,
       "route": "/osgb/company-tracking"
     },
     {
       "metric": "route-data-ms",
-      "valueMs": 1277.9,
+      "valueMs": 1060.9,
       "route": "/osgb/company-tracking"
     },
     {
       "metric": "route-shell-ms",
-      "valueMs": 21.7,
+      "valueMs": 125.9,
       "route": "/osgb/capacity"
     },
     {
       "metric": "route-shell-ms",
-      "valueMs": 25.1,
+      "valueMs": 23.4,
       "route": "/osgb/alerts"
     },
     {
       "metric": "route-shell-ms",
-      "valueMs": 22.3,
+      "valueMs": 21.8,
       "route": "/osgb/finance"
     },
     {
       "metric": "route-data-ms",
-      "valueMs": 1151.8,
+      "valueMs": 1097.7,
       "route": "/osgb/finance"
     },
     {
       "metric": "route-shell-ms",
-      "valueMs": 17.3,
+      "valueMs": 98.9,
       "route": "/osgb/documents"
     },
     {
       "metric": "route-data-ms",
-      "valueMs": 756.7,
+      "valueMs": 932.6,
       "route": "/osgb/documents"
     },
     {
       "metric": "route-shell-ms",
-      "valueMs": 17.1,
+      "valueMs": 19.5,
       "route": "/osgb/tasks"
     },
     {
       "metric": "route-shell-ms",
-      "valueMs": 44.3,
+      "valueMs": 46.6,
       "route": "/osgb/notes"
     },
     {
       "metric": "route-shell-ms",
-      "valueMs": 15.6,
+      "valueMs": 108.3,
       "route": "/osgb/analytics"
     },
     {
       "metric": "route-shell-ms",
-      "valueMs": 15.6,
+      "valueMs": 16.1,
       "route": "/dashboard/certificates"
     },
     {
       "metric": "route-shell-ms",
-      "valueMs": 17.8,
+      "valueMs": 116.4,
       "route": "/dashboard/certificates/history"
     },
     {
       "metric": "route-shell-ms",
-      "valueMs": 15.7,
+      "valueMs": 19.7,
       "route": "/safety-library"
     },
     {
       "metric": "route-shell-ms",
-      "valueMs": 16.2,
+      "valueMs": 111.2,
       "route": "/risk-wizard"
     },
     {
       "metric": "route-shell-ms",
-      "valueMs": 18.5,
+      "valueMs": 21.1,
       "route": "/risk-editor"
     },
     {
       "metric": "route-shell-ms",
-      "valueMs": 17.8,
+      "valueMs": 18.2,
       "route": "/capa"
     },
     {
       "metric": "route-shell-ms",
-      "valueMs": 108.7,
+      "valueMs": 16.7,
       "route": "/bulk-capa"
     },
     {
       "metric": "route-shell-ms",
-      "valueMs": 118.1,
+      "valueMs": 23.6,
       "route": "/adep-wizard"
     },
     {
       "metric": "route-shell-ms",
-      "valueMs": 16.3,
+      "valueMs": 23.5,
       "route": "/adep-plans"
     },
     {
       "metric": "route-shell-ms",
-      "valueMs": 121.3,
+      "valueMs": 18.7,
       "route": "/blueprint-analyzer"
     },
     {
       "metric": "route-shell-ms",
-      "valueMs": 85.9,
+      "valueMs": 117,
       "route": "/evacuation-editor"
     },
     {
       "metric": "route-shell-ms",
-      "valueMs": 17.7,
+      "valueMs": 19.4,
       "route": "/evacuation-editor/history"
     },
     {
       "metric": "route-shell-ms",
-      "valueMs": 88.2,
+      "valueMs": 16.5,
       "route": "/reports"
     },
     {
       "metric": "route-shell-ms",
-      "valueMs": 91.7,
+      "valueMs": 22.4,
       "route": "/isg-bot"
     },
     {
       "metric": "route-shell-ms",
-      "valueMs": 37,
+      "valueMs": 42.6,
       "route": "/annual-plans"
     },
     {
       "metric": "route-shell-ms",
-      "valueMs": 91.4,
+      "valueMs": 19.8,
       "route": "/nace-query"
     },
     {
       "metric": "route-shell-ms",
-      "valueMs": 16.6,
+      "valueMs": 19.6,
       "route": "/nace-query/sectors"
     },
     {
       "metric": "route-shell-ms",
-      "valueMs": 110.2,
+      "valueMs": 17.6,
       "route": "/settings"
     }
   ],
-  "violations": [
-    {
-      "route": "/inspections",
-      "metric": "route-data-ms",
-      "valueMs": 10941,
-      "thresholdMs": 2000
-    }
-  ],
+  "violations": [],
   "failures": []
 }

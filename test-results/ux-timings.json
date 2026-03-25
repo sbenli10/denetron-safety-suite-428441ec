@@ -1,0 +1,87 @@
+{
+  "generatedAt": "2026-03-25T00:14:37.237Z",
+  "thresholds": {
+    "loginMs": 2500,
+    "routeShellMs": 800,
+    "routeDataMs": 2000
+  },
+  "metrics": [
+    {
+      "metric": "login-ms",
+      "valueMs": 2207.3
+    },
+    {
+      "metric": "route-shell-ms",
+      "valueMs": 104.8,
+      "route": "/"
+    },
+    {
+      "metric": "route-data-ms",
+      "valueMs": 853.4,
+      "route": "/"
+    },
+    {
+      "metric": "route-shell-ms",
+      "valueMs": 28.3,
+      "route": "/profile"
+    },
+    {
+      "metric": "route-shell-ms",
+      "valueMs": 93.6,
+      "route": "/email-history"
+    },
+    {
+      "metric": "route-shell-ms",
+      "valueMs": 23.9,
+      "route": "/inspections"
+    },
+    {
+      "metric": "route-data-ms",
+      "valueMs": 19780.8,
+      "route": "/inspections"
+    },
+    {
+      "metric": "route-shell-ms",
+      "valueMs": 23.8,
+      "route": "/board-meetings"
+    },
+    {
+      "metric": "route-shell-ms",
+      "valueMs": 54.9,
+      "route": "/assignment-letters"
+    },
+    {
+      "metric": "route-shell-ms",
+      "valueMs": 25.5,
+      "route": "/incidents"
+    },
+    {
+      "metric": "route-data-ms",
+      "valueMs": 795.7,
+      "route": "/incidents"
+    },
+    {
+      "metric": "route-shell-ms",
+      "valueMs": 22.2,
+      "route": "/periodic-controls"
+    },
+    {
+      "metric": "route-shell-ms",
+      "valueMs": 235,
+      "route": "/companies"
+    },
+    {
+      "metric": "route-shell-ms",
+      "valueMs": 30.6,
+      "route": "/employees"
+    }
+  ],
+  "violations": [
+    {
+      "route": "/inspections",
+      "metric": "route-data-ms",
+      "valueMs": 19780.8,
+      "thresholdMs": 2000
+    }
+  ]
+}

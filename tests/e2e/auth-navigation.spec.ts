@@ -16,6 +16,18 @@ type ReportMetric = {
   route?: string;
 };
 
+type RouteTarget = {
+  href: string;
+  expectDataTiming?: boolean;
+};
+
+type ThresholdViolation = {
+  route: string;
+  metric: string;
+  valueMs: number;
+  thresholdMs: number;
+};
+
 const credentials = {
   email: process.env.PLAYWRIGHT_TEST_EMAIL,
   password: process.env.PLAYWRIGHT_TEST_PASSWORD,
@@ -27,6 +39,50 @@ const maxRouteDataMs = Number(process.env.PLAYWRIGHT_MAX_ROUTE_DATA_MS || 2000);
 
 const requiredEnv = ["PLAYWRIGHT_TEST_EMAIL", "PLAYWRIGHT_TEST_PASSWORD"] as const;
 const reportMetrics: ReportMetric[] = [];
+const thresholdViolations: ThresholdViolation[] = [];
+const routeTargets: RouteTarget[] = [
+  { href: "/", expectDataTiming: true },
+  { href: "/profile" },
+  { href: "/email-history" },
+  { href: "/inspections", expectDataTiming: true },
+  { href: "/board-meetings" },
+  { href: "/assignment-letters" },
+  { href: "/incidents", expectDataTiming: true },
+  { href: "/periodic-controls" },
+  { href: "/companies" },
+  { href: "/employees", expectDataTiming: true },
+  { href: "/ppe-management" },
+  { href: "/health-surveillance" },
+  { href: "/osgb/dashboard", expectDataTiming: true },
+  { href: "/osgb/personnel", expectDataTiming: true },
+  { href: "/osgb/assignments", expectDataTiming: true },
+  { href: "/osgb/company-tracking", expectDataTiming: true },
+  { href: "/osgb/capacity" },
+  { href: "/osgb/alerts" },
+  { href: "/osgb/finance", expectDataTiming: true },
+  { href: "/osgb/documents", expectDataTiming: true },
+  { href: "/osgb/tasks" },
+  { href: "/osgb/notes" },
+  { href: "/osgb/analytics" },
+  { href: "/dashboard/certificates" },
+  { href: "/dashboard/certificates/history" },
+  { href: "/safety-library" },
+  { href: "/risk-wizard" },
+  { href: "/risk-editor" },
+  { href: "/capa" },
+  { href: "/bulk-capa" },
+  { href: "/adep-wizard" },
+  { href: "/adep-plans" },
+  { href: "/blueprint-analyzer" },
+  { href: "/evacuation-editor" },
+  { href: "/evacuation-editor/history" },
+  { href: "/reports" },
+  { href: "/isg-bot" },
+  { href: "/annual-plans" },
+  { href: "/nace-query" },
+  { href: "/nace-query/sectors" },
+  { href: "/settings" },
+];
 
 function requireEnv() {
   for (const key of requiredEnv) {
@@ -42,6 +98,17 @@ function recordMetric(metric: string, valueMs: number, route?: string) {
 
   const label = route ? `${metric} ${route}` : metric;
   console.log(`[ux-timing] ${label}: ${rounded}ms`);
+}
+
+function recordViolation(route: string, metric: string, valueMs: number, thresholdMs: number) {
+  const rounded = Number(valueMs.toFixed(2));
+  thresholdViolations.push({
+    route,
+    metric,
+    valueMs: rounded,
+    thresholdMs,
+  });
+  console.log(`[ux-timing] threshold-exceeded ${metric} ${route}: ${rounded}ms > ${thresholdMs}ms`);
 }
 
 async function resetTimings(page: Page) {
@@ -93,30 +160,39 @@ async function login(page: Page) {
   await page.waitForURL((url) => !url.pathname.startsWith("/auth"), { timeout: 30000 });
 }
 
-async function navigateAndMeasure(page: Page, href: string) {
-  await resetTimings(page);
-  await page.locator(`a[href="${href}"]`).first().click();
-  await page.waitForURL(`**${href}`, { timeout: 15000 });
-  await expect(page.locator("h1").first()).toBeVisible({ timeout: 15000 });
+async function measureRoute(page: Page, route: RouteTarget) {
+  await page.goto(route.href, { waitUntil: "domcontentloaded" });
+  await expect(page.locator("body")).toBeVisible({ timeout: 15000 });
 
   const shellTiming = await findTiming(
     page,
-    (entry) => entry.name === `route:${href}:shell` && entry.meta?.phase === "shell",
+    (entry) => entry.name === `route:${route.href}:shell` && entry.meta?.phase === "shell",
+    30000,
   );
+
+  recordMetric("route-shell-ms", shellTiming.durationMs, route.href);
+  if (shellTiming.durationMs >= maxRouteShellMs) {
+    recordViolation(route.href, "route-shell-ms", shellTiming.durationMs, maxRouteShellMs);
+  }
+
+  if (!route.expectDataTiming) {
+    return;
+  }
+
   const dataTiming = await findTiming(
     page,
-    (entry) => entry.name === `route:${href}:data` && entry.meta?.phase === "data",
+    (entry) => entry.name === `route:${route.href}:data` && entry.meta?.phase === "data",
+    30000,
   );
 
-  recordMetric("route-shell-ms", shellTiming.durationMs, href);
-  recordMetric("route-data-ms", dataTiming.durationMs, href);
-
-  expect(shellTiming.durationMs).toBeLessThan(maxRouteShellMs);
-  expect(dataTiming.durationMs).toBeLessThan(maxRouteDataMs);
+  recordMetric("route-data-ms", dataTiming.durationMs, route.href);
+  if (dataTiming.durationMs >= maxRouteDataMs) {
+    recordViolation(route.href, "route-data-ms", dataTiming.durationMs, maxRouteDataMs);
+  }
 
   test.info().annotations.push(
-    { type: "route-shell-ms", description: `${href}=${shellTiming.durationMs.toFixed(2)}` },
-    { type: "route-data-ms", description: `${href}=${dataTiming.durationMs.toFixed(2)}` },
+    { type: "route-shell-ms", description: `${route.href}=${shellTiming.durationMs.toFixed(2)}` },
+    { type: "route-data-ms", description: `${route.href}=${dataTiming.durationMs.toFixed(2)}` },
   );
 }
 
@@ -137,6 +213,7 @@ test.describe("UX timings", () => {
             routeDataMs: maxRouteDataMs,
           },
           metrics: reportMetrics,
+          violations: thresholdViolations,
         },
         null,
         2,
@@ -162,19 +239,31 @@ test.describe("UX timings", () => {
 
     recordMetric("login-ms", loginTiming.durationMs);
 
-    expect(loginTiming.durationMs).toBeLessThan(maxLoginMs);
+    if (loginTiming.durationMs >= maxLoginMs) {
+      recordViolation("login", "login-ms", loginTiming.durationMs, maxLoginMs);
+    }
     test.info().annotations.push({
       type: "login-ms",
       description: loginTiming.durationMs.toFixed(2),
     });
   });
 
-  test("measures route shell and data timings for core pages", async ({ page }) => {
+  test("measures route timings for main application pages", async ({ page }) => {
     await login(page);
 
-    await navigateAndMeasure(page, "/osgb/personnel");
-    await navigateAndMeasure(page, "/osgb/assignments");
-    await navigateAndMeasure(page, "/osgb/documents");
-    await navigateAndMeasure(page, "/osgb/company-tracking");
+    for (const route of routeTargets) {
+      await measureRoute(page, route);
+    }
+
+    if (thresholdViolations.length > 0) {
+      const summary = thresholdViolations
+        .map(
+          (violation) =>
+            `${violation.metric} ${violation.route}: ${violation.valueMs}ms > ${violation.thresholdMs}ms`,
+        )
+        .join("\n");
+
+      throw new Error(`UX timing thresholds exceeded:\n${summary}`);
+    }
   });
 });

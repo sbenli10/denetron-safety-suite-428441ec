@@ -23,6 +23,8 @@ import {
 import { cn } from "@/lib/utils";
 import { createOsgbTask } from "@/lib/osgbOperations";
 import { getOsgbDashboardData, type OsgbDashboardData } from "@/lib/osgbData";
+import { readOsgbPageCache, writeOsgbPageCache } from "@/lib/osgbPageCache";
+import { usePageDataTiming } from "@/hooks/usePageDataTiming";
 
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const getCacheKey = (userId: string) => `osgb:alerts:${userId}`;
@@ -81,6 +83,7 @@ export default function OSGBAlerts() {
   const { user } = useAuth();
   const [data, setData] = useState<OsgbDashboardData | null>(null);
   const [loading, setLoading] = useState(true);
+  usePageDataTiming(loading);
   const [refreshing, setRefreshing] = useState(false);
   const [creatingTaskId, setCreatingTaskId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -89,18 +92,11 @@ export default function OSGBAlerts() {
     if (!user?.id) return;
 
     const cacheKey = getCacheKey(user.id);
-    const cachedRaw = sessionStorage.getItem(cacheKey);
+    const cached = readOsgbPageCache<OsgbDashboardData>(cacheKey, CACHE_TTL_MS);
 
-    if (!forceRefresh && cachedRaw) {
-      try {
-        const cached = JSON.parse(cachedRaw) as { timestamp: number; data: OsgbDashboardData };
-        if (Date.now() - cached.timestamp < CACHE_TTL_MS) {
-          setData(cached.data);
-          setLoading(false);
-        }
-      } catch {
-        sessionStorage.removeItem(cacheKey);
-      }
+    if (!forceRefresh && cached) {
+      setData(cached);
+      setLoading(false);
     }
 
     try {
@@ -113,7 +109,7 @@ export default function OSGBAlerts() {
       const result = await getOsgbDashboardData(user.id);
       setData(result);
       setError(null);
-      sessionStorage.setItem(cacheKey, JSON.stringify({ timestamp: Date.now(), data: result }));
+      writeOsgbPageCache(cacheKey, result);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Uyarı merkezi yüklenemedi.");
     } finally {

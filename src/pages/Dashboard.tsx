@@ -157,7 +157,7 @@ function AnimatedNumber({ value }: { value: number }) {
     return () => window.clearInterval(timer);
   }, [value]);
 
-  return <>{displayValue}</>;
+  return <span className="notranslate" translate="no">{displayValue}</span>;
 }
 
 export default function Dashboard() {
@@ -422,7 +422,7 @@ export default function Dashboard() {
   ];
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8 notranslate" translate="no">
       <RevealBlock>
         <section className="relative overflow-hidden rounded-[24px] border border-cyan-500/20 bg-[radial-gradient(circle_at_top_left,_rgba(34,211,238,0.18),_transparent_32%),radial-gradient(circle_at_80%_20%,_rgba(59,130,246,0.16),_transparent_28%),linear-gradient(135deg,_rgba(15,23,42,0.98),_rgba(10,15,28,0.94))] p-4 shadow-[0_20px_80px_rgba(2,6,23,0.45)] md:rounded-[28px] md:p-8">
         <div className="absolute inset-0 bg-[linear-gradient(120deg,transparent_0%,rgba(255,255,255,0.04)_45%,transparent_100%)]" />

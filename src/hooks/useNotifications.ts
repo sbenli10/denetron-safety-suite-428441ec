@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import type { Notification } from "@/types/notification";
 import { toast } from "sonner";
+import { readPageSessionCache, writePageSessionCache } from "@/lib/pageSessionCache";
 
 type NotificationState = {
   notifications: Notification[];
@@ -13,6 +14,7 @@ type NotificationState = {
 type Listener = (state: NotificationState) => void;
 
 const STALE_MS = 60 * 1000;
+const getNotificationsCacheKey = (userId: string) => `notifications:${userId}`;
 
 const emptyState: NotificationState = {
   notifications: [],
@@ -93,6 +95,7 @@ const fetchNotifications = async (userId: string, force = false) => {
 
       const notifications = mapNotifications(data || []);
       store.lastFetchedAt = Date.now();
+      writePageSessionCache(getNotificationsCacheKey(userId), notifications);
       setState({
         notifications,
         unreadCount: notifications.filter((item) => !item.is_read).length,
@@ -168,6 +171,18 @@ export const useNotifications = () => {
     if (!user?.id) {
       resetStore();
       return;
+    }
+
+    const cached = readPageSessionCache<Notification[]>(
+      getNotificationsCacheKey(user.id),
+      STALE_MS,
+    );
+    if (cached && cached.length > 0) {
+      setState({
+        notifications: cached,
+        unreadCount: cached.filter((item) => !item.is_read).length,
+        loading: false,
+      });
     }
 
     ensureRealtime(user.id);

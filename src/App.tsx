@@ -179,6 +179,7 @@ const App = () => (
               {/* ============================================ */}
 
               <Route path="/auth" element={<Auth />} />
+              <Route path="/landing" element={<Index />} />
               <Route path="/certificate-verify/:code" element={<Suspense fallback={<PageLoader />}><CertificateVerifyPage /></Suspense>} />
               <Route
                 path="/auth/login"

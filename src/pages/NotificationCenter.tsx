@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useNotifications } from "@/hooks/useNotifications";
+import { usePageDataTiming } from "@/hooks/usePageDataTiming";
 import { formatDistanceToNow } from "date-fns";
 import { tr } from "date-fns/locale";
 import { cn } from "@/lib/utils";
@@ -40,7 +41,8 @@ const NotificationIcon = ({ type }: { type: string }) => {
 
 export default function NotificationCenter() {
   const navigate = useNavigate();
-  const { notifications, unreadCount, markAsRead, markAllAsRead, deleteNotification } = useNotifications();
+  const { notifications, unreadCount, loading, markAsRead, markAllAsRead, deleteNotification } = useNotifications();
+  usePageDataTiming(loading);
   const [filter, setFilter] = useState<"all" | "unread" | "important">("all");
   const [selectedCategory, setSelectedCategory] = useState<NotificationCategory | "all">("all");
 
@@ -200,7 +202,13 @@ export default function NotificationCenter() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {filteredNotifications.length === 0 ? (
+          {loading && notifications.length === 0 ? (
+            <div className="space-y-3">
+              {Array.from({ length: 4 }).map((_, index) => (
+                <div key={index} className="h-24 animate-pulse rounded-lg border border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-900" />
+              ))}
+            </div>
+          ) : filteredNotifications.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-12 text-center">
               <AlertCircle className="h-12 w-12 text-muted-foreground opacity-50 mb-3" />
               <p className="text-sm text-muted-foreground">Bu filtrede bildirim bulunamadı</p>

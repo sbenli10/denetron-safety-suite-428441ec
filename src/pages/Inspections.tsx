@@ -42,13 +42,16 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePageDataTiming } from "@/hooks/usePageDataTiming";
 import {
+  getInspectionDetail,
   getInspectionSummary,
   listInspectionsPage,
+  type InspectionDetail,
   type InspectionListItem,
   type InspectionStatus,
   type RiskLevel,
   type InspectionSummary,
 } from "@/lib/inspectionOperations";
+import { readPageSessionCache, writePageSessionCache } from "@/lib/pageSessionCache";
 import { uploadInspectionPhoto } from "@/lib/storage";
 import { generateInspectionsPDF } from "@/lib/inspectionPdfExport";
 import { SendReportModal } from "@/components/SendReportModal";
@@ -66,6 +69,7 @@ interface StatCard {
 
 const statusFilters = ["all", "completed", "in_progress", "draft", "cancelled"] as const;
 const PAGE_SIZE = 24;
+const INSPECTIONS_CACHE_TTL = 5 * 60 * 1000;
 
 const statusConfig = {
   completed: { label: "Tamamlandı", color: "bg-success/10 text-success border-success/30", icon: "✅" },
@@ -98,6 +102,8 @@ export default function Inspections() {
   const [submitting, setSubmitting] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [selectedInspection, setSelectedInspection] = useState<InspectionListItem | null>(null);
+  const [inspectionDetail, setInspectionDetail] = useState<InspectionDetail | null>(null);
+  const [detailsLoading, setDetailsLoading] = useState(false);
   const [sendModalOpen, setSendModalOpen] = useState(false);
   const [sharePreparing, setSharePreparing] = useState(false);
   const [currentReportUrl, setCurrentReportUrl] = useState("");
@@ -113,6 +119,11 @@ export default function Inspections() {
   const [exporting, setExporting] = useState(false);
   const [aiAnalyzing, setAiAnalyzing] = useState(false);
   const location = useLocation();
+  const listCacheKey = activeUserId
+    ? `inspections:list:${activeUserId}:${activeFilter}:${debouncedSearch}:${page}`
+    : null;
+  const summaryCacheKey = activeUserId ? `inspections:summary:${activeUserId}` : null;
+  const activeInspection = inspectionDetail ?? selectedInspection;
 
   useEffect(() => {
     if (location.state?.prefilledNotes) {
@@ -146,6 +157,9 @@ export default function Inspections() {
 
       setInspections(pageData.items);
       setHasNextPage(pageData.hasNextPage);
+      if (listCacheKey) {
+        writePageSessionCache(listCacheKey, pageData);
+      }
     } catch (error: any) {
       toast.error("Denetimler yüklenirken hata oluştu");
       console.error(error);
@@ -161,22 +175,46 @@ export default function Inspections() {
     try {
       const nextSummary = await getInspectionSummary(activeUserId);
       setSummary(nextSummary);
+      if (summaryCacheKey) {
+        writePageSessionCache(summaryCacheKey, nextSummary);
+      }
     } catch (error) {
       console.error("Inspection summary load error:", error);
     } finally {
       setSummaryLoading(false);
     }
-  }, [activeUserId]);
+  }, [activeUserId, summaryCacheKey]);
 
   useEffect(() => {
     if (!activeUserId) return;
+    if (listCacheKey) {
+      const cachedPage = readPageSessionCache<{ items: InspectionListItem[]; hasNextPage: boolean }>(
+        listCacheKey,
+        INSPECTIONS_CACHE_TTL,
+      );
+      if (cachedPage) {
+        setInspections(cachedPage.items);
+        setHasNextPage(cachedPage.hasNextPage);
+        setLoading(false);
+      }
+    }
     void fetchInspections();
-  }, [activeUserId, fetchInspections]);
+  }, [activeUserId, fetchInspections, listCacheKey]);
 
   useEffect(() => {
     if (!activeUserId) return;
+    if (summaryCacheKey) {
+      const cachedSummary = readPageSessionCache<InspectionSummary>(
+        summaryCacheKey,
+        INSPECTIONS_CACHE_TTL,
+      );
+      if (cachedSummary) {
+        setSummary(cachedSummary);
+        setSummaryLoading(false);
+      }
+    }
     void fetchSummary();
-  }, [activeUserId, fetchSummary]);
+  }, [activeUserId, fetchSummary, summaryCacheKey]);
 
   const refreshInspectionData = useCallback(async () => {
     await Promise.all([fetchInspections(), fetchSummary()]);
@@ -337,8 +375,22 @@ export default function Inspections() {
 
   const openInspectionDetails = async (inspection: InspectionListItem) => {
     setSelectedInspection(inspection);
+    setInspectionDetail(null);
     setDetailsOpen(true);
-    await loadLinkedReport(inspection.id);
+    setDetailsLoading(true);
+    try {
+      if (!user) return;
+      const [detail] = await Promise.all([
+        getInspectionDetail(user.id, inspection.id),
+        loadLinkedReport(inspection.id),
+      ]);
+      setInspectionDetail(detail);
+    } catch (error) {
+      console.error("Inspection detail load error:", error);
+      toast.error("Denetim detayları yüklenemedi");
+    } finally {
+      setDetailsLoading(false);
+    }
   };
 
   const openLinkedReport = () => {
@@ -369,7 +421,7 @@ export default function Inspections() {
     }
   };
   const handleOpenShareModal = async () => {
-    if (!user || !selectedInspection) return;
+    if (!user || !activeInspection) return;
 
     if (linkedReport?.url) {
       setCurrentReportUrl(linkedReport.url);
@@ -392,25 +444,25 @@ export default function Inspections() {
         y += 8;
       };
 
-      line("Konum", selectedInspection.location_name);
-      line("Tarih", new Date(selectedInspection.created_at).toLocaleDateString("tr-TR"));
-      line("Durum", statusConfig[selectedInspection.status].label);
-      line("Risk Seviyesi", riskConfig[selectedInspection.risk_level].label);
-      line("Ekipman", selectedInspection.equipment_category || "-");
-      line("Fotoğraf Sayısı", String(selectedInspection.media_urls?.length || 0));
+      line("Konum", activeInspection.location_name);
+      line("Tarih", new Date(activeInspection.created_at).toLocaleDateString("tr-TR"));
+      line("Durum", statusConfig[activeInspection.status].label);
+      line("Risk Seviyesi", riskConfig[activeInspection.risk_level].label);
+      line("Ekipman", activeInspection.equipment_category || "-");
+      line("Fotoğraf Sayısı", String(activeInspection.media_urls?.length || 0));
 
-      if (selectedInspection.notes) {
+      if (activeInspection.notes) {
         y += 2;
         doc.setFontSize(12);
         doc.text("Notlar", 14, y);
         y += 7;
         doc.setFontSize(10);
-        const notesLines = doc.splitTextToSize(selectedInspection.notes, 180);
+        const notesLines = doc.splitTextToSize(activeInspection.notes, 180);
         doc.text(notesLines, 14, y);
       }
 
       const pdfBlob = doc.output("blob");
-      const fileName = `inspection-${selectedInspection.id}.pdf`;
+      const fileName = `inspection-${activeInspection.id}.pdf`;
       const storagePath = `inspection-reports/${user.id}/${fileName}`;
 
       const { error: uploadError } = await supabase.storage
@@ -780,30 +832,7 @@ export default function Inspections() {
                       <span>{inspection.equipment_category}</span>
                     </div>
                   )}
-                  {inspection.media_urls?.length > 0 && (
-                    <div className="flex items-center gap-2">
-                      <span>📷</span>
-                      <span>{inspection.media_urls.length} fotoğraf</span>
-                    </div>
-                  )}
-                  {inspection.notes && (
-                    <div className="flex items-start gap-2">
-                      <span>📝</span>
-                      <span className="line-clamp-2">{inspection.notes}</span>
-                    </div>
-                  )}
                 </div>
-
-                {/* PREVIEW IMAGE */}
-                {inspection.media_urls?.[0] && (
-                  <div className="w-full h-32 rounded-lg overflow-hidden border border-border/50">
-                    <img
-                      src={inspection.media_urls[0]}
-                      alt="Denetim"
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                    />
-                  </div>
-                )}
 
                 {/* ACTION BUTTON */}
                 <Button
@@ -923,21 +952,29 @@ export default function Inspections() {
                   <p className="text-xs text-muted-foreground flex items-center gap-2">
                     📷 Fotoğraf
                   </p>
-                  <p className="font-semibold">{selectedInspection.media_urls?.length || 0} adet</p>
+                  <p className="font-semibold">
+                    {detailsLoading ? "Hesaplaniyor..." : `${inspectionDetail?.media_urls?.length || 0} adet`}
+                  </p>
                 </div>
               </div>
 
               {/* NOTES */}
-              {selectedInspection.notes && (
+              {detailsLoading ? (
+                <div className="glass-card p-4 border border-border/50 space-y-3">
+                  <div className="h-4 w-24 animate-pulse rounded bg-slate-800" />
+                  <div className="h-3 w-full animate-pulse rounded bg-slate-900" />
+                  <div className="h-3 w-4/5 animate-pulse rounded bg-slate-900" />
+                </div>
+              ) : inspectionDetail?.notes ? (
                 <div className="glass-card p-4 border border-border/50 space-y-2">
                   <p className="text-sm font-semibold flex items-center gap-2">
                     <FileText className="h-4 w-4" /> Notlar
                   </p>
                   <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-                    {selectedInspection.notes}
+                    {inspectionDetail.notes}
                   </p>
                 </div>
-              )}
+              ) : null}
 
 
               {/* LINKED REPORT */}
@@ -964,13 +1001,13 @@ export default function Inspections() {
                 )}
               </div>
               {/* PHOTOS */}
-              {selectedInspection.media_urls && selectedInspection.media_urls.length > 0 && (
+              {!detailsLoading && inspectionDetail?.media_urls && inspectionDetail.media_urls.length > 0 && (
                 <div className="space-y-2">
                   <p className="text-sm font-semibold flex items-center gap-2">
                     <Eye className="h-4 w-4" /> Fotoğraflar
                   </p>
                   <div className="grid grid-cols-2 gap-3">
-                    {selectedInspection.media_urls.map((url, idx) => (
+                    {inspectionDetail.media_urls.map((url, idx) => (
                       <div key={idx} className="rounded-lg overflow-hidden border border-border/50 aspect-video">
                         <img
                           src={url}

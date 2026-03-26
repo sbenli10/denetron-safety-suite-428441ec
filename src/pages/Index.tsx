@@ -607,11 +607,11 @@ export default function Index() {
                 </Badge>
               </div>
 
-              <div className="relative mt-6 grid gap-5 2xl:grid-cols-[1.05fr_0.95fr]">
-                <div className="relative h-[520px] overflow-hidden rounded-[30px] border border-white/8 bg-[radial-gradient(circle_at_center,rgba(17,24,39,0.75),rgba(9,13,23,0.96))]">
+              <div className="relative mt-6 grid gap-5">
+                <div className="relative h-[440px] overflow-hidden rounded-[30px] border border-white/8 bg-[radial-gradient(circle_at_center,rgba(17,24,39,0.75),rgba(9,13,23,0.96))]">
                   <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(34,211,238,0.08),transparent_34%),radial-gradient(circle_at_55%_45%,rgba(139,92,246,0.08),transparent_30%)]" />
-                  <div className="absolute left-1/2 top-1/2 h-[340px] w-[340px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-cyan-400/10 landing-pulse" />
-                  <div className="absolute left-1/2 top-1/2 h-[240px] w-[240px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-fuchsia-400/10 landing-pulse" style={{ animationDelay: "1.4s" }} />
+                  <div className="absolute left-1/2 top-1/2 h-[300px] w-[300px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-cyan-400/10 landing-pulse" />
+                  <div className="absolute left-1/2 top-1/2 h-[210px] w-[210px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-fuchsia-400/10 landing-pulse" style={{ animationDelay: "1.4s" }} />
                   <div className="absolute left-1/2 top-1/2 h-[116px] w-[116px] -translate-x-1/2 -translate-y-1/2 rounded-[28px] border border-cyan-400/20 bg-cyan-400/10 p-4 text-center shadow-[0_0_80px_rgba(34,211,238,0.12)]">
                     <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-cyan-400/15 text-cyan-200">
                       <Bot className="h-6 w-6" />
@@ -619,12 +619,12 @@ export default function Index() {
                     <p className="mt-3 text-sm font-semibold text-white">İSG Bot</p>
                     <p className="mt-1 text-xs text-slate-300">Akıllı koordinasyon</p>
                   </div>
-                  <div className="absolute left-[26%] top-[22%] h-px w-[24%] rotate-[18deg] bg-gradient-to-r from-transparent via-cyan-300/50 to-transparent landing-beam" />
-                  <div className="absolute left-[26%] top-[62%] h-px w-[24%] -rotate-[16deg] bg-gradient-to-r from-transparent via-emerald-300/45 to-transparent landing-beam" style={{ animationDelay: "1s" }} />
-                  <div className="absolute right-[25%] top-[24%] h-px w-[24%] -rotate-[18deg] bg-gradient-to-r from-transparent via-fuchsia-300/45 to-transparent landing-beam" style={{ animationDelay: "2s" }} />
-                  <div className="absolute right-[24%] top-[62%] h-px w-[24%] rotate-[14deg] bg-gradient-to-r from-transparent via-amber-300/45 to-transparent landing-beam" style={{ animationDelay: "1.6s" }} />
-                  <div className="absolute left-[42%] top-[18%] h-[16%] w-px bg-gradient-to-b from-transparent via-cyan-300/30 to-transparent landing-beam" style={{ animationDelay: "0.8s" }} />
-                  <div className="absolute left-[57%] top-[66%] h-[15%] w-px bg-gradient-to-b from-transparent via-cyan-300/30 to-transparent landing-beam" style={{ animationDelay: "1.8s" }} />
+                  <div className="absolute left-[24%] top-[23%] h-px w-[21%] rotate-[18deg] bg-gradient-to-r from-transparent via-cyan-300/50 to-transparent landing-beam" />
+                  <div className="absolute left-[24%] top-[63%] h-px w-[21%] -rotate-[16deg] bg-gradient-to-r from-transparent via-emerald-300/45 to-transparent landing-beam" style={{ animationDelay: "1s" }} />
+                  <div className="absolute right-[24%] top-[24%] h-px w-[21%] -rotate-[18deg] bg-gradient-to-r from-transparent via-fuchsia-300/45 to-transparent landing-beam" style={{ animationDelay: "2s" }} />
+                  <div className="absolute right-[23%] top-[63%] h-px w-[21%] rotate-[14deg] bg-gradient-to-r from-transparent via-amber-300/45 to-transparent landing-beam" style={{ animationDelay: "1.6s" }} />
+                  <div className="absolute left-[44%] top-[17%] h-[14%] w-px bg-gradient-to-b from-transparent via-cyan-300/30 to-transparent landing-beam" style={{ animationDelay: "0.8s" }} />
+                  <div className="absolute left-[55%] top-[68%] h-[12%] w-px bg-gradient-to-b from-transparent via-cyan-300/30 to-transparent landing-beam" style={{ animationDelay: "1.8s" }} />
 
                   {moduleNodes.map((node, index) => {
                     const Icon = node.icon;
@@ -632,7 +632,7 @@ export default function Index() {
                     return (
                       <div
                         key={node.title}
-                        className={`landing-float absolute ${node.className} w-[182px] cursor-pointer rounded-[24px] border bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.02))] p-4 shadow-[0_24px_60px_rgba(0,0,0,0.28)] transition-all duration-300 hover:-translate-y-1 ${
+                        className={`landing-float absolute ${node.className} w-[156px] cursor-pointer rounded-[24px] border bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.02))] p-4 shadow-[0_24px_60px_rgba(0,0,0,0.28)] transition-all duration-300 hover:-translate-y-1 ${
                           isActive ? "border-cyan-400/30" : "border-white/10 hover:border-cyan-400/20"
                         }`}
                         style={{ animationDelay: `${index * 0.7}s` }}

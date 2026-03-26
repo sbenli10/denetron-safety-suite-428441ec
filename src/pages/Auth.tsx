@@ -385,30 +385,13 @@ const handleVerify2FA = async (e: React.FormEvent) => {
     }
 
     setLoading(true);
-    let organizationId: string | null = null;
 
     try {
-      // 1. Create organization
       const orgSlug = formData.orgName
         .toLowerCase()
         .trim()
         .replace(/\s+/g, "-")
         .replace(/[^a-z0-9-]/g, "");
-
-      const { data: orgData, error: orgError } = await supabase
-        .from("organizations")
-        .insert({
-          name: formData.orgName.trim(),
-          slug: orgSlug,
-          country: "Türkiye",
-        })
-        .select("id")
-        .single();
-
-      if (orgError) throw new Error(`Organizasyon oluşturulamadı: ${orgError.message}`);
-
-      organizationId = orgData.id;
-      console.log("✅ Organization created:", organizationId);
 
       // 2. Create auth user
       const { data: authData, error: authError } = await supabase.auth.signUp({
@@ -422,34 +405,33 @@ const handleVerify2FA = async (e: React.FormEvent) => {
       });
 
       if (authError) {
-        // Cleanup
-        await supabase.from("organizations").delete().eq("id", organizationId);
         throw new Error(`Hesap oluşturulamadı: ${authError.message}`);
       }
 
       if (!authData?.user?.id) {
-        await supabase.from("organizations").delete().eq("id", organizationId);
         throw new Error("Kullanıcı oluşturulamadı");
       }
 
       console.log("✅ User created:", authData.user.id);
 
-      // 3. Create profile
-      const { error: profileError } = await supabase.from("profiles").insert({
-        id: authData.user.id,
-        organization_id: organizationId,
-        full_name: formData.fullName.trim(),
-        email: formData.email.trim(),
-        role: "admin",
-        is_active: true,
-      });
+      // 3. Bootstrap organization + profile via SECURITY DEFINER RPC
+      const { data: organizationId, error: bootstrapError } = await (supabase as any).rpc(
+        "bootstrap_signup_organization",
+        {
+          p_user_id: authData.user.id,
+          p_full_name: formData.fullName.trim(),
+          p_email: formData.email.trim(),
+          p_org_name: formData.orgName.trim(),
+          p_org_slug: orgSlug,
+          p_country: "Türkiye",
+        },
+      );
 
-      if (profileError) {
-        await supabase.from("organizations").delete().eq("id", organizationId);
-        throw new Error(`Profil oluşturulamadı: ${profileError.message}`);
+      if (bootstrapError) {
+        throw new Error(`Organizasyon oluşturulamadı: ${bootstrapError.message}`);
       }
 
-      console.log("✅ Profile created");
+      console.log("✅ Organization and profile bootstrapped:", organizationId);
 
       // 4. Show verification screen
       setVerifyEmail(formData.email);

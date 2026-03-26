@@ -533,7 +533,7 @@ export default function Index() {
         <main className="flex flex-1 flex-col gap-12 py-10 lg:py-12">
           <section
             id="hero"
-            className="landing-fade-up grid gap-10 2xl:grid-cols-[1.02fr_0.98fr] 2xl:items-center"
+            className="landing-fade-up grid gap-10 2xl:grid-cols-[1.02fr_0.98fr] 2xl:items-start"
             style={{ animationDelay: "0.12s" }}
           >
             <div className="space-y-8">

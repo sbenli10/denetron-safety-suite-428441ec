@@ -8,10 +8,12 @@
   ClipboardCheck,
   FileCheck2,
   LayoutDashboard,
+  Menu,
   ShieldAlert,
   Sparkles,
   Users,
   Workflow,
+  X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -37,6 +39,15 @@ type ModuleNode = {
   previewTitle: string;
   previewCards: PreviewCard[];
   actionLabel: string;
+};
+
+type ProductFeature = {
+  title: string;
+  route: string;
+  detail: string;
+  category: string;
+  icon: typeof Bot;
+  status: string;
 };
 
 const valueProps = [
@@ -77,6 +88,46 @@ const featureCards = [
     icon: BellRing,
   },
 ];
+
+const sectionLinks = [
+  { label: "Ürün", id: "hero" },
+  { label: "Özellikler", id: "ozellikler" },
+  { label: "Akış", id: "akis" },
+  { label: "Güven", id: "guven" },
+  { label: "Fiyatlandırma", id: "fiyatlandirma" },
+];
+
+const productFeatures: ProductFeature[] = [
+  { title: "Yönetici paneli", route: "/", detail: "KPI, kritik başlıklar ve günlük öncelik görünümü", category: "Merkez", icon: LayoutDashboard, status: "Canlı" },
+  { title: "Denetimler", route: "/inspections", detail: "Saha kayıtları, bulgular ve rapor akışı", category: "Denetim", icon: ClipboardCheck, status: "Canlı" },
+  { title: "Bildirimler", route: "/notifications", detail: "Yaklaşan işlemler ve kritik hatırlatmalar", category: "Denetim", icon: BellRing, status: "Canlı" },
+  { title: "Çalışan yönetimi", route: "/employees", detail: "Çalışan bilgileri, durum ve takip kayıtları", category: "Operasyon", icon: Users, status: "Canlı" },
+  { title: "Firma yönetimi", route: "/companies", detail: "Firma bazlı süreç ve sorumluluk görünümü", category: "Operasyon", icon: Building2, status: "Canlı" },
+  { title: "Olay ve aksiyon takibi", route: "/incidents", detail: "Olay kayıtları, aksiyonlar ve süreç takibi", category: "Denetim", icon: Workflow, status: "Canlı" },
+  { title: "Atama yazıları", route: "/assignment-letters", detail: "Belge üretimi ve düzenli arşiv akışı", category: "Belge", icon: FileCheck2, status: "Canlı" },
+  { title: "Sertifikalar", route: "/dashboard/certificates", detail: "Belge merkezi ve geçmiş görünümü", category: "Belge", icon: FileCheck2, status: "Canlı" },
+  { title: "Periyodik kontroller", route: "/periodic-controls", detail: "Kontrol kayıtları ve planlı takip", category: "Denetim", icon: ClipboardCheck, status: "Canlı" },
+  { title: "Sağlık gözetimi", route: "/health-surveillance", detail: "Muayene ve takip tarihleri yönetimi", category: "Operasyon", icon: Users, status: "Canlı" },
+  { title: "OSGB paneli", route: "/osgb/dashboard", detail: "OSGB operasyonunun merkezi görünümü", category: "OSGB", icon: Briefcase, status: "Canlı" },
+  { title: "OSGB personel", route: "/osgb/personnel", detail: "Personel, rol ve uygunluk takibi", category: "OSGB", icon: Users, status: "Canlı" },
+  { title: "OSGB görevlendirme", route: "/osgb/assignments", detail: "Atama ve iş yükü görünürlüğü", category: "OSGB", icon: Workflow, status: "Canlı" },
+  { title: "Şirket takibi", route: "/osgb/company-tracking", detail: "Şirket bazlı süreç, durum ve takip", category: "OSGB", icon: Building2, status: "Canlı" },
+  { title: "Kapasite yönetimi", route: "/osgb/capacity", detail: "Kapasite dengesi ve operasyon planlaması", category: "OSGB", icon: Briefcase, status: "Canlı" },
+  { title: "OSGB uyarıları", route: "/osgb/alerts", detail: "Öncelikli operasyon ve risk uyarıları", category: "OSGB", icon: BellRing, status: "Canlı" },
+  { title: "OSGB finans", route: "/osgb/finance", detail: "Finans akışı ve tahsilat görünürlüğü", category: "OSGB", icon: Briefcase, status: "Canlı" },
+  { title: "OSGB dokümanlar", route: "/osgb/documents", detail: "Evrak, çıktı ve belge yönetimi", category: "OSGB", icon: FileCheck2, status: "Canlı" },
+  { title: "OSGB görevler", route: "/osgb/tasks", detail: "Görevlerin tek ekranda operasyonel takibi", category: "OSGB", icon: Workflow, status: "Canlı" },
+  { title: "Risk sihirbazı", route: "/risk-wizard", detail: "Adım adım risk değerlendirme akışı", category: "Denetim", icon: ShieldAlert, status: "Canlı" },
+  { title: "Risk editörü", route: "/risk-editor", detail: "Detaylı risk düzenleme ve çıktı üretimi", category: "Denetim", icon: ShieldAlert, status: "Canlı" },
+  { title: "Yıllık planlar", route: "/annual-plans", detail: "Plan oluşturma ve tarih bazlı yönetim", category: "Belge", icon: FileCheck2, status: "Canlı" },
+  { title: "Acil durum planları", route: "/adep-plans", detail: "ADEP planları ve düzenli güncelleme akışı", category: "Belge", icon: FileCheck2, status: "Canlı" },
+  { title: "İSG Bot", route: "/isg-bot", detail: "Yapay zekâ destekli analiz ve yorum katmanı", category: "AI", icon: Bot, status: "Canlı" },
+  { title: "Bilgi kütüphanesi", route: "/safety-library", detail: "İSG içerikleri ve doküman erişimi", category: "Belge", icon: FileCheck2, status: "Canlı" },
+  { title: "Raporlar", route: "/reports", detail: "Operasyon, denetim ve çıktı raporlaması", category: "Belge", icon: FileCheck2, status: "Canlı" },
+  { title: "NACE sorgu", route: "/nace-query", detail: "Kod sorgulama ve sektör bazlı görünüm", category: "AI", icon: Sparkles, status: "Canlı" },
+];
+
+const featureCategories = ["Tümü", "Merkez", "Denetim", "Operasyon", "OSGB", "Belge", "AI"];
 
 const moduleNodes: ModuleNode[] = [
   {
@@ -277,11 +328,12 @@ function RevealSection({
   children,
   delay = 0,
   className = "",
+  ...props
 }: {
   children: React.ReactNode;
   delay?: number;
   className?: string;
-}) {
+} & React.HTMLAttributes<HTMLDivElement>) {
   const ref = useRef<HTMLDivElement | null>(null);
   const [visible, setVisible] = useState(false);
 
@@ -307,6 +359,7 @@ function RevealSection({
     <div
       ref={ref}
       className={className}
+      {...props}
       style={{
         opacity: visible ? 1 : 0,
         transform: visible ? "translateY(0px)" : "translateY(28px)",
@@ -321,12 +374,25 @@ function RevealSection({
 export default function Index() {
   const navigate = useNavigate();
   const [activeModule, setActiveModule] = useState(moduleNodes[2].title);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [activeCategory, setActiveCategory] = useState("Tümü");
   const activeModuleDetails = useMemo(
     () => moduleNodes.find((node) => node.title === activeModule) ?? moduleNodes[2],
     [activeModule],
   );
+  const filteredFeatures = useMemo(
+    () =>
+      activeCategory === "Tümü"
+        ? productFeatures
+        : productFeatures.filter((feature) => feature.category === activeCategory),
+    [activeCategory],
+  );
   const marqueeLogos = [...logoSlots, ...logoSlots];
   const ActiveModuleIcon = activeModuleDetails.icon;
+  const scrollToSection = (id: string) => {
+    document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+    setMobileMenuOpen(false);
+  };
 
   return (
     <div className="min-h-screen overflow-x-hidden bg-[#070b15] text-white">
@@ -378,7 +444,7 @@ export default function Index() {
 
       <div className="mx-auto flex min-h-screen max-w-[1440px] flex-col px-5 py-6 sm:px-8 lg:px-10">
         <header
-          className="landing-fade-up flex items-center justify-between rounded-full border border-white/10 bg-white/[0.04] px-4 py-3 backdrop-blur-xl"
+          className="landing-fade-up sticky top-4 z-30 flex items-center justify-between rounded-full border border-white/10 bg-white/[0.04] px-4 py-3 backdrop-blur-xl"
           style={{ animationDelay: "0.05s" }}
         >
           <div className="flex items-center gap-3">
@@ -391,7 +457,7 @@ export default function Index() {
             </div>
           </div>
 
-          <div className="hidden items-center gap-2 lg:flex">
+          <div className="hidden items-center gap-2 xl:flex">
             <Badge className="border-cyan-400/20 bg-cyan-400/10 text-cyan-100">
               Yapay zekâ destekli
             </Badge>
@@ -400,10 +466,31 @@ export default function Index() {
             </Badge>
           </div>
 
+          <nav className="hidden items-center gap-1 lg:flex">
+            {sectionLinks.map((link) => (
+              <button
+                key={link.id}
+                type="button"
+                onClick={() => scrollToSection(link.id)}
+                className="rounded-full px-3 py-2 text-sm text-slate-300 transition-colors hover:bg-white/10 hover:text-white"
+              >
+                {link.label}
+              </button>
+            ))}
+          </nav>
+
           <div className="flex items-center gap-2">
             <Button
               variant="ghost"
-              className="text-slate-200 hover:bg-white/10"
+              size="icon"
+              className="lg:hidden text-slate-200 hover:bg-white/10"
+              onClick={() => setMobileMenuOpen((current) => !current)}
+            >
+              {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+            </Button>
+            <Button
+              variant="ghost"
+              className="hidden text-slate-200 hover:bg-white/10 sm:inline-flex"
               onClick={() => navigate("/auth")}
             >
               Giriş Yap
@@ -418,9 +505,35 @@ export default function Index() {
           </div>
         </header>
 
+        {mobileMenuOpen ? (
+          <div className="landing-fade-up mt-4 rounded-[28px] border border-white/10 bg-[#0f1626]/95 p-4 backdrop-blur-xl lg:hidden">
+            <div className="grid gap-2">
+              {sectionLinks.map((link) => (
+                <button
+                  key={link.id}
+                  type="button"
+                  onClick={() => scrollToSection(link.id)}
+                  className="rounded-2xl border border-white/8 bg-white/[0.03] px-4 py-3 text-left text-sm text-slate-200 transition-colors hover:border-cyan-400/20 hover:bg-white/[0.06]"
+                >
+                  {link.label}
+                </button>
+              ))}
+            </div>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              <Button variant="outline" className="border-white/10 bg-white/[0.04] text-slate-100 hover:bg-white/10" onClick={() => navigate("/auth")}>
+                Giriş Yap
+              </Button>
+              <Button className="bg-cyan-400 text-slate-950 hover:bg-cyan-300" onClick={() => navigate("/auth")}>
+                Ücretsiz Başla
+              </Button>
+            </div>
+          </div>
+        ) : null}
+
         <main className="flex flex-1 flex-col gap-12 py-10 lg:py-12">
           <section
-            className="landing-fade-up grid gap-8 xl:grid-cols-[1.02fr_0.98fr] xl:items-center"
+            id="hero"
+            className="landing-fade-up grid gap-10 2xl:grid-cols-[1.02fr_0.98fr] 2xl:items-center"
             style={{ animationDelay: "0.12s" }}
           >
             <div className="space-y-8">
@@ -494,7 +607,7 @@ export default function Index() {
                 </Badge>
               </div>
 
-              <div className="relative mt-6 grid gap-5 xl:grid-cols-[1.05fr_0.95fr]">
+              <div className="relative mt-6 grid gap-5 2xl:grid-cols-[1.05fr_0.95fr]">
                 <div className="relative h-[520px] overflow-hidden rounded-[30px] border border-white/8 bg-[radial-gradient(circle_at_center,rgba(17,24,39,0.75),rgba(9,13,23,0.96))]">
                   <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(34,211,238,0.08),transparent_34%),radial-gradient(circle_at_55%_45%,rgba(139,92,246,0.08),transparent_30%)]" />
                   <div className="absolute left-1/2 top-1/2 h-[340px] w-[340px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-cyan-400/10 landing-pulse" />
@@ -646,6 +759,79 @@ export default function Index() {
               </div>
             </div>
           </section>
+
+          <RevealSection id="ozellikler" delay={40} className="rounded-[34px] border border-white/10 bg-white/[0.035] p-7">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+              <div>
+                <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Özellikler</p>
+                <h2 className="mt-3 text-3xl font-semibold tracking-[-0.04em] text-white">
+                  Uygulamadaki modüller tek bakışta görülebilir.
+                </h2>
+              </div>
+              <p className="max-w-2xl text-sm leading-7 text-slate-300">
+                Aşağıdaki kartlar İSGVİZYON içinde yer alan gerçek ekranları temsil eder. Kullanıcı,
+                ürünün hangi iş alanlarını kapsadığını bu bölümde doğrudan görebilir.
+              </p>
+            </div>
+
+            <div className="mt-7 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              <div className="md:col-span-2 xl:col-span-3 flex flex-wrap gap-2">
+                {featureCategories.map((category) => (
+                  <button
+                    key={category}
+                    type="button"
+                    onClick={() => setActiveCategory(category)}
+                    className={`rounded-full border px-4 py-2 text-sm transition-colors ${
+                      activeCategory === category
+                        ? "border-cyan-400/25 bg-cyan-400/10 text-cyan-100"
+                        : "border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/[0.06] hover:text-white"
+                    }`}
+                  >
+                    {category}
+                  </button>
+                ))}
+              </div>
+
+              {filteredFeatures.map((feature) => {
+                const Icon = feature.icon;
+                return (
+                <button
+                  key={feature.route}
+                  type="button"
+                  onClick={() => navigate(feature.route)}
+                  className="group rounded-[26px] border border-white/10 bg-[#0f1626] p-5 text-left transition-all duration-300 hover:-translate-y-1 hover:border-cyan-400/20 hover:bg-[#121b2f]"
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex items-start gap-3">
+                      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-cyan-400/20 bg-cyan-400/10 text-cyan-200">
+                        <Icon className="h-5 w-5" />
+                      </div>
+                      <div>
+                      <p className="text-lg font-medium text-white">{feature.title}</p>
+                      <p className="mt-3 text-sm leading-7 text-slate-300">{feature.detail}</p>
+                    </div>
+                    </div>
+                    <div className="flex flex-col items-end gap-2">
+                      <span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-2.5 py-1 text-[11px] uppercase tracking-[0.18em] text-emerald-100">
+                        {feature.status}
+                      </span>
+                      <span className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[11px] uppercase tracking-[0.18em] text-slate-400">
+                        {feature.category}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="mt-4 rounded-[16px] border border-white/8 bg-white/[0.03] px-3 py-2 text-xs uppercase tracking-[0.16em] text-slate-500">
+                    {feature.route}
+                  </div>
+                  <div className="mt-5 flex items-center gap-2 text-sm text-cyan-200">
+                    Modüle git
+                    <ArrowRight className="h-4 w-4 transition-transform duration-300 group-hover:translate-x-1" />
+                  </div>
+                </button>
+              )})}
+            </div>
+          </RevealSection>
+
           <RevealSection delay={60} className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
             {featureCards.map((card) => {
               const Icon = card.icon;
@@ -664,7 +850,7 @@ export default function Index() {
             })}
           </RevealSection>
 
-          <section className="grid gap-6 xl:grid-cols-[1fr_1fr]">
+          <section id="akis" className="grid gap-6 xl:grid-cols-[1fr_1fr]">
             <RevealSection delay={80} className="rounded-[32px] border border-white/10 bg-white/[0.04] p-7">
               <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Nasıl çalışır?</p>
               <h2 className="mt-3 text-3xl font-semibold tracking-[-0.04em] text-white">
@@ -713,7 +899,7 @@ export default function Index() {
             </RevealSection>
           </section>
 
-          <RevealSection delay={140} className="rounded-[34px] border border-white/10 bg-[linear-gradient(135deg,rgba(17,24,39,0.82),rgba(15,23,42,0.94))] p-7">
+          <RevealSection id="guven" delay={140} className="rounded-[34px] border border-white/10 bg-[linear-gradient(135deg,rgba(17,24,39,0.82),rgba(15,23,42,0.94))] p-7">
             <div className="grid gap-8 xl:grid-cols-[0.95fr_1.05fr] xl:items-center">
               <div>
                 <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Güven katmanı</p>
@@ -789,7 +975,7 @@ export default function Index() {
               </div>
             </div>
 
-            <div className="rounded-[34px] border border-white/10 bg-[linear-gradient(145deg,rgba(16,21,34,0.96),rgba(10,15,25,0.92))] p-7">
+            <div id="fiyatlandirma" className="rounded-[34px] border border-white/10 bg-[linear-gradient(145deg,rgba(16,21,34,0.96),rgba(10,15,25,0.92))] p-7">
               <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Fiyatlandırma yaklaşımı</p>
               <h2 className="mt-3 text-3xl font-semibold tracking-[-0.04em] text-white">
                 Kullanım yoğunluğuna göre netleşen, satışa açık paket yapısı.

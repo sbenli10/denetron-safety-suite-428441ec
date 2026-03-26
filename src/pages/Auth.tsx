@@ -358,95 +358,91 @@ const handleVerify2FA = async (e: React.FormEvent) => {
   }
 };
 
-  // ✅ REGISTER HANDLER
   const handleRegister = async (e: React.FormEvent) => {
-    e.preventDefault();
+  e.preventDefault();
 
-    // Validation
-    if (!formData.fullName.trim()) {
-      toast.error("❌ Ad-soyad gerekli");
-      return;
-    }
-    if (!validateEmail(formData.email)) {
-      toast.error("❌ Geçerli e-posta girin");
-      return;
-    }
-    if (!validatePassword(formData.password)) {
-      toast.error("❌ Şifre en az 8 karakter olmalı");
-      return;
-    }
-    if (formData.password !== formData.passwordConfirm) {
-      toast.error("❌ Şifreler eşleşmiyor");
-      return;
-    }
-    if (!formData.orgName.trim()) {
-      toast.error("❌ Organizasyon adı gerekli");
-      return;
-    }
+  if (!formData.fullName.trim()) {
+    toast.error("❌ Ad-soyad gerekli");
+    return;
+  }
 
-    setLoading(true);
+  if (!validateEmail(formData.email)) {
+    toast.error("❌ Geçerli e-posta girin");
+    return;
+  }
 
-    try {
-      const orgSlug = formData.orgName
-        .toLowerCase()
-        .trim()
-        .replace(/\s+/g, "-")
-        .replace(/[^a-z0-9-]/g, "");
+  if (!validatePassword(formData.password)) {
+    toast.error("❌ Şifre en az 8 karakter olmalı");
+    return;
+  }
 
-      // 2. Create auth user
-      const { data: authData, error: authError } = await supabase.auth.signUp({
-        email: formData.email.trim(),
-        password: formData.password,
-        options: {
-          data: {
-            full_name: formData.fullName.trim(),
-          },
+  if (formData.password !== formData.passwordConfirm) {
+    toast.error("❌ Şifreler eşleşmiyor");
+    return;
+  }
+
+  if (!formData.orgName.trim()) {
+    toast.error("❌ Organizasyon adı gerekli");
+    return;
+  }
+
+  setLoading(true);
+
+  try {
+    const orgSlug = formData.orgName
+      .toLowerCase()
+      .trim()
+      .replace(/\s+/g, "-")
+      .replace(/[^a-z0-9-]/g, "");
+
+    const { data: authData, error: authError } = await supabase.auth.signUp({
+      email: formData.email.trim(),
+      password: formData.password,
+      options: {
+        data: {
+          full_name: formData.fullName.trim(),
         },
-      });
+      },
+    });
 
-      if (authError) {
-        throw new Error(`Hesap oluşturulamadı: ${authError.message}`);
-      }
-
-      if (!authData?.user?.id) {
-        throw new Error("Kullanıcı oluşturulamadı");
-      }
-
-      console.log("✅ User created:", authData.user.id);
-
-      // 3. Bootstrap organization + profile via SECURITY DEFINER RPC
-      const { data: organizationId, error: bootstrapError } = await (supabase as any).rpc(
-        "bootstrap_signup_organization",
-        {
-          p_user_id: authData.user.id,
-          p_full_name: formData.fullName.trim(),
-          p_email: formData.email.trim(),
-          p_org_name: formData.orgName.trim(),
-          p_org_slug: orgSlug,
-          p_country: "Türkiye",
-        },
-      );
-
-      if (bootstrapError) {
-        throw new Error(`Organizasyon oluşturulamadı: ${bootstrapError.message}`);
-      }
-
-      console.log("✅ Organization and profile bootstrapped:", organizationId);
-
-      // 4. Show verification screen
-      setVerifyEmail(formData.email);
-      setMode("wait");
-
-      toast.success("✅ Kayıt başarılı!", {
-        description: "E-postanızı kontrol edin",
-      });
-    } catch (error: any) {
-      console.error("❌ Register error:", error);
-      toast.error(error.message);
-    } finally {
-      setLoading(false);
+    if (authError) {
+      throw new Error(`Hesap oluşturulamadı: ${authError.message}`);
     }
-  };
+
+    if (!authData?.user?.id) {
+      throw new Error("Kullanıcı oluşturulamadı");
+    }
+
+    const { error: bootstrapError } = await supabase.rpc(
+      "bootstrap_signup_organization",
+      {
+        p_user_id: authData.user.id,
+        p_full_name: formData.fullName.trim(),
+        p_email: formData.email.trim(),
+        p_org_name: formData.orgName.trim(),
+        p_org_slug: orgSlug,
+        p_country: "Türkiye",
+      },
+    );
+
+    if (bootstrapError) {
+      throw new Error(`Organizasyon oluşturulamadı: ${bootstrapError.message}`);
+    }
+
+    setVerifyEmail(formData.email);
+    setMode("wait");
+
+    toast.success("✅ Kayıt başarılı!", {
+      description: "E-postanızı kontrol edin",
+    });
+  } catch (error: any) {
+    console.error("❌ Register error:", error);
+    toast.error(error.message || "Kayıt sırasında bir hata oluştu");
+  } finally {
+    setLoading(false);
+  }
+};
+
 
   // ✅ Resend email
   const handleResendEmail = async () => {

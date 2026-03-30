@@ -1,4 +1,4 @@
-﻿export type Json =
+export type Json =
   | string
   | number
   | boolean
@@ -925,7 +925,10 @@ export type Database = {
           corrective_action: string
           created_at: string | null
           deadline: string
+          document_urls: Json | null
+          file_urls: Json | null
           id: string
+          media_urls: Json | null
           non_conformity: string
           notes: string | null
           org_id: string
@@ -940,7 +943,10 @@ export type Database = {
           corrective_action: string
           created_at?: string | null
           deadline: string
+          document_urls?: Json | null
+          file_urls?: Json | null
           id?: string
+          media_urls?: Json | null
           non_conformity: string
           notes?: string | null
           org_id: string
@@ -955,7 +961,10 @@ export type Database = {
           corrective_action?: string
           created_at?: string | null
           deadline?: string
+          document_urls?: Json | null
+          file_urls?: Json | null
           id?: string
+          media_urls?: Json | null
           non_conformity?: string
           notes?: string | null
           org_id?: string
@@ -975,6 +984,74 @@ export type Database = {
           },
           {
             foreignKeyName: "capa_records_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "v_dashboard_stats"
+            referencedColumns: ["org_id"]
+          },
+        ]
+      }
+      capa_activity_logs: {
+        Row: {
+          action_type: string
+          capa_record_id: string | null
+          created_at: string
+          description: string | null
+          finding_id: string | null
+          id: string
+          metadata: Json
+          org_id: string | null
+          title: string
+          user_id: string
+        }
+        Insert: {
+          action_type: string
+          capa_record_id?: string | null
+          created_at?: string
+          description?: string | null
+          finding_id?: string | null
+          id?: string
+          metadata?: Json
+          org_id?: string | null
+          title: string
+          user_id: string
+        }
+        Update: {
+          action_type?: string
+          capa_record_id?: string | null
+          created_at?: string
+          description?: string | null
+          finding_id?: string | null
+          id?: string
+          metadata?: Json
+          org_id?: string | null
+          title?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "capa_activity_logs_capa_record_id_fkey"
+            columns: ["capa_record_id"]
+            isOneToOne: false
+            referencedRelation: "capa_records"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "capa_activity_logs_finding_id_fkey"
+            columns: ["finding_id"]
+            isOneToOne: false
+            referencedRelation: "findings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "capa_activity_logs_org_id_fkey"
+            columns: ["org_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "capa_activity_logs_org_id_fkey"
             columns: ["org_id"]
             isOneToOne: false
             referencedRelation: "v_dashboard_stats"
@@ -2386,6 +2463,7 @@ export type Database = {
       profiles: {
         Row: {
           avatar_url: string | null
+          stamp_url: string | null
           created_at: string | null
           department: string | null
           email: string | null
@@ -2408,6 +2486,7 @@ export type Database = {
         }
         Insert: {
           avatar_url?: string | null
+          stamp_url?: string | null
           created_at?: string | null
           department?: string | null
           email?: string | null
@@ -2430,6 +2509,7 @@ export type Database = {
         }
         Update: {
           avatar_url?: string | null
+          stamp_url?: string | null
           created_at?: string | null
           department?: string | null
           email?: string | null

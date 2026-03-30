@@ -646,7 +646,6 @@ const handleVerify2FA = async (e: React.FormEvent) => {
                   Kurumsal hesabını oluştur, ekip üyelerini ekle ve tüm İSG süreçlerini tek panelden yönet.
                 </p>
               </div>
-
               <form onSubmit={handleRegister} className="space-y-4">
                 <div className="space-y-2">
                   <Label className="text-white flex items-center gap-2">

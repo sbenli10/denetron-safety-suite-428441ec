@@ -1,5 +1,5 @@
 ﻿//src\pages\BulkCAPA.tsx
-import { Component, ReactNode, useState, useRef, useEffect } from "react";
+import { Component, ReactNode, useMemo, useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Download,
@@ -17,6 +17,12 @@ import {
   Sparkles,
   AlertCircle,
   AlertTriangle,
+  Building2,
+  Shield,
+  BriefcaseBusiness,
+  ChevronRight,
+  Check,
+  ChevronsUpDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -35,6 +41,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Command,
+  CommandEmpty,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Switch } from "@/components/ui/switch";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
@@ -52,8 +67,9 @@ import {
   ImageRun,
 } from "docx";
 import { saveAs } from "file-saver";
+import { cn } from "@/lib/utils";
 
-// ✅ INTERFACE DEFINITIONS
+// ? INTERFACE DEFINITIONS
 // HazardEntry interface'ine ekle:
 interface HazardEntry {
   id: string;
@@ -61,18 +77,71 @@ interface HazardEntry {
   riskDefinition: string;
   correctiveAction: string;
   preventiveAction: string;
-  importance_level: "Normal" | "Yüksek" | "Kritik";
+  importance_level: "Düşük" | "Orta" | "Yüksek" | "Kritik";
   termin_date: string;
   related_department: string;
-  notification_method: string; // ✅ YENİ ALAN
+  notification_method: string; // ? YENI ALAN
+  responsible_name: string;
+  responsible_role: string;
+  approver_name: string;
+  approver_title: string;
+  include_stamp: boolean;
   media_urls: string[];
   ai_analyzed: boolean;
 }
 
+interface BulkCAPAGeneralInfo {
+  company_name: string;
+  company_logo_url: string | null;
+  provider_logo_url: string | null;
+  area_region: string;
+  observation_range: string;
+  report_date: string;
+  observer_name: string;
+  observer_certificate_no: string;
+  responsible_person: string;
+  employer_representative_title: string;
+  employer_representative_name: string;
+  report_no: string;
+}
+
 interface OrganizationData {
-  id: string; // ✅ EKLE
+  id: string; // ? EKLE
   name: string;
   slug: string;
+  logo_url?: string | null;
+}
+
+interface CompanyOption {
+  id: string;
+  name: string;
+  industry?: string | null;
+  employee_count?: number | null;
+  notes?: string | null;
+  logo_url?: string | null;
+}
+
+interface HistoricalFinding {
+  id: string;
+  inspection_id: string;
+  location_name: string;
+  description: string;
+  risk_definition: string;
+  corrective_action: string;
+  preventive_action: string;
+  priority: HazardEntry["importance_level"];
+  due_date: string | null;
+  created_at: string;
+  is_resolved: boolean;
+  assigned_to: string | null;
+  similarity: number;
+}
+
+interface BulkCAPATemplate {
+  id: string;
+  name: string;
+  payload: any;
+  created_at?: string | null;
 }
 
 interface AIAnalysisResult {
@@ -80,7 +149,14 @@ interface AIAnalysisResult {
   riskDefinition: string;
   correctiveAction: string;
   preventiveAction: string;
-  importance_level: "Normal" | "Yüksek" | "Kritik";
+  importance_level: "Düşük" | "Orta" | "Yüksek" | "Kritik";
+}
+
+interface ProfileContext {
+  full_name: string | null;
+  position: string | null;
+  avatar_url: string | null;
+  stamp_url: string | null;
 }
 
 type ErrorBoundaryProps = {
@@ -90,6 +166,14 @@ type ErrorBoundaryProps = {
 type ErrorBoundaryState = {
   hasError: boolean;
   message: string;
+};
+
+type ModuleCardProps = {
+  eyebrow: string;
+  title: string;
+  badge?: string;
+  className?: string;
+  children: ReactNode;
 };
 
 const coerceText = (value: unknown): string => {
@@ -109,6 +193,45 @@ const buildMediaKey = (url: string, index: number) => {
   return `${head}-${index}`;
 };
 
+const fetchImageBytes = async (url: string) => {
+  try {
+    const response = await fetch(url);
+    if (!response.ok) {
+      throw new Error(`Image fetch failed: ${response.status}`);
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    return new Uint8Array(arrayBuffer);
+  } catch (error) {
+    console.warn("Stamp image could not be loaded for export:", error);
+    return null;
+  }
+};
+
+const ModuleCard = ({ eyebrow, title, badge, className, children }: ModuleCardProps) => (
+  <div
+    className={cn(
+      "group h-full rounded-[20px] border border-border/60 bg-background/70 p-4 shadow-[0_12px_40px_rgba(15,23,42,0.18)] backdrop-blur-sm transition-all duration-300 hover:-translate-y-1 hover:border-primary/35 hover:shadow-[0_18px_48px_rgba(59,130,246,0.16)]",
+      className
+    )}
+  >
+    <div className="flex items-center justify-between gap-3">
+      <div>
+        <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-primary/80">
+          {eyebrow}
+        </p>
+        <h3 className="mt-2 text-base font-bold text-foreground">{title}</h3>
+      </div>
+      {badge ? (
+        <span className="rounded-full bg-primary/10 px-3 py-1 text-[11px] font-semibold text-primary">
+          {badge}
+        </span>
+      ) : null}
+    </div>
+    <div className="mt-4">{children}</div>
+  </div>
+);
+
 const getUserFriendlyErrorMessage = (error: unknown, context?: string) => {
   const raw =
     error instanceof Error
@@ -120,41 +243,41 @@ const getUserFriendlyErrorMessage = (error: unknown, context?: string) => {
   const normalized = raw.toLowerCase();
 
   if (normalized.includes("quota")) {
-    return "Tarayıcı geçici depolama alanı dolduğu için işlem tamamlanamadı. Sayfayı yenileyip tekrar deneyin.";
+    return "Tarayici geçici depolama alani doldugu için islem tamamlanamadi. Sayfayi yenileyip tekrar deneyin.";
   }
   if (normalized.includes("failed to fetch") || normalized.includes("networkerror")) {
-    return "İnternet bağlantısı veya servis erişimi sırasında sorun oluştu. Bağlantıyı kontrol edip tekrar deneyin.";
+    return "Internet baglantisi veya servis erisimi sirasinda sorun olustu. Baglantiyi kontrol edip tekrar deneyin.";
   }
-  if (normalized.includes("google api key") || normalized.includes("api anahtarı")) {
-    return "Yapay zeka servisi için gerekli API anahtarı tanımlı değil.";
+  if (normalized.includes("google api key") || normalized.includes("api anahtari")) {
+    return "Yapay zeka servisi için gerekli API anahtari tanimli degil.";
   }
   if (normalized.includes("generatecontent") || normalized.includes("gemini api error")) {
-    return "Yapay zeka servisi şu anda yanıt vermedi. Birkaç saniye sonra tekrar deneyin.";
+    return "Yapay zeka servisi su anda yanit vermedi. Birkaç saniye sonra tekrar deneyin.";
   }
   if (normalized.includes("no text response") || normalized.includes("parse")) {
-    return "Yapay zeka analizi tamamlandı ancak sonuç okunabilir formatta dönmedi. Tekrar deneyin.";
+    return "Yapay zeka analizi tamamlandi ancak sonuç okunabilir formatta dönmedi. Tekrar deneyin.";
   }
   if (normalized.includes("invalid data url") || normalized.includes("base64") || normalized.includes("empty buffer")) {
-    return "Yüklenen görsellerden biri işlenemedi. Fotoğrafı yeniden yükleyip tekrar deneyin.";
+    return "Yüklenen görsellerden biri islenemedi. Fotografi yeniden yükleyip tekrar deneyin.";
   }
   if (normalized.includes("storage upload")) {
-    return "Rapor dosyası arşive yüklenemedi. Dosya indirilebilir ancak buluta kaydedilemedi.";
+    return "Rapor dosyasi arsive yüklenemedi. Dosya indirilebilir ancak buluta kaydedilemedi.";
   }
   if (normalized.includes("removechild") || normalized.includes("insertbefore") || normalized.includes("notfounderror")) {
-    return "Sayfa görüntüsü beklenmeyen şekilde bozuldu. Sayfayı yenileyip işlemi tekrar başlatın.";
+    return "Sayfa görüntüsü beklenmeyen sekilde bozuldu. Sayfayi yenileyip islemi tekrar baslatin.";
   }
 
   if (context === "analysis") {
-    return "Fotoğraf analizi tamamlanamadı. Fotoğrafları yeniden seçip tekrar deneyin.";
+    return "Fotograf analizi tamamlanamadi. Fotograflari yeniden seçip tekrar deneyin.";
   }
   if (context === "overall-analysis") {
-    return "Genel analiz oluşturulamadı. Mevcut bulgular kaybolmadı, tekrar deneyebilirsiniz.";
+    return "Genel analiz olusturulamadi. Mevcut bulgular kaybolmadi, tekrar deneyebilirsiniz.";
   }
   if (context === "export") {
-    return "Rapor oluşturulurken hata oluştu. Verileriniz duruyor, tekrar deneyebilirsiniz.";
+    return "Rapor olusturulurken hata olustu. Verileriniz duruyor, tekrar deneyebilirsiniz.";
   }
 
-  return raw || "Beklenmeyen bir hata oluştu.";
+  return raw || "Beklenmeyen bir hata olustu.";
 };
 
 class BulkCAPAErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
@@ -182,12 +305,12 @@ class BulkCAPAErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryS
             <div className="flex items-start gap-3">
               <AlertTriangle className="mt-0.5 h-5 w-5 text-destructive" />
               <div className="space-y-2">
-                <h2 className="text-xl font-semibold text-foreground">Bu sayfada bir sorun oluştu</h2>
+                <h2 className="text-xl font-semibold text-foreground">Bu sayfada bir sorun olustu</h2>
                 <p className="text-sm text-muted-foreground">{this.state.message}</p>
                 <div className="flex gap-3">
-                  <Button onClick={() => window.location.reload()}>Sayfayı yenile</Button>
+                  <Button onClick={() => window.location.reload()}>Sayfayi yenile</Button>
                   <Button variant="outline" onClick={() => window.location.assign("/bulk-capa")}>
-                    Sayfayı yeniden aç
+                    Sayfayi yeniden aç
                   </Button>
                 </div>
               </div>
@@ -201,30 +324,94 @@ class BulkCAPAErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryS
   }
 }
 
-// ✅ CONSTANTS
+// ? CONSTANTS
 const DEPARTMENTS = [
-  "İşveren",
-  "Bakım",
+  "Isveren",
+  "Bakim",
   "Üretim",
-  "İnsan Kaynakları",
+  "Insan Kaynaklari",
   "Lojistik",
   "Kalite",
-  "Satış",
+  "Satis",
   "Muhasebe",
-  "Diğer",
+  "Diger",
+];
+
+const ITEM_TEMPLATE_TAGS = [
+  "KKD",
+  "Elektrik",
+  "İstifleme",
+  "Yangın",
+  "Makine",
+  "Depolama",
+  "Düşme Riski",
+  "Kimyasal",
 ];
 
 
 
 const IMPORTANCE_LEVELS = [
-  { value: "Normal", label: "Normal", color: "bg-success/10 text-success" },
+  { value: "Düşük", label: "Düşük", color: "bg-emerald-500/10 text-emerald-600" },
+  { value: "Orta", label: "Orta", color: "bg-success/10 text-success" },
   { value: "Yüksek", label: "Yüksek", color: "bg-warning/10 text-warning" },
   {
     value: "Kritik",
-    label: "🔴 Kritik",
+    label: "Kritik",
     color: "bg-destructive/10 text-destructive",
   },
 ];
+
+const QUICK_START_TEMPLATES = [
+  {
+    id: "electric",
+    title: "Elektrik Riski",
+    hint: "Pano, kablo, priz ve açikta enerji kaynaklari için hizli baslangiç.",
+    importance_level: "Kritik" as const,
+    related_department: "Bakim",
+    notification_method: "E-mail + Telefon",
+    description: "Elektrik güvenligi açisindan uygunsuzluk tespit edildi.",
+    correctiveAction:
+      "- Tehlike olusturan ekipmani derhal güvenli hale getirin\n- Yetkisiz erisimi engelleyin\n- Acil bakim müdahalesini baslatin",
+    preventiveAction:
+      "- Periyodik elektrik kontrollerini planlayin\n- Yetkili personel disinda müdahaleyi engelleyin\n- Kontrol listesine elektrik güvenligi maddeleri ekleyin",
+    dueInDays: 3,
+  },
+  {
+    id: "housekeeping",
+    title: "Düzen ve Temizlik",
+    hint: "Daginiklik, istifleme ve geçis alani uygunsuzluklari için.",
+    importance_level: "Orta" as const,
+    related_department: "Üretim",
+    notification_method: "E-mail",
+    description: "Çalisma alaninda düzen ve temizlik açisindan uygunsuzluk gözlemlendi.",
+    correctiveAction:
+      "- Uygunsuz alani derhal düzenleyin\n- Geçis yollarini açik hale getirin\n- Malzemeleri uygun alanlara tasiyin",
+    preventiveAction:
+      "- Günlük alan kontrolü tanimlayin\n- Sorumlu ekip belirleyin\n- Görsel düzen standartlarini yayinlayin",
+    dueInDays: 7,
+  },
+  {
+    id: "ppe",
+    title: "KKD Eksikligi",
+    hint: "Çalisanlarin koruyucu donanim kullanmadigi durumlar için.",
+    importance_level: "Yüksek" as const,
+    related_department: "Isveren",
+    notification_method: "E-mail + Yüz Yüze",
+    description: "Çalisanlarin gerekli kisisel koruyucu donanimi tam kullanmadigi görüldü.",
+    correctiveAction:
+      "- Eksik KKD kullanimini derhal tamamlatin\n- Ilgili çalisanlara anlik bilgilendirme yapin\n- Saha denetimini kayit altina alin",
+    preventiveAction:
+      "- KKD kullanim egitimini yenileyin\n- Bölüm bazli kontrol plani olusturun\n- KKD stok takibini düzenli hale getirin",
+    dueInDays: 5,
+  },
+] as const;
+
+const DATE_PRESETS = [
+  { label: "3 gün", value: 3 },
+  { label: "7 gün", value: 7 },
+  { label: "14 gün", value: 14 },
+  { label: "30 gün", value: 30 },
+] as const;
 
 const safeJsonParse = (jsonText: string): AIAnalysisResult | null => {
   try {
@@ -234,14 +421,14 @@ const safeJsonParse = (jsonText: string): AIAnalysisResult | null => {
 
     let cleaned = jsonText.trim();
 
-    // ✅ ```json``` markdownı kaldır
+    // ? ```json``` markdowni kaldir
     cleaned = cleaned.replace(/^```json\n?/i, "").replace(/\n?```$/i, "");
     cleaned = cleaned.replace(/^```\n?/i, "").replace(/\n?```$/i, "");
 
-    // ✅ KESIK STRING'İ KONTROL ET
-    // Eğer son karakter tırnak değilse (kesik string), tırnak ekle
+    // ? KESIK STRING'I KONTROL ET
+    // Eger son karakter tirnak degilse (kesik string), tirnak ekle
     if (!cleaned.trim().endsWith("}")) {
-      // Son field kesik kalmış, kapat
+      // Son field kesik kalmis, kapat
       if (cleaned.includes('"') && !cleaned.trim().endsWith('"')) {
         cleaned = cleaned.trim() + '" }';
       } else {
@@ -267,16 +454,16 @@ const safeJsonParse = (jsonText: string): AIAnalysisResult | null => {
     // Trailing comma
     cleaned = cleaned.replace(/,(\s*[}\]])/g, "$1");
 
-    console.log("🔧 Cleaned JSON:", cleaned.substring(0, 300));
+    console.log("?? Cleaned JSON:", cleaned.substring(0, 300));
 
     const parsed = JSON.parse(cleaned);
 
     return {
-      description: parsed.description || "Açıklama alınamadı",
-      riskDefinition: parsed.riskDefinition || "Risk tanımı alınamadı",
-      correctiveAction: parsed.correctiveAction || "- İşlem belirtilmedi",
+      description: parsed.description || "Açiklama alinamadi",
+      riskDefinition: parsed.riskDefinition || "Risk tanimi alinamadi",
+      correctiveAction: parsed.correctiveAction || "- Islem belirtilmedi",
       preventiveAction: parsed.preventiveAction || "- Önlem belirtilmedi",
-      importance_level: parsed.importance_level || "Normal",
+      importance_level: parsed.importance_level || "Orta",
     } as AIAnalysisResult;
   } catch (error) {
     console.error("JSON Parse Error:", error);
@@ -285,24 +472,24 @@ const safeJsonParse = (jsonText: string): AIAnalysisResult | null => {
   }
 };
 
-// ✅ DATA URL TO UINT8ARRAY (Buffer yerine)
+// ? DATA URL TO UINT8ARRAY (Buffer yerine)
 const dataUrlToBuffer = (dataUrl: string): Uint8Array => {
   try {
     if (!dataUrl || !dataUrl.includes(",")) {
       throw new Error("Invalid data URL format");
     }
 
-    // Base64 kısmını al
+    // Base64 kismini al
     const base64Data = dataUrl.split(",")[1];
     
     if (!base64Data) {
       throw new Error("No base64 data found");
     }
 
-    // ✅ atob ile decode et
+    // ? atob ile decode et
     const binaryString = atob(base64Data);
     
-    // ✅ Uint8Array'e çevir
+    // ? Uint8Array'e çevir
     const bytes = new Uint8Array(binaryString.length);
     for (let i = 0; i < binaryString.length; i++) {
       bytes[i] = binaryString.charCodeAt(i);
@@ -319,60 +506,263 @@ const dataUrlToBuffer = (dataUrl: string): Uint8Array => {
   }
 };
 
-// ✅ GENERATE WORD DOCUMENT - SUPABASE STORAGE'A YÜKLE
+const fileToDataUrl = (file: File) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === "string") {
+        resolve(reader.result);
+        return;
+      }
+      reject(new Error("Logo okunamadi"));
+    };
+    reader.onerror = () => reject(reader.error ?? new Error("Logo okunamadi"));
+    reader.readAsDataURL(file);
+  });
+
+const resolveMaybeSignedUrl = async (bucket: string, value?: string | null) => {
+  if (!value) return null;
+  if (/^https?:\/\//i.test(value) || value.startsWith("data:")) return value;
+  const { data } = await supabase.storage.from(bucket).createSignedUrl(value, 3600);
+  return data?.signedUrl || null;
+};
+
+type DocxImageKind = "jpg" | "png" | "gif" | "bmp";
+
+const inferDocxImageType = (value?: string | null): DocxImageKind => {
+  if (!value) return "png";
+  const lower = value.toLowerCase();
+  if (lower.includes("image/jpeg") || lower.includes("image/jpg") || lower.endsWith(".jpg") || lower.endsWith(".jpeg")) {
+    return "jpg";
+  }
+  if (lower.includes("image/gif") || lower.endsWith(".gif")) {
+    return "gif";
+  }
+  if (lower.includes("image/bmp") || lower.endsWith(".bmp")) {
+    return "bmp";
+  }
+  return "png";
+};
+
+// ? GENERATE WORD DOCUMENT - SUPABASE STORAGE'A YÜKLE
 const generateWordDocument = async (
   entries: HazardEntry[],
-  siteName: string,
+  locationName: string,
+  reportCompanyName: string,
   orgData: OrganizationData,
+  selectedCompany: CompanyOption | null,
   user: any,
   orgId: string,
-  overallAnalysis: string
+  overallAnalysis: string,
+  profileContext: ProfileContext | null,
+  generalInfo: BulkCAPAGeneralInfo,
+  options?: {
+    compact?: boolean;
+  }
 ): Promise<Blob> => {
   try {
+    const compact = options?.compact ?? false;
     const today = new Date();
-    const dateStr = today.toLocaleDateString("tr-TR", {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-    });
+    const dateStr =
+      generalInfo.report_date ||
+      today.toLocaleDateString("tr-TR", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      });
+    const effectiveCompanyName = reportCompanyName || orgData?.name || "N/A";
+    const effectiveLocation = generalInfo.area_region || locationName || "N/A";
+    const approverName =
+      [...entries].reverse().find((entry) => entry.approver_name)?.approver_name ||
+      generalInfo.observer_name ||
+      profileContext?.full_name ||
+      user?.email ||
+      "N/A";
+    const approverTitle =
+      [...entries].reverse().find((entry) => entry.approver_title)?.approver_title ||
+      profileContext?.position ||
+      "İş Güvenliği Uzmanı";
+    const companyMetaLine = [
+      selectedCompany?.industry ? `${selectedCompany.industry} sektörü` : null,
+      selectedCompany?.employee_count ? `${selectedCompany.employee_count}+ çalışan` : null,
+      effectiveLocation || null,
+    ]
+      .filter(Boolean)
+      .join(" • ");
+    const documentTitle = compact
+      ? "Tekli Düzeltici ve Önleyici Faaliyet Formu"
+      : "Düzeltici ve Önleyici Faaliyet Formu (DÖF)";
+    const labelCellShading = { fill: "E5E7EB" };
+    const sectionHeaderFill = "E9EEF9";
+    const sectionHeaderText = "1F2937";
+    const subtleTableBorders = {
+      top: { color: "CBD5E1", style: "single", size: 6 },
+      bottom: { color: "CBD5E1", style: "single", size: 6 },
+      left: { color: "CBD5E1", style: "single", size: 6 },
+      right: { color: "CBD5E1", style: "single", size: 6 },
+      insideHorizontal: { color: "CBD5E1", style: "single", size: 4 },
+      insideVertical: { color: "CBD5E1", style: "single", size: 4 },
+    } as const;
+    const sectionTitleSize = compact ? 20 : 24;
+    const sectionCellLabelSize = compact ? 16 : 18;
+    const sectionCellValueSize = compact ? 16 : 18;
+    const mediaWidth = compact ? 240 : 320;
+    const mediaHeight = compact ? 180 : 240;
+    const overallTextSize = compact ? 17 : 20;
+    const approvalTitleSize = compact ? 20 : 22;
+    const approvalSectionLabelSize = compact ? 16 : 18;
+    const approvalBodySize = compact ? 16 : 18;
+    const approvalLeadSize = compact ? 18 : 20;
 
     const sections: any[] = [];
+    const logoImageSource =
+      generalInfo.company_logo_url || selectedCompany?.logo_url || orgData?.logo_url || null;
+    const logoImageBytes = logoImageSource ? await fetchImageBytes(logoImageSource).catch(() => null) : null;
+    const logoImageType = inferDocxImageType(logoImageSource);
+    const providerLogoSource = generalInfo.provider_logo_url || orgData?.logo_url || null;
+    const providerLogoBytes = providerLogoSource ? await fetchImageBytes(providerLogoSource).catch(() => null) : null;
+    const providerLogoType = inferDocxImageType(providerLogoSource);
 
-    // ✅ HEADER SECTION
+    // ? HEADER SECTION
     sections.push(
       new Table({
         width: { size: 100, type: WidthType.PERCENTAGE },
+        borders: subtleTableBorders,
         rows: [
           new TableRow({
             children: [
               new TableCell({
+                width: { size: 22, type: WidthType.PERCENTAGE },
+                children: logoImageBytes
+                  ? [
+                      new Paragraph({
+                        children: [
+                          new ImageRun({
+                            data: logoImageBytes,
+                            type: logoImageType,
+                            transformation: {
+                              width: compact ? 56 : 72,
+                              height: compact ? 56 : 72,
+                            },
+                          }),
+                        ],
+                        alignment: AlignmentType.CENTER,
+                      }),
+                    ]
+                  : [
+                      new Paragraph({
+                        children: [
+                          new TextRun({
+                            text: effectiveCompanyName.slice(0, 2).toUpperCase(),
+                            bold: true,
+                            size: compact ? 24 : 28,
+                            color: "0F172A",
+                          }),
+                        ],
+                        alignment: AlignmentType.CENTER,
+                      }),
+                    ],
+                shading: { fill: "F8FAFC" },
+                margins: { top: 160, bottom: 160, left: 120, right: 120 },
+                borders: {
+                  top: { color: "CBD5E1", space: 1, style: "single", size: 10 },
+                  bottom: { color: "CBD5E1", space: 1, style: "single", size: 10 },
+                  left: { color: "CBD5E1", space: 1, style: "single", size: 10 },
+                  right: { color: "CBD5E1", space: 1, style: "single", size: 10 },
+                },
+              }),
+              new TableCell({
+                width: { size: 78, type: WidthType.PERCENTAGE },
                 children: [
                   new Paragraph({
                     children: [
                       new TextRun({
-                        text: "DÜZELTİCİ VE ÖNLEYİCİ FAALIYET FORMU (DÖF)",
+                        text: documentTitle,
                         bold: true,
-                        size: 24,
+                        size: compact ? 20 : 24,
+                        color: "0F172A",
                       }),
                     ],
-                    alignment: AlignmentType.CENTER,
+                    alignment: AlignmentType.LEFT,
+                    spacing: { after: 80 },
                   }),
+                  new Paragraph({
+                    children: [
+                      new TextRun({
+                        text: effectiveCompanyName,
+                        bold: true,
+                        size: compact ? 18 : 20,
+                        color: "1E293B",
+                      }),
+                    ],
+                  }),
+                  new Paragraph({
+                    children: [
+                      new TextRun({
+                        text: `${effectiveLocation || "Konum belirtilmedi"} • ${dateStr}`,
+                        size: compact ? 14 : 16,
+                        color: "475569",
+                      }),
+                    ],
+                    spacing: { before: 60 },
+                  }),
+                  ...(companyMetaLine
+                    ? [
+                        new Paragraph({
+                          children: [
+                            new TextRun({
+                              text: companyMetaLine,
+                              size: compact ? 14 : 16,
+                              color: "64748B",
+                            }),
+                          ],
+                          spacing: { before: 40 },
+                        }),
+                      ]
+                    : []),
+                  ...([
+                    generalInfo.observation_range
+                      ? new Paragraph({
+                          children: [
+                            new TextRun({
+                              text: `Gözetim Aralığı: ${generalInfo.observation_range}`,
+                              size: 15,
+                              color: "64748B",
+                            }),
+                          ],
+                          spacing: { before: 40 },
+                        })
+                      : null,
+                    [generalInfo.report_no, generalInfo.observer_certificate_no]
+                      .filter(Boolean)
+                      .length
+                      ? new Paragraph({
+                          children: [
+                            new TextRun({
+                              text: [
+                                generalInfo.report_no ? `Rapor No: ${generalInfo.report_no}` : null,
+                                generalInfo.observer_certificate_no
+                                  ? `Sertifika No: ${generalInfo.observer_certificate_no}`
+                                  : null,
+                              ]
+                                .filter(Boolean)
+                                .join(" • "),
+                              size: compact ? 13 : 15,
+                              color: "64748B",
+                            }),
+                          ],
+                          spacing: { before: 30 },
+                        })
+                      : null,
+                  ].filter(Boolean) as Paragraph[]),
                 ],
+                shading: { fill: "F8FAFC" },
+                margins: { top: 160, bottom: 160, left: 160, right: 160 },
                 borders: {
-                  top: { color: "000000", space: 1, style: "single", size: 12 },
-                  bottom: {
-                    color: "000000",
-                    space: 1,
-                    style: "single",
-                    size: 12,
-                  },
-                  left: { color: "000000", space: 1, style: "single", size: 12 },
-                  right: {
-                    color: "000000",
-                    space: 1,
-                    style: "single",
-                    size: 12,
-                  },
+                  top: { color: "CBD5E1", space: 1, style: "single", size: 10 },
+                  bottom: { color: "CBD5E1", space: 1, style: "single", size: 10 },
+                  left: { color: "CBD5E1", space: 1, style: "single", size: 10 },
+                  right: { color: "CBD5E1", space: 1, style: "single", size: 10 },
                 },
               }),
             ],
@@ -383,212 +773,86 @@ const generateWordDocument = async (
 
     sections.push(new Paragraph({ children: [new TextRun("")] }));
 
-    // ✅ INFO TABLE (Firma, Saha, Tarih, vb.)
+    const infoRowLabelSize = compact ? 18 : 20;
+    const infoRowValueSize = compact ? 18 : 20;
+
+    const compactInfoRows = [
+      { label: "Belge Tipi", value: "Tekli DÖF Tek Sayfa Formu" },
+      { label: "Firma Adı", value: effectiveCompanyName },
+      { label: "Bölüm", value: entries[0]?.related_department || "Belirtilmedi" },
+      { label: "Sorumlu Kişi", value: entries[0]?.responsible_name || "Belirtilmedi" },
+      { label: "Termin", value: entries[0]?.termin_date ? new Date(entries[0].termin_date).toLocaleDateString("tr-TR") : "Belirtilmedi" },
+      { label: "Sorumlu Görev", value: entries[0]?.responsible_role || "Belirtilmedi" },
+      { label: "Rapor Tarihi", value: dateStr },
+      { label: "Bildirim Şekli", value: entries[0]?.notification_method || "E-mail" },
+    ];
+
+    const fullInfoRows = [
+      { label: "Firma Adı", value: effectiveCompanyName },
+      { label: "Sertifika No", value: generalInfo.observer_certificate_no || "Belirtilmedi" },
+      { label: "Gözetim Tarih Aralığı", value: generalInfo.observation_range || "Belirtilmedi" },
+      { label: "Sorumlu Kişi", value: generalInfo.responsible_person || "Belirtilmedi" },
+      {
+        label: "İşveren / İşveren Vekili",
+        value:
+          [generalInfo.employer_representative_title, generalInfo.employer_representative_name]
+            .filter(Boolean)
+            .join(" • ") || "Belirtilmedi",
+      },
+      { label: "Rapor No", value: generalInfo.report_no || "Belirtilmedi" },
+      { label: "Alan / Bölge", value: effectiveLocation || "N/A" },
+      { label: "Rapor Tarihi", value: dateStr },
+      { label: "Gözetim Yapan (İSG Uzmanı)", value: generalInfo.observer_name || approverName },
+      { label: "Bulgu Özeti", value: `${entries.length} bulgu (${entries.filter((e) => e.ai_analyzed).length} AI analiz)` },
+      { label: "Bildirim Şekli", value: entries[0]?.notification_method || "E-mail" },
+    ];
+
+    const infoRows = compact ? compactInfoRows : fullInfoRows;
+
+    // ? INFO TABLE (Firma, Saha, Tarih, vb.)
     sections.push(
       new Table({
         width: { size: 100, type: WidthType.PERCENTAGE },
-        rows: [
-          new TableRow({
-            children: [
-              new TableCell({
-                width: { size: 30, type: WidthType.PERCENTAGE },
-                children: [
-                  new Paragraph({
-                    children: [
-                      new TextRun({
-                        text: "FİRMA ADI",
-                        bold: true,
-                        size: 20,
-                      }),
-                    ],
-                  }),
-                ],
-                shading: { fill: "D3D3D3" },
-              }),
-              new TableCell({
-                width: { size: 70, type: WidthType.PERCENTAGE },
-                children: [
-                  new Paragraph({
-                    children: [
-                      new TextRun({
-                        text: orgData?.name || "N/A",
-                        size: 20,
-                      }),
-                    ],
-                  }),
-                ],
-              }),
-            ],
-          }),
-          new TableRow({
-            children: [
-              new TableCell({
-                width: { size: 30, type: WidthType.PERCENTAGE },
-                children: [
-                  new Paragraph({
-                    children: [
-                      new TextRun({
-                        text: "KONUM",
-                        bold: true,
-                        size: 20,
-                      }),
-                    ],
-                  }),
-                ],
-                shading: { fill: "D3D3D3" },
-              }),
-              new TableCell({
-                width: { size: 70, type: WidthType.PERCENTAGE },
-                children: [
-                  new Paragraph({
-                    children: [
-                      new TextRun({
-                        text: siteName || "N/A",
-                        size: 20,
-                      }),
-                    ],
-                  }),
-                ],
-              }),
-            ],
-          }),
-          new TableRow({
-            children: [
-              new TableCell({
-                width: { size: 30, type: WidthType.PERCENTAGE },
-                children: [
-                  new Paragraph({
-                    children: [
-                      new TextRun({
-                        text: "TARİH",
-                        bold: true,
-                        size: 20,
-                      }),
-                    ],
-                  }),
-                ],
-                shading: { fill: "D3D3D3" },
-              }),
-              new TableCell({
-                width: { size: 70, type: WidthType.PERCENTAGE },
-                children: [
-                  new Paragraph({
-                    children: [
-                      new TextRun({
-                        text: dateStr,
-                        size: 20,
-                      }),
-                    ],
-                  }),
-                ],
-              }),
-            ],
-          }),
-          new TableRow({
-            children: [
-              new TableCell({
-                width: { size: 30, type: WidthType.PERCENTAGE },
-                children: [
-                  new Paragraph({
-                    children: [
-                      new TextRun({
-                        text: "İSG UZMANI",
-                        bold: true,
-                        size: 20,
-                      }),
-                    ],
-                  }),
-                ],
-                shading: { fill: "D3D3D3" },
-              }),
-              new TableCell({
-                width: { size: 70, type: WidthType.PERCENTAGE },
-                children: [
-                  new Paragraph({
-                    children: [
-                      new TextRun({
-                        text: user?.email || "N/A",
-                        size: 20,
-                      }),
-                    ],
-                  }),
-                ],
-              }),
-            ],
-          }),
-          new TableRow({
-            children: [
-              new TableCell({
-                width: { size: 30, type: WidthType.PERCENTAGE },
-                children: [
-                  new Paragraph({
-                    children: [
-                      new TextRun({
-                        text: "BULGULAR",
-                        bold: true,
-                        size: 20,
-                      }),
-                    ],
-                  }),
-                ],
-                shading: { fill: "D3D3D3" },
-              }),
-              new TableCell({
-                width: { size: 70, type: WidthType.PERCENTAGE },
-                children: [
-                  new Paragraph({
-                    children: [
-                      new TextRun({
-                        text: `${entries.length} bulgu (${entries.filter((e) => e.ai_analyzed).length} AI analiz)`,
-                        size: 20,
-                      }),
-                    ],
-                  }),
-                ],
-              }),
-            ],
-          }),
-          // ✅ BİLDİRİM ŞEKLİ ROW
-          new TableRow({
-            children: [
-              new TableCell({
-                width: { size: 30, type: WidthType.PERCENTAGE },
-                children: [
-                  new Paragraph({
-                    children: [
-                      new TextRun({
-                        text: "BİLDİRİM ŞEKLİ",
-                        bold: true,
-                        size: 20,
-                      }),
-                    ],
-                  }),
-                ],
-                shading: { fill: "D3D3D3" },
-              }),
-              new TableCell({
-                width: { size: 70, type: WidthType.PERCENTAGE },
-                children: [
-                  new Paragraph({
-                    children: [
-                      new TextRun({
-                        text: entries[0]?.notification_method || "E-mail",
-                        size: 20,
-                      }),
-                    ],
-                  }),
-                ],
-              }),
-            ],
-          }),
-        ],
+        borders: subtleTableBorders,
+        rows: infoRows.map(
+          (row) =>
+            new TableRow({
+              children: [
+                new TableCell({
+                  width: { size: 30, type: WidthType.PERCENTAGE },
+                  children: [
+                    new Paragraph({
+                      children: [new TextRun({ text: row.label, bold: true, size: infoRowLabelSize })],
+                    }),
+                  ],
+                  shading: labelCellShading,
+                }),
+                new TableCell({
+                  width: { size: 70, type: WidthType.PERCENTAGE },
+                  children: [
+                    new Paragraph({
+                      children: [new TextRun({ text: row.value, size: infoRowValueSize })],
+                    }),
+                  ],
+                }),
+              ],
+            })
+        ),
       })
     );
 
     sections.push(new Paragraph({ children: [new TextRun("")] }));
     sections.push(new Paragraph({ children: [new TextRun("")] }));
 
-    // ✅ FINDINGS WITH IMAGES
+    const approverEntry =
+      [...entries].reverse().find((entry) => entry.approver_name || entry.approver_title) ||
+      entries[0];
+    const shouldRenderStamp = Boolean(approverEntry?.include_stamp && profileContext?.stamp_url);
+    const stampImageSource = shouldRenderStamp ? profileContext?.stamp_url || null : null;
+    const stampImageBytes = stampImageSource ? await fetchImageBytes(stampImageSource) : null;
+    const stampImageType = inferDocxImageType(stampImageSource);
+
+    // ? FINDINGS WITH IMAGES
     for (let index = 0; index < entries.length; index++) {
       const entry = entries[index];
 
@@ -597,21 +861,21 @@ const generateWordDocument = async (
         new Paragraph({
           children: [
             new TextRun({
-              text: `MADDE ${index + 1} – UYGUNSUZLUK / RİSK`,
+              text: compact ? "Tekli Uygunsuzluk Kaydı" : `Madde ${index + 1} – Uygunsuzluk / Risk`,
               bold: true,
-              size: 24,
-              color: "FFFFFF",
+              size: sectionTitleSize,
+              color: sectionHeaderText,
             }),
           ],
           alignment: AlignmentType.CENTER,
           spacing: { before: 100, after: 100 },
-          shading: { fill: "000000" },
+          shading: { fill: sectionHeaderFill },
         })
       );
 
       const findingTableRows: TableRow[] = [];
 
-      // ROW 1: BULGU AÇIKLAMASI
+      // ROW 1: Bulgu Açıklaması
       findingTableRows.push(
         new TableRow({
           children: [
@@ -620,16 +884,16 @@ const generateWordDocument = async (
               children: [
                 new Paragraph({
                   children: [
-                    new TextRun({
-                      text: "BULGU AÇIKLAMASI",
+                      new TextRun({
+                      text: "Bulgu Açıklaması",
                       bold: true,
-                      size: 18,
+                      size: sectionCellLabelSize,
                     }),
                   ],
                   alignment: AlignmentType.CENTER,
                 }),
               ],
-              shading: { fill: "D3D3D3" },
+              shading: labelCellShading,
               margins: { top: 100, bottom: 100, left: 100, right: 100 },
             }),
             new TableCell({
@@ -639,7 +903,7 @@ const generateWordDocument = async (
                   children: [
                     new TextRun({
                       text: entry.description,
-                      size: 18,
+                      size: sectionCellValueSize,
                     }),
                   ],
                   alignment: AlignmentType.LEFT,
@@ -651,7 +915,7 @@ const generateWordDocument = async (
         })
       );
 
-      // ROW 2: RİSK TANIMI
+      // ROW 2: Uygunsuzluk Tanımı
       findingTableRows.push(
         new TableRow({
           children: [
@@ -660,16 +924,16 @@ const generateWordDocument = async (
               children: [
                 new Paragraph({
                   children: [
-                    new TextRun({
-                      text: "RİSK TANIMI",
+                      new TextRun({
+                      text: "Uygunsuzluk Tanımı",
                       bold: true,
-                      size: 18,
+                      size: sectionCellLabelSize,
                     }),
                   ],
                   alignment: AlignmentType.CENTER,
                 }),
               ],
-              shading: { fill: "D3D3D3" },
+              shading: labelCellShading,
               margins: { top: 100, bottom: 100, left: 100, right: 100 },
             }),
             new TableCell({
@@ -679,7 +943,7 @@ const generateWordDocument = async (
                   children: [
                     new TextRun({
                       text: entry.riskDefinition,
-                      size: 18,
+                      size: sectionCellValueSize,
                     }),
                   ],
                   alignment: AlignmentType.LEFT,
@@ -691,7 +955,7 @@ const generateWordDocument = async (
         })
       );
 
-      // ROW 3: DÜZELTICI FAALIYET
+      // ROW 3: Düzeltici Faaliyet
       findingTableRows.push(
         new TableRow({
           children: [
@@ -700,16 +964,16 @@ const generateWordDocument = async (
               children: [
                 new Paragraph({
                   children: [
-                    new TextRun({
-                      text: "DÜZELTICI FAALIYET",
-                      bold: true,
-                      size: 18,
-                    }),
+                      new TextRun({
+                        text: "Düzeltici Faaliyet",
+                        bold: true,
+                        size: sectionCellLabelSize,
+                      }),
                   ],
                   alignment: AlignmentType.CENTER,
                 }),
               ],
-              shading: { fill: "D3D3D3" },
+              shading: labelCellShading,
               margins: { top: 100, bottom: 100, left: 100, right: 100 },
             }),
             new TableCell({
@@ -719,7 +983,7 @@ const generateWordDocument = async (
                   children: [
                     new TextRun({
                       text: entry.correctiveAction,
-                      size: 18,
+                      size: sectionCellValueSize,
                     }),
                   ],
                   alignment: AlignmentType.LEFT,
@@ -731,7 +995,7 @@ const generateWordDocument = async (
         })
       );
 
-      // ROW 4: ÖNLEYICI FAALIYET
+      // ROW 4: Önleyici Faaliyet
       findingTableRows.push(
         new TableRow({
           children: [
@@ -740,16 +1004,16 @@ const generateWordDocument = async (
               children: [
                 new Paragraph({
                   children: [
-                    new TextRun({
-                      text: "ÖNLEYICI FAALIYET",
-                      bold: true,
-                      size: 18,
-                    }),
+                      new TextRun({
+                        text: "Önleyici Faaliyet",
+                        bold: true,
+                        size: sectionCellLabelSize,
+                      }),
                   ],
                   alignment: AlignmentType.CENTER,
                 }),
               ],
-              shading: { fill: "D3D3D3" },
+              shading: labelCellShading,
               margins: { top: 100, bottom: 100, left: 100, right: 100 },
             }),
             new TableCell({
@@ -759,7 +1023,7 @@ const generateWordDocument = async (
                   children: [
                     new TextRun({
                       text: entry.preventiveAction,
-                      size: 18,
+                      size: sectionCellValueSize,
                     }),
                   ],
                   alignment: AlignmentType.LEFT,
@@ -771,7 +1035,7 @@ const generateWordDocument = async (
         })
       );
 
-      // ROW 5: BÖLÜM
+      // ROW 5: Bölüm
       findingTableRows.push(
         new TableRow({
           children: [
@@ -781,15 +1045,15 @@ const generateWordDocument = async (
                 new Paragraph({
                   children: [
                     new TextRun({
-                      text: "BÖLÜM",
+                      text: "Bölüm",
                       bold: true,
-                      size: 18,
+                      size: sectionCellLabelSize,
                     }),
                   ],
                   alignment: AlignmentType.CENTER,
                 }),
               ],
-              shading: { fill: "D3D3D3" },
+              shading: labelCellShading,
               margins: { top: 100, bottom: 100, left: 100, right: 100 },
             }),
             new TableCell({
@@ -799,7 +1063,7 @@ const generateWordDocument = async (
                   children: [
                     new TextRun({
                       text: entry.related_department,
-                      size: 18,
+                      size: sectionCellValueSize,
                     }),
                   ],
                   alignment: AlignmentType.LEFT,
@@ -811,7 +1075,7 @@ const generateWordDocument = async (
         })
       );
 
-      // ROW 6: ÖNEMLİLİK
+      // ROW 6: Önemlilik
       findingTableRows.push(
         new TableRow({
           children: [
@@ -820,16 +1084,16 @@ const generateWordDocument = async (
               children: [
                 new Paragraph({
                   children: [
-                    new TextRun({
-                      text: "ÖNEMLİLİK",
-                      bold: true,
-                      size: 18,
-                    }),
+                      new TextRun({
+                        text: "Önemlilik",
+                        bold: true,
+                        size: sectionCellLabelSize,
+                      }),
                   ],
                   alignment: AlignmentType.CENTER,
                 }),
               ],
-              shading: { fill: "D3D3D3" },
+              shading: labelCellShading,
               margins: { top: 100, bottom: 100, left: 100, right: 100 },
             }),
             new TableCell({
@@ -840,7 +1104,7 @@ const generateWordDocument = async (
                     new TextRun({
                       text: entry.importance_level,
                       bold: true,
-                      size: 18,
+                      size: sectionCellValueSize,
                       color:
                         entry.importance_level === "Kritik"
                           ? "FF0000"
@@ -858,7 +1122,7 @@ const generateWordDocument = async (
         })
       );
 
-      // ROW 7: TERMİN
+      // ROW 7: Termin
       findingTableRows.push(
         new TableRow({
           children: [
@@ -867,16 +1131,16 @@ const generateWordDocument = async (
               children: [
                 new Paragraph({
                   children: [
-                    new TextRun({
-                      text: "TERMİN",
-                      bold: true,
-                      size: 18,
-                    }),
+                      new TextRun({
+                        text: "Termin",
+                        bold: true,
+                        size: sectionCellLabelSize,
+                      }),
                   ],
                   alignment: AlignmentType.CENTER,
                 }),
               ],
-              shading: { fill: "D3D3D3" },
+              shading: labelCellShading,
               margins: { top: 100, bottom: 100, left: 100, right: 100 },
             }),
             new TableCell({
@@ -888,7 +1152,7 @@ const generateWordDocument = async (
                       text: new Date(entry.termin_date).toLocaleDateString(
                         "tr-TR"
                       ),
-                      size: 18,
+                      size: sectionCellValueSize,
                     }),
                   ],
                   alignment: AlignmentType.CENTER,
@@ -900,7 +1164,7 @@ const generateWordDocument = async (
         })
       );
 
-      // ✅ FOTOĞRAFLAR
+      // ? Fotoğraflar
       if (entry.media_urls && entry.media_urls.length > 0) {
         findingTableRows.push(
           new TableRow({
@@ -911,16 +1175,16 @@ const generateWordDocument = async (
                   new Paragraph({
                     children: [
                       new TextRun({
-                        text: `FOTOĞRAFLAR (${entry.media_urls.length})`,
+                        text: `Fotoğraflar (${entry.media_urls.length})`,
                         bold: true,
-                        size: 20,
-                        color: "FFFFFF",
+                        size: compact ? 18 : 20,
+                        color: sectionHeaderText,
                       }),
                     ],
                     alignment: AlignmentType.CENTER,
                   }),
                 ],
-                shading: { fill: "000000" },
+                shading: { fill: sectionHeaderFill },
                 margins: { top: 100, bottom: 100 },
               }),
             ],
@@ -944,8 +1208,8 @@ const generateWordDocument = async (
                             data: uint8Array as any,
                             type: "jpg",
                             transformation: {
-                              width: 320,
-                              height: 240,
+                              width: mediaWidth,
+                              height: mediaHeight,
                             },
                           }),
                         ],
@@ -971,7 +1235,7 @@ const generateWordDocument = async (
                           new TextRun({
                             text: `Fotoğraf ${imgIdx + 1}/${entry.media_urls.length}`,
                             italics: true,
-                            size: 18,
+                            size: sectionCellValueSize,
                             color: "666666",
                           }),
                         ],
@@ -993,6 +1257,7 @@ const generateWordDocument = async (
 
       const findingTable = new Table({
         width: { size: 100, type: WidthType.PERCENTAGE },
+        borders: subtleTableBorders,
         rows: findingTableRows,
       });
 
@@ -1011,21 +1276,22 @@ const generateWordDocument = async (
         new Paragraph({
           children: [
             new TextRun({
-              text: "GENEL DEĞERLENDİRME",
+              text: "Genel Değerlendirme",
               bold: true,
-              size: 24,
-              color: "FFFFFF",
+              size: sectionTitleSize,
+              color: sectionHeaderText,
             }),
           ],
           alignment: AlignmentType.CENTER,
           spacing: { before: 200, after: 120 },
-          shading: { fill: "000000" },
+          shading: { fill: sectionHeaderFill },
         })
       );
 
       sections.push(
         new Table({
           width: { size: 100, type: WidthType.PERCENTAGE },
+          borders: subtleTableBorders,
           rows: [
             new TableRow({
               children: [
@@ -1035,7 +1301,7 @@ const generateWordDocument = async (
                       children: [
                         new TextRun({
                           text: overallAnalysis,
-                          size: 20,
+                          size: overallTextSize,
                         }),
                       ],
                       alignment: AlignmentType.LEFT,
@@ -1051,7 +1317,259 @@ const generateWordDocument = async (
 
       sections.push(new Paragraph({ children: [new TextRun("")] }));
     }
-    // ✅ Create document
+
+    sections.push(
+      new Paragraph({
+        children: [
+          new TextRun({
+            text: "Onaylayan (İş Güvenliği Uzmanı)",
+            bold: true,
+            size: approvalTitleSize,
+          }),
+        ],
+        spacing: { before: 220, after: 140 },
+      })
+    );
+
+    sections.push(
+      new Table({
+        width: { size: 100, type: WidthType.PERCENTAGE },
+        borders: subtleTableBorders,
+        rows: [
+          new TableRow({
+            children: [
+              new TableCell({
+                width: { size: 55, type: WidthType.PERCENTAGE },
+                children: [
+                  new Paragraph({
+                    children: [
+                      new TextRun({
+                        text: "Kurum ve Uzman Bilgileri",
+                        bold: true,
+                        size: approvalSectionLabelSize,
+                        color: "6B7280",
+                      }),
+                    ],
+                    alignment: AlignmentType.CENTER,
+                  }),
+                ],
+                shading: { fill: "E5E7EB" },
+                margins: { top: 80, bottom: 80, left: 120, right: 120 },
+              }),
+              new TableCell({
+                width: { size: 45, type: WidthType.PERCENTAGE },
+                children: [
+                  new Paragraph({
+                    children: [
+                      new TextRun({
+                        text: "Kaşe / İmza",
+                        bold: true,
+                        size: approvalSectionLabelSize,
+                        color: "6B7280",
+                      }),
+                    ],
+                    alignment: AlignmentType.CENTER,
+                  }),
+                ],
+                shading: { fill: "E5E7EB" },
+                margins: { top: 80, bottom: 80, left: 120, right: 120 },
+              }),
+            ],
+          }),
+          new TableRow({
+            children: [
+              new TableCell({
+                width: { size: 55, type: WidthType.PERCENTAGE },
+                children: [
+                  new Paragraph({
+                    children: [
+                      new TextRun({
+                        text: "Kurum",
+                        bold: true,
+                        size: compact ? 15 : 16,
+                        color: "6B7280",
+                      }),
+                    ],
+                  }),
+                  new Paragraph({
+                    children: [
+                      new TextRun({
+                        text: effectiveCompanyName,
+                        bold: true,
+                        size: approvalBodySize,
+                      }),
+                    ],
+                  }),
+                  new Paragraph({
+                    children: [
+                      new TextRun({
+                        text: "Kurum onay alanı",
+                        size: compact ? 15 : 16,
+                        color: "6B7280",
+                      }),
+                    ],
+                    spacing: { before: 40, after: 120 },
+                  }),
+                  new Paragraph({
+                    children: [
+                      new TextRun({
+                        text: "Onaylayan",
+                        bold: true,
+                        size: compact ? 15 : 16,
+                        color: "6B7280",
+                      }),
+                    ],
+                    spacing: { before: 20 },
+                  }),
+                  new Paragraph({
+                    children: [
+                      new TextRun({
+                        text: approverName,
+                        bold: true,
+                        size: approvalLeadSize,
+                      }),
+                    ],
+                  }),
+                  new Paragraph({
+                    children: [
+                      new TextRun({
+                        text: approverTitle,
+                        size: approvalBodySize,
+                        italics: true,
+                        color: "4B5563",
+                      }),
+                    ],
+                    spacing: { before: 70 },
+                  }),
+                  new Paragraph({
+                    children: [
+                      new TextRun({
+                        text: "Onaylayan uzman bilgileri resmî rapora eklenmiştir.",
+                        size: compact ? 15 : 16,
+                        color: "6B7280",
+                      }),
+                    ],
+                    spacing: { before: 120 },
+                  }),
+                  new Paragraph({
+                    children: [
+                      new TextRun({
+                        text: "Yetkili İmza: ________________________________",
+                        size: approvalBodySize,
+                        bold: true,
+                      }),
+                    ],
+                    spacing: { before: 220 },
+                  }),
+                  new Paragraph({
+                    children: [
+                      new TextRun({
+                        text: `Onay Tarihi: ${dateStr}`,
+                        size: compact ? 15 : 16,
+                        color: "6B7280",
+                      }),
+                    ],
+                    spacing: { before: 90 },
+                  }),
+                ],
+                margins: { top: 140, bottom: 140, left: 140, right: 140 },
+                shading: { fill: "F8FAFC" },
+              }),
+              new TableCell({
+                width: { size: 45, type: WidthType.PERCENTAGE },
+                children: stampImageBytes
+                  ? [
+                      ...(providerLogoBytes
+                        ? [
+                            new Paragraph({
+                              children: [
+                                new ImageRun({
+                                  data: providerLogoBytes,
+                                  type: providerLogoType,
+                                  transformation: {
+                                    width: 36,
+                                    height: 36,
+                                  },
+                                }),
+                              ],
+                              alignment: AlignmentType.CENTER,
+                              spacing: { after: 40 },
+                            }),
+                          ]
+                        : []),
+                      new Paragraph({
+                        children: [
+                          new TextRun({
+                            text: effectiveCompanyName,
+                            bold: true,
+                            size: compact ? 15 : 16,
+                            color: "4B5563",
+                          }),
+                        ],
+                        alignment: AlignmentType.CENTER,
+                      }),
+                      new Paragraph({
+                        children: [
+                          new ImageRun({
+                            data: stampImageBytes,
+                            type: stampImageType,
+                            transformation: {
+                              width: compact ? 110 : 140,
+                              height: compact ? 110 : 140,
+                            },
+                          }),
+                        ],
+                        alignment: AlignmentType.CENTER,
+                        spacing: { before: 60, after: 60 },
+                      }),
+                      new Paragraph({
+                        children: [
+                          new TextRun({
+                            text: "Kurumsal Kaşe / Mühür",
+                            size: compact ? 15 : 16,
+                            italics: true,
+                            color: "6B7280",
+                          }),
+                        ],
+                        alignment: AlignmentType.CENTER,
+                      }),
+                    ]
+                  : [
+                      new Paragraph({
+                        children: [
+                          new TextRun({
+                            text: approverEntry?.include_stamp
+                              ? "Kaşe veya mühür yüklenmemiş."
+                              : "Kaşe eklenmeden oluşturuldu.",
+                            italics: true,
+                            size: approvalBodySize,
+                            color: "6B7280",
+                          }),
+                        ],
+                        alignment: AlignmentType.CENTER,
+                      }),
+                      new Paragraph({
+                        children: [
+                          new TextRun({
+                            text: `Onay Tarihi: ${dateStr}`,
+                            size: compact ? 15 : 16,
+                            color: "6B7280",
+                          }),
+                        ],
+                        alignment: AlignmentType.CENTER,
+                        spacing: { before: 120 },
+                      }),
+                    ],
+                margins: { top: 140, bottom: 140, left: 140, right: 140 },
+                shading: { fill: "F8FAFC" },
+              }),
+            ],
+          }),
+        ],
+      })
+    );
+
+    // ? Create document
     const doc = new Document({
       sections: [
         {
@@ -1060,33 +1578,76 @@ const generateWordDocument = async (
       ],
     });
 
-    // ✅ Generate blob and return
+    // ? Generate blob and return
     const blob = await Packer.toBlob(doc);
     return blob;
 
   } catch (error: any) {
     console.error("Word generation error:", error);
-    throw error; // ✅ Hata fırlat, handleSaveAndExport yakalayacak
+    throw error; // ? Hata firlat, handleSaveAndExport yakalayacak
   }
 };
 
-// ✅ MAIN COMPONENT
+// ? MAIN COMPONENT
 function BulkCAPAContent() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const clientLogoInputRef = useRef<HTMLInputElement>(null);
+  const providerLogoInputRef = useRef<HTMLInputElement>(null);
   const dropZoneRef = useRef<HTMLDivElement>(null);
   const activeAnalysisRef = useRef(0);
   const [entries, setEntries] = useState<HazardEntry[]>([]);
-  const [siteName, setSiteName] = useState("");
   const [orgData, setOrgData] = useState<OrganizationData | null>(null);
+  const [profileContext, setProfileContext] = useState<ProfileContext | null>(null);
+  const [companies, setCompanies] = useState<CompanyOption[]>([]);
+  const [historicalFindings, setHistoricalFindings] = useState<HistoricalFinding[]>([]);
+  const [historicalLoading, setHistoricalLoading] = useState(false);
+  const [companyInputMode, setCompanyInputMode] = useState<"existing" | "manual">("existing");
+  const [selectedCompanyId, setSelectedCompanyId] = useState("");
+  const [manualCompanyName, setManualCompanyName] = useState("");
+  const [companyComboboxOpen, setCompanyComboboxOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewFocusEntryId, setPreviewFocusEntryId] = useState<string | null>(null);
+  const [editingEntryId, setEditingEntryId] = useState<string | null>(null);
+  const [lastSingleInspectionId, setLastSingleInspectionId] = useState<string | null>(null);
+  const [lastSingleCreatedAt, setLastSingleCreatedAt] = useState<string | null>(null);
+  const [editBaselineEntry, setEditBaselineEntry] = useState<HazardEntry | null>(null);
+  const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [createMode, setCreateMode] = useState<"single" | "bulk">("single");
+  const [createStep, setCreateStep] = useState<"general" | "items">("general");
   const [dragActive, setDragActive] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [overallAnalysis, setOverallAnalysis] = useState("");
   const [overallAnalyzing, setOverallAnalyzing] = useState(false);
+  const [templateDialogOpen, setTemplateDialogOpen] = useState(false);
+  const [templateDialogMode, setTemplateDialogMode] = useState<"general" | "item">("general");
+  const [templateName, setTemplateName] = useState("");
+  const [savedTemplates, setSavedTemplates] = useState<BulkCAPATemplate[]>([]);
+  const [savedItemTemplates, setSavedItemTemplates] = useState<BulkCAPATemplate[]>([]);
+  const [templatesLoading, setTemplatesLoading] = useState(false);
+  const [suggestedGeneralTemplate, setSuggestedGeneralTemplate] = useState<BulkCAPATemplate | null>(null);
+  const [suggestedTemplateReason, setSuggestedTemplateReason] = useState("");
+  const [recentHeaderSuggestion, setRecentHeaderSuggestion] = useState<BulkCAPAGeneralInfo | null>(null);
+  const [recentHeaderSuggestionReason, setRecentHeaderSuggestionReason] = useState("");
+  const [itemTemplateTags, setItemTemplateTags] = useState<string[]>([]);
+  const [generalInfo, setGeneralInfo] = useState<BulkCAPAGeneralInfo>({
+    company_name: "",
+    company_logo_url: null,
+    provider_logo_url: null,
+    area_region: "",
+    observation_range: "",
+    report_date: new Date().toISOString().split("T")[0],
+    observer_name: "",
+    observer_certificate_no: "",
+    responsible_person: "İŞVEREN / İŞVEREN VEKİLİ",
+    employer_representative_title: "İşveren / İşveren Vekili",
+    employer_representative_name: "",
+    report_no: "",
+  });
+  const [companySearch, setCompanySearch] = useState("");
 
   useEffect(() => {
     return () => {
@@ -1100,13 +1661,685 @@ function BulkCAPAContent() {
     riskDefinition: "",
     correctiveAction: "",
     preventiveAction: "",
-    importance_level: "Normal",
+    importance_level: "Orta",
     termin_date: "",
-    related_department: "Diğer",
-    notification_method: "E-mail", // ✅ DEFAULT DEĞER
+    related_department: "Diger",
+    notification_method: "E-mail", // ? DEFAULT DEGER
+    responsible_name: "",
+    responsible_role: "",
+    approver_name: "",
+    approver_title: "İş Güvenliği Uzmanı",
+    include_stamp: true,
     media_urls: [],
     ai_analyzed: false,
   });
+
+  const requiredFieldChecks = [
+    { label: "Bulgu açiklamasi", ready: newEntry.description.trim().length > 0 },
+    { label: "Risk tanimi", ready: newEntry.riskDefinition.trim().length > 0 },
+    { label: "Düzeltici faaliyet", ready: newEntry.correctiveAction.trim().length > 0 },
+    { label: "Termin tarihi", ready: newEntry.termin_date.trim().length > 0 },
+    { label: "Sorumlu kisi", ready: newEntry.responsible_name.trim().length > 0 },
+  ];
+  const completedFieldCount = requiredFieldChecks.filter((field) => field.ready).length;
+  const formReady = completedFieldCount === requiredFieldChecks.length;
+  const aiEntryCount = entries.filter((entry) => entry.ai_analyzed).length;
+  const criticalEntryCount = entries.filter((entry) => entry.importance_level === "Kritik").length;
+  const nearestDueEntry = entries
+    .filter((entry) => entry.termin_date)
+    .sort((a, b) => a.termin_date.localeCompare(b.termin_date))[0];
+  const activeHeroSummary = newEntry.ai_analyzed
+    ? "AI taslagi hazir. Simdi kuruma uygun termin, sorumlu ve bildirim tercihlerini netlestirin."
+    : "Fotograf, not veya hazir sablonla baslayin. Sistem ilk taslagi üretirken siz yalnizca son karari verin.";
+  const selectedCompany = companies.find((company) => company.id === selectedCompanyId) || null;
+  const selectedCompanyName =
+    companyInputMode === "manual"
+      ? manualCompanyName.trim()
+      : selectedCompany?.name || "";
+  const reportCompanyName = generalInfo.company_name || selectedCompanyName || "";
+  const effectiveLocation = generalInfo.area_region || reportCompanyName;
+  const filteredCompanies = useMemo(() => {
+    const query = companySearch.trim().toLocaleLowerCase("tr-TR");
+    if (!query) return companies;
+    return companies.filter((company) =>
+      [company.name, company.industry, company.notes]
+        .filter(Boolean)
+        .some((value) => String(value).toLocaleLowerCase("tr-TR").includes(query))
+    );
+  }, [companies, companySearch]);
+  const previewEntries = useMemo(
+    () => (previewFocusEntryId ? entries.filter((entry) => entry.id === previewFocusEntryId) : entries),
+    [entries, previewFocusEntryId]
+  );
+  const focusedPreviewEntry = useMemo(
+    () => (previewFocusEntryId ? entries.find((entry) => entry.id === previewFocusEntryId) || null : null),
+    [entries, previewFocusEntryId]
+  );
+  const singleEditDiffs = useMemo(() => {
+    if (!editingEntryId || !editBaselineEntry) return [];
+
+    const fields: Array<{ key: keyof HazardEntry; label: string; priority: number; format?: (value: any) => string }> = [
+      { key: "importance_level", label: "Öncelik", priority: 0 },
+      { key: "termin_date", label: "Termin tarihi", priority: 1, format: (value) => (value ? new Date(value).toLocaleDateString("tr-TR") : "Belirtilmedi") },
+      { key: "responsible_name", label: "Sorumlu kişi", priority: 2 },
+      { key: "responsible_role", label: "Sorumlu görev", priority: 3 },
+      { key: "description", label: "Bulgu açıklaması", priority: 4 },
+      { key: "riskDefinition", label: "Uygunsuzluk tanımı", priority: 5 },
+      { key: "correctiveAction", label: "Düzeltici faaliyet", priority: 6 },
+      { key: "preventiveAction", label: "Önleyici faaliyet", priority: 7 },
+      { key: "related_department", label: "Bölüm", priority: 8 },
+      { key: "approver_name", label: "Onaylayan uzman", priority: 9 },
+      { key: "approver_title", label: "Uzman ünvanı", priority: 10 },
+    ];
+
+    return fields
+      .filter(({ key }) => coerceText(editBaselineEntry[key]) !== coerceText(newEntry[key]))
+      .map(({ key, label, format }) => ({
+        key,
+        label,
+        priority: fields.find((field) => field.key === key)?.priority ?? 99,
+        before: format ? format(editBaselineEntry[key]) : coerceText(editBaselineEntry[key]) || "Belirtilmedi",
+        after: format ? format(newEntry[key]) : coerceText(newEntry[key]) || "Belirtilmedi",
+      }))
+      .sort((a, b) => a.priority - b.priority || a.label.localeCompare(b.label, "tr"));
+  }, [editBaselineEntry, editingEntryId, newEntry]);
+  const previewPageChunks = useMemo(() => {
+    const chunkSize = 3;
+    const chunks: HazardEntry[][] = [];
+    for (let i = 0; i < previewEntries.length; i += chunkSize) {
+      chunks.push(previewEntries.slice(i, i + chunkSize));
+    }
+    return chunks.length > 0 ? chunks : [[]];
+  }, [previewEntries]);
+  const normalizeFindingPriority = (priority?: string | null): HazardEntry["importance_level"] =>
+    priority === "critical" || priority === "Kritik"
+      ? "Kritik"
+      : priority === "high" || priority === "Yüksek"
+      ? "Yüksek"
+      : "Orta";
+  const creationOverviewCards = [
+    {
+      key: "company",
+      eyebrow: "Firma",
+      title: reportCompanyName || "Henüz seçilmedi",
+      body: "Sistemdeki firmalardan seçebilir veya manuel firma adi girebilirsiniz.",
+    },
+    {
+      key: "readiness",
+      eyebrow: "Hazirlik",
+      title: `${completedFieldCount}/${requiredFieldChecks.length} alan hazir`,
+      body: "Aktif taslagin eksik alanlarini sayfa üzerindeki karar kartlarindan takip edin.",
+    },
+    {
+      key: "flow",
+      eyebrow: "Çalisma mantigi",
+      title: "Aç, hazirla, listeye ekle",
+      body: "Tek bir form panelinde bulguyu olusturup toplu rapor akisina dahil edin.",
+    },
+  ] as const;
+
+  const setQuickDueDate = (days: number) => {
+    const nextDate = new Date();
+    nextDate.setDate(nextDate.getDate() + days);
+    setNewEntry((prev) => ({
+      ...prev,
+      termin_date: nextDate.toISOString().split("T")[0],
+    }));
+  };
+
+  const handleGeneralInfoChange = <K extends keyof BulkCAPAGeneralInfo>(
+    key: K,
+    value: BulkCAPAGeneralInfo[K]
+  ) => {
+    setGeneralInfo((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const handleCompanyModeChange = (mode: "existing" | "manual") => {
+    setCompanyInputMode(mode);
+    setCompanyComboboxOpen(false);
+    setCompanySearch("");
+
+    if (mode === "manual") {
+      setManualCompanyName((prev) => prev || selectedCompany?.name || generalInfo.company_name || "");
+      setSelectedCompanyId("");
+      return;
+    }
+
+    if (!selectedCompanyId) {
+      setGeneralInfo((prev) => ({
+        ...prev,
+        company_name: "",
+        company_logo_url: null,
+      }));
+    }
+  };
+
+  const resetEntryDraft = () => {
+    setNewEntry({
+      id: "",
+      description: "",
+      riskDefinition: "",
+      correctiveAction: "",
+      preventiveAction: "",
+      importance_level: "Orta",
+      termin_date: "",
+      related_department: "Diger",
+      notification_method: "E-mail",
+      responsible_name: "",
+      responsible_role: "",
+      approver_name: generalInfo.observer_name || profileContext?.full_name || "",
+      approver_title: profileContext?.position || "İş Güvenliği Uzmanı",
+      include_stamp: true,
+      media_urls: [],
+      ai_analyzed: false,
+    });
+    setEditingEntryId(null);
+    setEditBaselineEntry(null);
+  };
+
+  const loadSavedTemplates = async (orgId: string) => {
+    setTemplatesLoading(true);
+    try {
+      const { data, error } = await (supabase as any)
+        .from("bulk_capa_templates")
+        .select("id, name, payload, created_at")
+        .eq("org_id", orgId)
+        .order("created_at", { ascending: false });
+
+      if (error) throw error;
+
+      const normalizedTemplates = (data || []).map((item: any) => ({
+        id: item.id,
+        name: item.name,
+        payload: item.payload || {},
+        created_at: item.created_at,
+      }));
+
+      setSavedTemplates(
+        normalizedTemplates.filter((item: BulkCAPATemplate) => (item.payload?.template_scope || "general") === "general")
+      );
+      setSavedItemTemplates(
+        normalizedTemplates.filter((item: BulkCAPATemplate) => item.payload?.template_scope === "item")
+      );
+    } catch (error) {
+      console.warn("Bulk CAPA templates could not be loaded:", error);
+    } finally {
+      setTemplatesLoading(false);
+    }
+  };
+
+  const applySavedTemplate = (template: BulkCAPATemplate) => {
+    setGeneralInfo((prev) => ({
+      ...prev,
+      ...template.payload,
+      company_name: template.payload.company_name || prev.company_name,
+      report_date: template.payload.report_date || prev.report_date,
+    }));
+    if (template.payload.company_name) {
+      setManualCompanyName(template.payload.company_name);
+      setCompanyInputMode("manual");
+      setSelectedCompanyId("");
+    }
+    setTemplateDialogOpen(false);
+    toast.success(`"${template.name}" şablonu uygulandı`);
+  };
+
+  const applySavedItemTemplate = (template: BulkCAPATemplate) => {
+    const payload = template.payload || {};
+    const dueDate = payload.termin_date || newEntry.termin_date;
+
+    setNewEntry((prev) => ({
+      ...prev,
+      description: payload.description || prev.description,
+      riskDefinition: payload.riskDefinition || prev.riskDefinition,
+      correctiveAction: payload.correctiveAction || prev.correctiveAction,
+      preventiveAction: payload.preventiveAction || prev.preventiveAction,
+      importance_level: payload.importance_level || prev.importance_level,
+      related_department: payload.related_department || prev.related_department,
+      notification_method: payload.notification_method || prev.notification_method,
+      responsible_role: payload.responsible_role || prev.responsible_role,
+      termin_date: dueDate,
+    }));
+    setItemTemplateTags(Array.isArray(payload.tags) ? payload.tags : []);
+
+    setTemplateDialogOpen(false);
+    toast.success(`"${template.name}" madde şablonu uygulandı`);
+  };
+
+  const saveCurrentTemplate = async () => {
+    if (!orgData?.id || !user?.id) {
+      toast.error("Şablon kaydetmek için oturum ve organizasyon bilgisi gerekli.");
+      return;
+    }
+    if (!templateName.trim()) {
+      toast.error("Şablon adı girin");
+      return;
+    }
+
+    try {
+      const payload = {
+        ...generalInfo,
+        provider_logo_url: null,
+        template_scope: "general",
+        company_name: reportCompanyName || generalInfo.company_name || "",
+        default_department: newEntry.related_department || "",
+      };
+
+      const { error } = await (supabase as any).from("bulk_capa_templates").insert({
+        org_id: orgData.id,
+        user_id: user.id,
+        name: templateName.trim(),
+        company_name: reportCompanyName || generalInfo.company_name || "",
+        template_scope: "general",
+        payload,
+      });
+
+      if (error) throw error;
+
+      toast.success("DÖF şablonu kaydedildi");
+      setTemplateName("");
+      setTemplateDialogOpen(false);
+      await loadSavedTemplates(orgData.id);
+    } catch (error) {
+      toast.error(getUserFriendlyErrorMessage(error, "export"));
+    }
+  };
+
+  const saveCurrentItemTemplate = async () => {
+    if (!orgData?.id || !user?.id) {
+      toast.error("Şablon kaydetmek için oturum ve organizasyon bilgisi gerekli.");
+      return;
+    }
+    if (!templateName.trim()) {
+      toast.error("Şablon adı girin");
+      return;
+    }
+    if (!newEntry.description.trim() && !newEntry.correctiveAction.trim()) {
+      toast.error("Madde şablonu kaydetmek için en azından bulgu veya faaliyet bilgisi girin");
+      return;
+    }
+
+    try {
+      const payload = {
+        template_scope: "item",
+        company_name: reportCompanyName || generalInfo.company_name || "",
+        description: newEntry.description,
+        riskDefinition: newEntry.riskDefinition,
+        correctiveAction: newEntry.correctiveAction,
+        preventiveAction: newEntry.preventiveAction,
+        importance_level: newEntry.importance_level,
+        related_department: newEntry.related_department,
+        notification_method: newEntry.notification_method,
+        responsible_role: newEntry.responsible_role,
+        termin_date: newEntry.termin_date,
+        tags: itemTemplateTags,
+      };
+
+      const { error } = await (supabase as any).from("bulk_capa_templates").insert({
+        org_id: orgData.id,
+        user_id: user.id,
+        name: templateName.trim(),
+        company_name: reportCompanyName || generalInfo.company_name || "",
+        template_scope: "item",
+        payload,
+      });
+
+      if (error) throw error;
+
+      toast.success("Madde şablonu kaydedildi");
+      setTemplateName("");
+      setTemplateDialogOpen(false);
+      await loadSavedTemplates(orgData.id);
+    } catch (error) {
+      toast.error(getUserFriendlyErrorMessage(error, "export"));
+    }
+  };
+
+  const handleLogoUpload = async (
+    event: React.ChangeEvent<HTMLInputElement>,
+    key: "company_logo_url" | "provider_logo_url"
+  ) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const maxBytes = 2 * 1024 * 1024;
+    if (file.size > maxBytes) {
+      toast.error("Logo dosyasi 2MB sinirini asmamalidir.");
+      return;
+    }
+
+    try {
+      if (key === "company_logo_url" && companyInputMode === "existing" && selectedCompanyId && orgData?.id) {
+        const sanitizedName = file.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9._-]/g, "_");
+        const filePath = `${orgData.id}/${selectedCompanyId}/${Date.now()}-${sanitizedName}`;
+        const { error: uploadError } = await supabase.storage.from("company-logos").upload(filePath, file, {
+          upsert: true,
+          contentType: file.type,
+        });
+
+        if (uploadError) throw uploadError;
+
+        const { error: updateError } = await (supabase as any)
+          .from("companies")
+          .update({ logo_url: filePath })
+          .eq("id", selectedCompanyId);
+
+        if (updateError) throw updateError;
+
+        const signedUrl = await resolveMaybeSignedUrl("company-logos", filePath);
+        handleGeneralInfoChange(key, signedUrl || filePath);
+        setCompanies((prev) =>
+          prev.map((company) =>
+            company.id === selectedCompanyId ? { ...company, logo_url: signedUrl || filePath } : company
+          )
+        );
+      } else {
+        const dataUrl = await fileToDataUrl(file);
+        handleGeneralInfoChange(key, dataUrl);
+      }
+      toast.success(key === "company_logo_url" ? "Hizmet alan firma logosu yüklendi" : "Hizmet veren firma logosu hazırlandı");
+    } catch (error) {
+      toast.error(getUserFriendlyErrorMessage(error, "export"));
+    } finally {
+      event.target.value = "";
+    }
+  };
+
+  const generalInfoReady = Boolean(
+    reportCompanyName.trim() &&
+      generalInfo.area_region.trim() &&
+      generalInfo.observation_range.trim() &&
+      generalInfo.report_date &&
+      generalInfo.observer_name.trim() &&
+      generalInfo.observer_certificate_no.trim() &&
+      generalInfo.employer_representative_name.trim() &&
+      generalInfo.report_no.trim()
+  );
+
+  const applyRecentHeaderSuggestion = () => {
+    if (!recentHeaderSuggestion) return;
+    setGeneralInfo((prev) => ({
+      ...prev,
+      ...recentHeaderSuggestion,
+      provider_logo_url: prev.provider_logo_url,
+    }));
+    toast.success("Bu firmada son kullanılan rapor üst bilgisi uygulandı");
+  };
+
+  const applyTemplate = (template: (typeof QUICK_START_TEMPLATES)[number]) => {
+    const nextDate = new Date();
+    nextDate.setDate(nextDate.getDate() + template.dueInDays);
+
+    setNewEntry((prev) => ({
+      ...prev,
+      description: prev.description.trim() || template.description,
+      correctiveAction: prev.correctiveAction.trim() || template.correctiveAction,
+      preventiveAction: prev.preventiveAction.trim() || template.preventiveAction,
+      importance_level: template.importance_level,
+      related_department: template.related_department,
+      notification_method: prev.notification_method.trim() || template.notification_method,
+      termin_date: prev.termin_date || nextDate.toISOString().split("T")[0],
+    }));
+
+    toast.success(`${template.title} sablonu uygulandi`);
+  };
+
+  const tokenizeForSimilarity = (value: string) =>
+    value
+      .toLocaleLowerCase("tr-TR")
+      .replace(/[^\p{L}\p{N}\s]/gu, " ")
+      .split(/\s+/)
+      .filter((word) => word.length > 2);
+
+  const currentSimilarityBase = `${newEntry.description} ${newEntry.riskDefinition}`.trim();
+  const currentWords = Array.from(new Set(tokenizeForSimilarity(currentSimilarityBase)));
+
+  const calculateSimilarity = (candidate: HazardEntry) => {
+    if (!currentWords.length) return 0;
+    const candidateWords = Array.from(
+      new Set(tokenizeForSimilarity(`${candidate.description} ${candidate.riskDefinition}`))
+    );
+    const overlap = candidateWords.filter((word) => currentWords.includes(word)).length;
+    return overlap / Math.max(currentWords.length, 1);
+  };
+
+  useEffect(() => {
+    const fetchHistoricalFindings = async () => {
+      if (!orgData?.id || !reportCompanyName.trim()) {
+        setHistoricalFindings([]);
+        return;
+      }
+
+      setHistoricalLoading(true);
+      try {
+        const { data: inspectionsData, error: inspectionsError } = await supabase
+          .from("inspections")
+          .select("id, location_name, created_at")
+          .eq("org_id", orgData.id)
+          .ilike("location_name", `%${reportCompanyName.trim()}%`)
+          .order("created_at", { ascending: false })
+          .limit(20);
+
+        if (inspectionsError) {
+          throw inspectionsError;
+        }
+
+        const inspections = inspectionsData || [];
+        if (inspections.length === 0) {
+          setHistoricalFindings([]);
+          return;
+        }
+
+        const inspectionMap = new Map(
+          inspections.map((inspection) => [inspection.id, inspection])
+        );
+
+        const { data: findingsData, error: findingsError } = await supabase
+          .from("findings")
+          .select(
+            "id, inspection_id, description, risk_definition, action_required, preventive_action, priority, due_date, created_at, is_resolved, assigned_to"
+          )
+          .in(
+            "inspection_id",
+            inspections.map((inspection) => inspection.id)
+          )
+          .order("created_at", { ascending: false })
+          .limit(40);
+
+        if (findingsError) {
+          throw findingsError;
+        }
+
+        const nextHistoricalFindings: HistoricalFinding[] = (findingsData || []).map((finding) => {
+          const inspection = inspectionMap.get(finding.inspection_id);
+          const similarityBase = `${finding.description || ""} ${finding.risk_definition || ""}`.trim();
+          const candidateWords = Array.from(new Set(tokenizeForSimilarity(similarityBase)));
+          const overlap = candidateWords.filter((word) => currentWords.includes(word)).length;
+          const similarity = currentWords.length ? overlap / Math.max(currentWords.length, 1) : 0;
+
+          return {
+            id: finding.id,
+            inspection_id: finding.inspection_id,
+            location_name: inspection?.location_name || reportCompanyName,
+            description: finding.description || "",
+            risk_definition: finding.risk_definition || "",
+            corrective_action: finding.action_required || "",
+            preventive_action: finding.preventive_action || "",
+            priority: normalizeFindingPriority(finding.priority),
+            due_date: finding.due_date,
+            created_at: finding.created_at || inspection?.created_at || new Date().toISOString(),
+            is_resolved: Boolean(finding.is_resolved),
+            assigned_to: finding.assigned_to || null,
+            similarity,
+          };
+        });
+
+        setHistoricalFindings(nextHistoricalFindings);
+      } catch (error) {
+        console.error("Historical findings could not be loaded:", error);
+        setHistoricalFindings([]);
+      } finally {
+        setHistoricalLoading(false);
+      }
+    };
+
+    void fetchHistoricalFindings();
+  }, [orgData?.id, reportCompanyName, currentWords.join("|")]);
+
+  const historicalSimilarEntries = historicalFindings
+    .filter((entry) => (currentWords.length ? entry.similarity >= 0.18 : true))
+    .sort((a, b) => {
+      if (currentWords.length) return b.similarity - a.similarity;
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    })
+    .slice(0, 4);
+
+  const repeatedIssueCount = historicalFindings.filter((entry) => entry.similarity >= 0.18).length;
+  const topHistoricalPriority = historicalSimilarEntries[0]?.priority;
+  const historicalAssignedRole = historicalSimilarEntries.find((entry) => entry.assigned_to)?.assigned_to;
+  const historicalAverageDueDays = historicalSimilarEntries
+    .filter((entry) => entry.due_date)
+    .map((entry) => {
+      const createdAt = new Date(entry.created_at).getTime();
+      const dueDate = new Date(entry.due_date as string).getTime();
+      const diff = Math.round((dueDate - createdAt) / (1000 * 60 * 60 * 24));
+      return Number.isFinite(diff) ? diff : null;
+    })
+    .filter((value): value is number => value !== null && value >= 0);
+
+  const hasElectricalRisk = /elektrik|pano|kablo|priz|kaçak/i.test(
+    `${newEntry.description} ${newEntry.riskDefinition}`
+  );
+  const hasFireRisk = /yangin|alev|yanici|parlama/i.test(
+    `${newEntry.description} ${newEntry.riskDefinition}`
+  );
+  const hasPpeRisk = /kkd|baret|gözlük|eldiven|maske/i.test(
+    `${newEntry.description} ${newEntry.riskDefinition}`
+  );
+  const hasHousekeepingRisk = /daginik|istif|temizlik|geçis|koridor/i.test(
+    `${newEntry.description} ${newEntry.riskDefinition}`
+  );
+  const companyHazardBoost =
+    selectedCompany?.industry && /metal|enerji|üretim|sanayi|lojistik|insaat/i.test(selectedCompany.industry)
+      ? 1
+      : 0;
+  const repeatRiskBoost = repeatedIssueCount >= 2 ? 1 : 0;
+  const keywordRiskBoost = hasElectricalRisk || hasFireRisk ? 2 : hasPpeRisk ? 1 : 0;
+  const historicalPriorityBoost =
+    topHistoricalPriority === "Kritik" ? 2 : topHistoricalPriority === "Yüksek" ? 1 : 0;
+  const priorityScore = keywordRiskBoost + historicalPriorityBoost + repeatRiskBoost + companyHazardBoost;
+
+  const suggestedPriority: HazardEntry["importance_level"] =
+    priorityScore >= 3 || hasElectricalRisk || hasFireRisk
+      ? "Kritik"
+      : priorityScore >= 1 || hasPpeRisk
+      ? "Yüksek"
+      : newEntry.description.trim().length > 160
+      ? "Yüksek"
+      : newEntry.importance_level || "Orta";
+
+  const mostFrequentHistoricalDepartment = historicalSimilarEntries.reduce<Record<string, number>>(
+    (acc, entry) => {
+      if (!entry.description) return acc;
+      const matchedDepartment = DEPARTMENTS.find((department) =>
+        new RegExp(department, "i").test(entry.description)
+      );
+      if (matchedDepartment) {
+        acc[matchedDepartment] = (acc[matchedDepartment] || 0) + 1;
+      }
+      return acc;
+    },
+    {}
+  );
+
+  const historicalDepartmentSuggestion =
+    Object.entries(mostFrequentHistoricalDepartment).sort((a, b) => b[1] - a[1])[0]?.[0] || null;
+
+  const suggestedDepartment =
+    historicalDepartmentSuggestion ||
+    (hasElectricalRisk
+      ? "Bakim"
+      : hasPpeRisk
+      ? "Isveren"
+      : hasHousekeepingRisk
+      ? "Üretim"
+      : newEntry.related_department || "Diger");
+
+  const suggestedRole =
+    historicalAssignedRole ||
+    (hasElectricalRisk
+      ? "Bakim Sorumlusu"
+      : hasPpeRisk
+      ? "Saha Sorumlusu"
+      : hasHousekeepingRisk
+      ? "Bölüm Yöneticisi"
+      : "Ilgili Bölüm Sorumlusu");
+
+  const historicalDueSuggestion =
+    historicalAverageDueDays.length > 0
+      ? Math.max(2, Math.min(21, Math.round(historicalAverageDueDays.reduce((sum, day) => sum + day, 0) / historicalAverageDueDays.length)))
+      : null;
+
+  const suggestedDueDays = historicalDueSuggestion ??
+    (suggestedPriority === "Kritik" ? 3 : suggestedPriority === "Yüksek" ? 7 : 14);
+  const historicalOpenCount = historicalFindings.filter((entry) => !entry.is_resolved).length;
+  const companyContextSummary = selectedCompany
+    ? [
+        selectedCompany.industry ? `${selectedCompany.industry} sektöründe faaliyet gösteriyor.` : null,
+        selectedCompany.employee_count ? `${selectedCompany.employee_count}+ çalisan ölçegi kayitli.` : null,
+        selectedCompany.notes ? "Sirket notlari öneri paneline baglam olarak dahil edildi." : null,
+      ]
+        .filter(Boolean)
+        .join(" ")
+    : reportCompanyName
+    ? `${reportCompanyName} için geçmis DÖF ve denetim kayitlari taraniyor.`
+    : "Firma seçildiginde öneriler sirket baglamini daha net yansitir.";
+
+  const qualityScore = (() => {
+    let score = 0;
+    if (newEntry.description.trim().length >= 40) score += 20;
+    else if (newEntry.description.trim().length >= 15) score += 10;
+
+    if (newEntry.riskDefinition.trim().length >= 30) score += 15;
+    else if (newEntry.riskDefinition.trim().length >= 10) score += 8;
+
+    if (newEntry.correctiveAction.trim().length >= 35) score += 20;
+    else if (newEntry.correctiveAction.trim().length >= 15) score += 10;
+
+    if (newEntry.preventiveAction.trim().length >= 35) score += 20;
+    else if (newEntry.preventiveAction.trim().length >= 15) score += 10;
+
+    if (newEntry.related_department !== "Diger") score += 10;
+    if (newEntry.termin_date) score += 10;
+    if (newEntry.notification_method.trim().length > 0) score += 5;
+    if (reportCompanyName.trim()) score += 5;
+    return Math.min(score, 100);
+  })();
+
+  const qualityFeedback = [
+    newEntry.description.trim().length < 25
+      ? "Bulgu açiklamasini daha somut hale getirin; görülen riskin nerede ve nasil ortaya çiktigini belirtin."
+      : null,
+    newEntry.riskDefinition.trim().length < 20
+      ? "Risk tanimi kisa kaliyor; olasi sonuç ve etkisini biraz daha netlestirin."
+      : null,
+    newEntry.correctiveAction.trim().length < 25
+      ? "Düzeltici faaliyet daha uygulanabilir ve adim adim yazilmali."
+      : null,
+    newEntry.preventiveAction.trim().length < 25
+      ? "Önleyici faaliyet tekrar riskini azaltacak kalici bir yöntem içermeli."
+      : null,
+    !newEntry.termin_date
+      ? "Termin tarihi olmadan DÖF takibi zayif kalir; hizli bir termin seçin."
+      : null,
+    !reportCompanyName.trim()
+      ? "Firma seçimi yapilmadan kayit kurum baglamina oturmaz; önce firma seçin veya manuel girin."
+      : null,
+  ].filter(Boolean) as string[];
+
+  const qualityLabel =
+    qualityScore >= 80 ? "Güçlü" : qualityScore >= 60 ? "Gelistirilebilir" : "Zayif";
+  const nextDofNumber = `DOF-${String(entries.length + 1).padStart(3, "0")}`;
 
   const imageToInlineDataPart = async (imageUrl: string) => {
     let imageData: string;
@@ -1159,37 +2392,37 @@ function BulkCAPAContent() {
         imageUrls.map((url) => imageToInlineDataPart(url))
       );
 
-   const prompt = `Bir iş sağlığı ve güvenliği (İSG) uzmanı gibi davran ve verilen tüm fotoğrafları analiz et.
+   const prompt = `Bir is sagligi ve güvenligi (ISG) uzmani gibi davran ve verilen tüm fotograflari analiz et.
 
 Analiz yöntemi:
-- Önce tüm fotoğrafları tek tek incele.
-- Her fotoğrafta görülen riskleri zihinsel olarak belirle.
-- Hiçbir fotoğrafı göz ardı etme.
-- Fotoğrafların aynı ortamdan gelmeyebileceğini varsay ve her fotoğrafı bağımsız bir çalışma alanı gibi değerlendir.
-- Ardından tüm bulguları birleştirerek tek bir genel İSG bulgusu oluştur.
-- Farklı fotoğraflarda görülen farklı riskleri sonuçta birlikte özetle.
+- Önce tüm fotograflari tek tek incele.
+- Her fotografta görülen riskleri zihinsel olarak belirle.
+- Hiçbir fotografi göz ardi etme.
+- Fotograflarin ayni ortamdan gelmeyebilecegini varsay ve her fotografi bagimsiz bir çalisma alani gibi degerlendir.
+- Ardindan tüm bulgulari birlestirerek tek bir genel ISG bulgusu olustur.
+- Farkli fotograflarda görülen farkli riskleri sonuçta birlikte özetle.
 
 Kurallar:
-- Sadece fotoğrafta görülebilen durumları yaz.
-- Belirsiz veya uydurma ayrıntı ekleme.
-- Açıklama kısmında görülen tüm önemli riskleri kısa ve net şekilde özetle.
-- Sonuç tek bir bulgu olacak ancak birden fazla ilişkili risk içerebilir.
-- Çıktı sadece geçerli bir JSON nesnesi olmalıdır.
-- JSON dışında hiçbir metin, açıklama veya kod bloğu yazma.
+- Sadece fotografta görülebilen durumlari yaz.
+- Belirsiz veya uydurma ayrinti ekleme.
+- Açiklama kisminda görülen tüm önemli riskleri kisa ve net sekilde özetle.
+- Sonuç tek bir bulgu olacak ancak birden fazla iliskili risk içerebilir.
+- Çikti sadece geçerli bir JSON nesnesi olmalidir.
+- JSON disinda hiçbir metin, açiklama veya kod blogu yazma.
 
-JSON formatı:
+JSON formati:
 {
 "description": "4-5 cümlelik bulgu özeti",
 "riskDefinition": "En fazla 4 cümlelik genel risk özeti",
 "correctiveAction": "- madde 1\n- madde 2\n- madde 3",
 "preventiveAction": "- madde 1\n- madde 2\n- madde 3",
-"importance_level": "Normal"
+"importance_level": "Orta"
 }
 
 importance_level seçimi:
-- Elektrik, yangın, kimyasal veya ciddi yaralanma riski varsa → Kritik
-- Yaralanma veya kaza ihtimali yüksekse → Yüksek
-- Düzen ve düşük riskli uygunsuzluklar → Normal
+- Elektrik, yangin, kimyasal veya ciddi yaralanma riski varsa ? Kritik
+- Yaralanma veya kaza ihtimali yüksekse ? Yüksek
+- Düzen ve düsük riskli uygunsuzluklar ? Orta
 
 Birden fazla risk varsa importance_level en tehlikeli riske göre belirlenmelidir.`;
 
@@ -1249,7 +2482,7 @@ Birden fazla risk varsa importance_level en tehlikeli riske göre belirlenmelidi
     }
   };
 
-  // ✅ FETCH ORGANIZATION DATA
+  // ? FETCH ORGANIZATION DATA
   useEffect(() => {
     const fetchOrgData = async () => {
       if (!user) return;
@@ -1257,20 +2490,61 @@ Birden fazla risk varsa importance_level en tehlikeli riske göre belirlenmelidi
       try {
         const { data: profile } = await supabase
           .from("profiles")
-          .select("organization_id")
+          .select("organization_id, full_name, position, avatar_url, stamp_url")
           .eq("id", user.id)
           .single();
+
+        setProfileContext({
+          full_name: profile?.full_name ?? null,
+          position: profile?.position ?? null,
+          avatar_url: profile?.avatar_url ?? null,
+          stamp_url: profile?.stamp_url ?? null,
+        });
+
+        setNewEntry((prev) => ({
+          ...prev,
+          approver_name: prev.approver_name || profile?.full_name || "",
+          approver_title: prev.approver_title || profile?.position || "İş Güvenliği Uzmanı",
+          include_stamp: prev.include_stamp ?? true,
+        }));
+        setGeneralInfo((prev) => ({
+          ...prev,
+          observer_name: prev.observer_name || profile?.full_name || "",
+          provider_logo_url: prev.provider_logo_url || null,
+        }));
 
         if (profile?.organization_id) {
           const { data: org } = await supabase
             .from("organizations")
-            .select("id, name, slug") // ✅ id EKLE
+            .select("id, name, slug, logo_url")
             .eq("id", profile.organization_id)
             .single();
 
           if (org) {
-            setOrgData(org); // ✅ Artık id var
+            setOrgData(org); // ? Artik id var
           }
+
+          const { data: companyRows, error: companyError } = await (supabase as any)
+            .from("companies")
+            .select("id, name, industry, employee_count, notes, logo_url")
+            .eq("user_id", user.id)
+            .eq("is_active", true)
+            .order("name", { ascending: true });
+
+          if (companyError) {
+            console.warn("Companies could not be loaded:", companyError);
+          } else {
+            const rows = companyRows || [];
+            const withSignedUrls = await Promise.all(
+              rows.map(async (company: CompanyOption) => ({
+                ...company,
+                logo_url: await resolveMaybeSignedUrl("company-logos", company.logo_url),
+              }))
+            );
+            setCompanies(withSignedUrls);
+          }
+
+          await loadSavedTemplates(profile.organization_id);
         }
       } catch (error) {
         console.error("Error fetching org data:", error);
@@ -1281,10 +2555,149 @@ Birden fazla risk varsa importance_level en tehlikeli riske göre belirlenmelidi
 
     fetchOrgData();
   }, [user]);
-  // ✅ AI ANALYSIS HANDLER
+
+  useEffect(() => {
+    if (companyInputMode === "existing" && selectedCompany) {
+      setGeneralInfo((prev) => ({
+        ...prev,
+        company_name: selectedCompany.name,
+        company_logo_url: prev.company_logo_url || selectedCompany.logo_url || null,
+      }));
+      return;
+    }
+
+    if (companyInputMode === "manual") {
+      setGeneralInfo((prev) => ({
+        ...prev,
+        company_name: manualCompanyName.trim(),
+      }));
+    }
+  }, [companyInputMode, manualCompanyName, selectedCompany]);
+
+  useEffect(() => {
+    const loadCompanyContextSuggestions = async () => {
+      if (!orgData?.id || !reportCompanyName.trim()) {
+        setSuggestedGeneralTemplate(null);
+        setSuggestedTemplateReason("");
+        setRecentHeaderSuggestion(null);
+        setRecentHeaderSuggestionReason("");
+        return;
+      }
+
+      try {
+        const companyName = reportCompanyName.trim();
+        const currentDepartment =
+          newEntry.related_department && newEntry.related_department !== "Diger"
+            ? newEntry.related_department
+            : "";
+        const normalizedCompanyName = companyName.toLocaleLowerCase("tr-TR");
+        const normalizedDepartment = currentDepartment.toLocaleLowerCase("tr-TR");
+
+        const exactDepartmentTemplate =
+          savedTemplates.find((template) => {
+            const templateCompanyName = String(template.payload?.company_name || "").toLocaleLowerCase("tr-TR");
+            const templateDepartment = String(template.payload?.default_department || "").toLocaleLowerCase("tr-TR");
+            return (
+              templateCompanyName.includes(normalizedCompanyName) &&
+              normalizedDepartment &&
+              templateDepartment === normalizedDepartment
+            );
+          }) || null;
+
+        const companyTemplate =
+          savedTemplates.find((template) =>
+            String(template.payload?.company_name || "")
+              .toLocaleLowerCase("tr-TR")
+              .includes(normalizedCompanyName)
+          ) || null;
+
+        const matchingTemplate = exactDepartmentTemplate || companyTemplate;
+
+        setSuggestedGeneralTemplate(matchingTemplate);
+        setSuggestedTemplateReason(
+          exactDepartmentTemplate
+            ? `Bu şablon aynı firma ve ${currentDepartment} bölümü için daha önce kullanıldığı için önerildi.`
+            : matchingTemplate
+            ? "Bu şablon aynı firmada daha önce kullanıldığı için önerildi."
+            : ""
+        );
+
+        let data = null;
+        let error = null;
+
+        if (currentDepartment) {
+          const response = await (supabase as any)
+            .from("bulk_capa_sessions")
+            .select(
+              "company_name, area_region, observation_date_range, report_date, observer_name, observer_certificate_no, responsible_person, employer_representative_title, employer_representative_name, report_no, service_company_logo_url, department_name, updated_at"
+            )
+            .eq("org_id", orgData.id)
+            .ilike("company_name", `%${companyName}%`)
+            .eq("department_name", currentDepartment)
+            .order("updated_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          data = response.data;
+          error = response.error;
+        }
+
+        if (!data) {
+          const response = await (supabase as any)
+            .from("bulk_capa_sessions")
+            .select(
+              "company_name, area_region, observation_date_range, report_date, observer_name, observer_certificate_no, responsible_person, employer_representative_title, employer_representative_name, report_no, service_company_logo_url, department_name, updated_at"
+            )
+            .eq("org_id", orgData.id)
+            .ilike("company_name", `%${companyName}%`)
+            .order("updated_at", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          data = response.data;
+          error = response.error;
+        }
+
+        if (error) throw error;
+
+        if (data) {
+          setRecentHeaderSuggestion({
+            company_name: data.company_name || companyName,
+            company_logo_url: data.service_company_logo_url || null,
+            provider_logo_url: null,
+            area_region: data.area_region || "",
+            observation_range: data.observation_date_range || "",
+            report_date: data.report_date || new Date().toISOString().split("T")[0],
+            observer_name: data.observer_name || "",
+            observer_certificate_no: data.observer_certificate_no || "",
+            responsible_person: data.responsible_person || "İŞVEREN / İŞVEREN VEKİLİ",
+            employer_representative_title: data.employer_representative_title || "İşveren / İşveren Vekili",
+            employer_representative_name: data.employer_representative_name || "",
+            report_no: data.report_no || "",
+          });
+          setRecentHeaderSuggestionReason(
+            currentDepartment && data.department_name === currentDepartment
+              ? `Bu üst bilgi aynı firma ve ${currentDepartment} bölümü için son kullanılan yapıdan getirildi.`
+              : "Bu üst bilgi aynı firmada en son kullanılan rapor yapısından getirildi."
+          );
+        } else {
+          setRecentHeaderSuggestion(null);
+          setRecentHeaderSuggestionReason("");
+        }
+      } catch (error) {
+        console.warn("Company context suggestions could not be loaded:", error);
+        setSuggestedTemplateReason("");
+        setRecentHeaderSuggestion(null);
+        setRecentHeaderSuggestionReason("");
+      }
+    };
+
+    void loadCompanyContextSuggestions();
+  }, [newEntry.related_department, orgData?.id, reportCompanyName, savedTemplates]);
+  // ? AI ANALYSIS HANDLER
   const handleAIAnalysis = async () => {
     if (newEntry.media_urls.length === 0) {
-      toast.error("Lütfen en az bir fotoğraf yükleyin");
+      toast.error("Lütfen en az bir fotograf yükleyin");
       return;
     }
 
@@ -1296,7 +2709,7 @@ Birden fazla risk varsa importance_level en tehlikeli riske göre belirlenmelidi
 
     try {
       const total = newEntry.media_urls.length;
-      toast.info(`${total} fotoğraf analiz ediliyor`);
+      toast.info(`${total} fotograf analiz ediliyor`);
 
       let finalAnalysis = await analyzeImagesWithAI(newEntry.media_urls);
 
@@ -1312,7 +2725,7 @@ Birden fazla risk varsa importance_level en tehlikeli riske göre belirlenmelidi
         }
 
         if (analyses.length === 0) {
-          throw new Error("Fotoğraflar analiz edilemedi");
+          throw new Error("Fotograflar analiz edilemedi");
         }
 
         finalAnalysis = mergeAnalyses(analyses);
@@ -1332,7 +2745,7 @@ Birden fazla risk varsa importance_level en tehlikeli riske göre belirlenmelidi
         ai_analyzed: true,
       }));
 
-      toast.success(`${total} fotoğraf için analiz tamamlandı`);
+      toast.success(`${total} fotograf için analiz tamamlandi`);
     } catch (error: any) {
       toast.error(getUserFriendlyErrorMessage(error, "analysis"));
       console.error("Analysis error:", error);
@@ -1343,9 +2756,9 @@ Birden fazla risk varsa importance_level en tehlikeli riske göre belirlenmelidi
     }
   };
 
-  // ✅ MERGE ANALYSES
+  // ? MERGE ANALYSES
   const mergeAnalyses = (analyses: AIAnalysisResult[]): AIAnalysisResult => {
-    const importancePriority = { Kritik: 3, Yüksek: 2, Normal: 1 };
+    const importancePriority = { Kritik: 4, Yüksek: 3, Orta: 2, Düşük: 1 };
     const maxImportance = analyses.reduce((max, curr) => {
       const currPriority = importancePriority[curr.importance_level] || 0;
       const maxPriority = importancePriority[max.importance_level] || 0;
@@ -1375,7 +2788,7 @@ Birden fazla risk varsa importance_level en tehlikeli riske göre belirlenmelidi
       description: descriptions.slice(0, 2).join(" "),
       riskDefinition: shortRiskSummary
         ? `${shortRiskSummary}.`
-        : riskLines[0] || "Genel risk değerlendirmesi tamamlandı.",
+        : riskLines[0] || "Genel risk degerlendirmesi tamamlandi.",
       correctiveAction: correctiveActions.slice(0, 3).join("\n"),
       preventiveAction: preventiveActions.slice(0, 3).join("\n"),
       importance_level: maxImportance.importance_level,
@@ -1394,17 +2807,17 @@ Birden fazla risk varsa importance_level en tehlikeli riske göre belirlenmelidi
       const model = import.meta.env.VITE_GOOGLE_MODEL || "gemini-2.5-flash";
 
       if (!apiKey) {
-        throw new Error("Google API anahtarı tanımlı değil");
+        throw new Error("Google API anahtari tanimli degil");
       }
 
-      const prompt = `Sen deneyimli bir iş sağlığı ve güvenliği uzmanısın.
-Aşağıdaki DÖF maddelerini birlikte değerlendir ve raporun sonuna eklenecek tek bir genel analiz yaz.
+      const prompt = `Sen deneyimli bir is sagligi ve güvenligi uzmanisin.
+Asagidaki DÖF maddelerini birlikte degerlendir ve raporun sonuna eklenecek tek bir genel analiz yaz.
 
 Kurallar:
-- Kısa, net ve profesyonel yaz.
-- Tek paragraf ya da en fazla 2 kısa paragraf üret.
-- Tekrar eden maddeleri birleştir.
-- Genel risk eğilimini, ortak kök nedenleri ve kapanış değerlendirmesini özetle.
+- Kisa, net ve profesyonel yaz.
+- Tek paragraf ya da en fazla 2 kisa paragraf üret.
+- Tekrar eden maddeleri birlestir.
+- Genel risk egilimini, ortak kök nedenleri ve kapanis degerlendirmesini özetle.
 - Madde madde yazma.
 - Sadece düz metin döndür.
 
@@ -1452,16 +2865,16 @@ ${entries
       }
 
       setOverallAnalysis(textContent);
-      toast.success("Genel analiz oluşturuldu");
+      toast.success("Genel analiz olusturuldu");
     } catch (error: any) {
-      console.error("Genel analiz hatası:", error);
+      console.error("Genel analiz hatasi:", error);
       toast.error(getUserFriendlyErrorMessage(error, "overall-analysis"));
     } finally {
       setOverallAnalyzing(false);
     }
   };
 
-  // ✅ DRAG & DROP
+  // ? DRAG & DROP
   const handleDrag = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
@@ -1485,16 +2898,27 @@ ${entries
 
   
 
-  // ✅ PROCESS FILES
+  // ? PROCESS FILES
   const processFiles = (files: FileList) => {
-    Array.from(files).forEach((file) => {
+    const remainingSlots = Math.max(0, 2 - newEntry.media_urls.length);
+    if (remainingSlots === 0) {
+      toast.error("En fazla 2 fotograf ekleyebilirsiniz");
+      return;
+    }
+
+    const nextFiles = Array.from(files).slice(0, remainingSlots);
+    if (files.length > remainingSlots) {
+      toast.info(`Yalnizca ilk ${remainingSlots} fotograf eklendi`);
+    }
+
+    nextFiles.forEach((file) => {
       if (!file.type.startsWith("image/")) {
-        toast.error("Lütfen sadece görüntü dosyası seçin");
+        toast.error("Lütfen sadece görüntü dosyasi seçin");
         return;
       }
 
       if (file.size > 5 * 1024 * 1024) {
-        toast.error("Dosya boyutu 5MB'ı aşamaz");
+        toast.error("Dosya boyutu 5MB'i asamaz");
         return;
       }
 
@@ -1506,13 +2930,13 @@ ${entries
           media_urls: [...prev.media_urls, dataUrl],
           ai_analyzed: false,
         }));
-        toast.success("Fotoğraf eklendi");
+        toast.success("Fotograf eklendi");
       };
       reader.readAsDataURL(file);
     });
   };
 
-  // ✅ HANDLE IMAGE UPLOAD
+  // ? HANDLE IMAGE UPLOAD
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
@@ -1522,7 +2946,7 @@ ${entries
     }
   };
 
-  // ✅ REMOVE IMAGE
+  // ? REMOVE IMAGE
   const handleRemoveImage = (index: number) => {
     setNewEntry((prev) => ({
       ...prev,
@@ -1531,7 +2955,7 @@ ${entries
     }));
   };
 
-  // ✅ CREATE TABLE CELL
+  // ? CREATE TABLE CELL
   const createCell = (text: string, isBold = false) => {
     return new TableCell({
       children: [
@@ -1550,8 +2974,13 @@ ${entries
 
   
 
-  // ✅ ADD ENTRY
-  const handleAddEntry = () => {
+  // ? ADD ENTRY
+  const handleAddEntry = (): HazardEntry | null => {
+    if (!reportCompanyName.trim()) {
+      toast.error("Lütfen önce firma seçin veya manuel firma adi girin");
+      return null;
+    }
+
     const normalizedEntry: HazardEntry = {
       ...newEntry,
       description: coerceText(newEntry.description),
@@ -1559,57 +2988,253 @@ ${entries
       correctiveAction: coerceText(newEntry.correctiveAction),
       preventiveAction: coerceText(newEntry.preventiveAction),
       notification_method: coerceText(newEntry.notification_method),
+      responsible_name: coerceText(newEntry.responsible_name),
+      responsible_role: coerceText(newEntry.responsible_role),
+      approver_name: coerceText(newEntry.approver_name),
+      approver_title: coerceText(newEntry.approver_title),
     };
 
     if (!normalizedEntry.description.trim()) {
-      toast.error("Lütfen bulgu açıklaması girin");
-      return;
+      toast.error("Lütfen bulgu açiklamasi girin");
+      return null;
     }
 
     if (!normalizedEntry.riskDefinition.trim()) {
-      toast.error("Lütfen risk tanımını girin");
-      return;
+      toast.error("Lütfen risk tanimini girin");
+      return null;
     }
 
     if (!normalizedEntry.correctiveAction.trim()) {
       toast.error("Lütfen düzeltici faaliyeti girin");
-      return;
-    }
-
-    if (!normalizedEntry.preventiveAction.trim()) {
-      toast.error("Lütfen önleyici faaliyeti girin");
-      return;
+      return null;
     }
 
     if (!newEntry.termin_date) {
       toast.error("Lütfen termin tarihini seçin");
-      return;
+      return null;
+    }
+
+    if (!normalizedEntry.responsible_name.trim()) {
+      toast.error("Lütfen sorumlu kisiyi girin");
+      return null;
     }
 
     const entry: HazardEntry = {
       ...normalizedEntry,
-      id: `entry-${Date.now()}`,
+      id: editingEntryId || `entry-${Date.now()}`,
     };
 
-    setEntries((prev) => [...prev, entry]);
+    setEntries((prev) =>
+      editingEntryId
+        ? prev.map((item) => (item.id === editingEntryId ? entry : item))
+        : [...prev, entry]
+    );
 
-    setNewEntry({
-      id: "",
-      description: "",
-      riskDefinition: "",
-      correctiveAction: "",
-      preventiveAction: "",
-      importance_level: "Normal",
-      termin_date: "",
-      related_department: "Diğer",
-      notification_method: "E-mail", 
-      media_urls: [],
-      ai_analyzed: false,
-    });
-    toast.success("Bulgu eklendi");
+    resetEntryDraft();
+    setCreateStep("items");
+    toast.success(editingEntryId ? "Tekli DÖF güncellendi." : "Bulgu eklendi. Yeni madde eklemeye devam edebilirsiniz.");
+    return entry;
   };
 
-  // ✅ DELETE ENTRY
+  const handleCreateSingleDOF = () => {
+    const addedEntry = handleAddEntry();
+    if (addedEntry) {
+      setCreateDialogOpen(false);
+      setPreviewFocusEntryId(addedEntry.id);
+      setPreviewOpen(true);
+      toast.success("Tekli DÖF kaydı hazırlandı. Önizleme doğrudan açıldı.");
+    }
+  };
+
+  const handleReturnSinglePreviewToEdit = () => {
+    if (!focusedPreviewEntry) {
+      toast.error("Düzenlenecek kayıt bulunamadı.");
+      return;
+    }
+
+    setNewEntry({ ...focusedPreviewEntry });
+    setEditingEntryId(focusedPreviewEntry.id);
+    setEditBaselineEntry({ ...focusedPreviewEntry });
+    setCreateMode("single");
+    setCreateStep("items");
+    setPreviewOpen(false);
+    setCreateDialogOpen(true);
+    toast.info("Tekli DÖF tekrar düzenleme modunda açıldı.");
+  };
+
+  const handleSaveSinglePreviewExport = async () => {
+    if (!focusedPreviewEntry) {
+      toast.error("Önizlenecek tekli DÖF kaydı bulunamadı.");
+      return;
+    }
+
+    if (!reportCompanyName.trim()) {
+      toast.error("Lütfen firma bilgisi girin.");
+      return;
+    }
+
+    if (!orgData?.id) {
+      toast.error("Kuruluş bilgisi bulunamadı.");
+      return;
+    }
+
+    setSaving(true);
+
+    try {
+      let createdInspectionId: string | null = null;
+
+      if (user?.id) {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("organization_id")
+          .eq("id", user.id)
+          .single();
+
+        if (profile?.organization_id) {
+          const { data: inspection, error: inspectionError } = await supabase
+            .from("inspections")
+            .insert({
+              org_id: profile.organization_id,
+              user_id: user.id,
+              location_name: effectiveLocation,
+              status: "completed",
+              risk_level:
+                focusedPreviewEntry.importance_level === "Kritik"
+                  ? "high"
+                  : focusedPreviewEntry.importance_level === "Yüksek"
+                  ? "medium"
+                  : "low",
+              media_urls: focusedPreviewEntry.media_urls,
+              notes: `Tekli DÖF Formu - ${focusedPreviewEntry.description}`,
+              risk_definition: focusedPreviewEntry.riskDefinition,
+              corrective_action: focusedPreviewEntry.correctiveAction,
+              preventive_action: focusedPreviewEntry.preventiveAction,
+              created_at: new Date().toISOString(),
+            })
+            .select()
+            .single();
+
+          if (!inspectionError && inspection) {
+            createdInspectionId = inspection.id;
+            setLastSingleInspectionId(inspection.id);
+            setLastSingleCreatedAt(new Date().toISOString());
+            const { error: findingError } = await supabase.from("findings").insert({
+              inspection_id: inspection.id,
+              user_id: user.id,
+              description: focusedPreviewEntry.description,
+              action_required: focusedPreviewEntry.correctiveAction,
+              risk_definition: focusedPreviewEntry.riskDefinition,
+              preventive_action: focusedPreviewEntry.preventiveAction,
+              due_date: focusedPreviewEntry.termin_date,
+              priority:
+                focusedPreviewEntry.importance_level === "Kritik"
+                  ? "critical"
+                  : focusedPreviewEntry.importance_level === "Yüksek"
+                  ? "high"
+                  : focusedPreviewEntry.importance_level === "Düşük"
+                  ? "low"
+                  : "medium",
+              notification_method: focusedPreviewEntry.notification_method,
+            });
+
+            if (findingError) {
+              console.warn("Single DOF finding link failed:", findingError);
+            }
+          } else if (inspectionError) {
+            console.warn("Single DOF inspection link failed:", inspectionError);
+          }
+        }
+      }
+
+      const compactWordBlob = await generateWordDocument(
+        [focusedPreviewEntry],
+        effectiveLocation,
+        reportCompanyName,
+        orgData,
+        selectedCompany,
+        user,
+        orgData.id,
+        focusedPreviewEntry.preventiveAction || overallAnalysis,
+        profileContext,
+        generalInfo,
+        { compact: true }
+      );
+
+      const today = new Date();
+      const safeCompanyName = (reportCompanyName || "firma")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-zA-Z0-9 _-]/g, "")
+        .trim()
+        .replace(/\s+/g, "_")
+        .slice(0, 80) || "firma";
+      const singleFileName = `Tekli_DOF_${safeCompanyName}_${today.toISOString().split("T")[0]}.docx`;
+
+      const storagePath = `${orgData.id}/${singleFileName}`;
+      const { data: uploadData, error: uploadError } = await supabase.storage
+        .from("dof-reports")
+        .upload(storagePath, compactWordBlob, {
+          contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          upsert: true,
+        });
+
+      let savedReportUrl: string | null = null;
+      if (uploadError) {
+        console.warn("Single DOF storage upload failed:", uploadError);
+        toast.warning("Arşiv yüklemesi başarısız oldu, dosya yine de indirilecek.");
+      } else if (uploadData?.path) {
+        const { data: publicUrlData } = supabase.storage.from("dof-reports").getPublicUrl(uploadData.path);
+        savedReportUrl = publicUrlData.publicUrl;
+      }
+
+      const { error: reportError } = await supabase.from("reports").insert({
+        org_id: orgData.id,
+        user_id: user?.id,
+        title: `Tekli DÖF - ${reportCompanyName}`,
+        report_type: "inspection",
+        generated_at: today.toISOString(),
+        export_format: "docx",
+        file_url: savedReportUrl,
+        content: {
+          report_kind: "single_dof",
+          company_name: reportCompanyName,
+          location: effectiveLocation,
+          report_no: generalInfo.report_no || null,
+          report_date: generalInfo.report_date || null,
+          observer_name: generalInfo.observer_name || null,
+          observer_certificate_no: generalInfo.observer_certificate_no || null,
+          entry_id: focusedPreviewEntry.id,
+          description: focusedPreviewEntry.description,
+          importance_level: focusedPreviewEntry.importance_level,
+          due_date: focusedPreviewEntry.termin_date,
+          responsible_name: focusedPreviewEntry.responsible_name || null,
+          responsible_role: focusedPreviewEntry.responsible_role || null,
+          ai_analyzed: focusedPreviewEntry.ai_analyzed,
+          inspection_id: createdInspectionId,
+          storage_upload_ok: !uploadError,
+          storage_error: uploadError?.message ?? null,
+        },
+      });
+
+      if (reportError) {
+        console.warn("Single DOF report archive failed:", reportError);
+      }
+
+      saveAs(compactWordBlob, singleFileName);
+      toast.success(
+        createdInspectionId
+          ? "Tekli DÖF kaydedildi, Denetimler kaydına bağlandı ve Word çıktısı indirildi."
+          : "Tekli DÖF kaydedildi ve Word çıktısı indirildi."
+      );
+    } catch (error) {
+      console.error("Single preview export error:", error);
+      toast.error(getUserFriendlyErrorMessage(error, "single-export"));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // ? DELETE ENTRY
   const handleDeleteEntry = (id: string) => {
     setEntries((prev) => prev.filter((e) => e.id !== id));
     toast.info("Bulgu silindi");
@@ -1617,8 +3242,14 @@ ${entries
 
 
 const handleSaveAndExport = async () => {
-  if (!siteName.trim()) {
-    toast.error("Lütfen saha adını girin");
+  if (!reportCompanyName.trim()) {
+    toast.error("Lütfen firma seçin veya manuel firma adi girin");
+    return;
+  }
+  if (!generalInfoReady) {
+    toast.error("Lütfen önce genel bilgileri eksiksiz doldurun");
+    setCreateDialogOpen(true);
+    setCreateStep("general");
     return;
   }
   if (entries.length === 0) {
@@ -1633,7 +3264,7 @@ const handleSaveAndExport = async () => {
     let reportFileName: string = "";
     let createdInspectionId: string | null = null;
 
-    // ✅ 1. DATABASE KAYITLARI
+    // ? 1. DATABASE KAYITLARI
     if (user) {
       try {
         const { data: profile } = await supabase
@@ -1648,7 +3279,7 @@ const handleSaveAndExport = async () => {
             .insert({
               org_id: profile.organization_id,
               user_id: user.id,
-              location_name: siteName,
+              location_name: effectiveLocation,
               status: "completed",
               risk_level: "high",
               media_urls: entries.flatMap(e => e.media_urls),
@@ -1665,6 +3296,71 @@ const handleSaveAndExport = async () => {
 
           if (inspection) {
             createdInspectionId = inspection.id;
+            const { data: sessionRow, error: sessionError } = await (supabase as any)
+              .from("bulk_capa_sessions")
+              .insert({
+                org_id: profile.organization_id,
+                user_id: user.id,
+                recipient_email: user.email || "",
+                site_name: effectiveLocation,
+                company_name: reportCompanyName,
+                department_name: newEntry.related_department || null,
+                organization_id: orgData?.id || null,
+                overall_analysis: overallAnalysis || null,
+                entries_count: entries.length,
+                status: "completed",
+                area_region: generalInfo.area_region || null,
+                observation_date_range: generalInfo.observation_range || null,
+                report_date: generalInfo.report_date || null,
+                observer_name: generalInfo.observer_name || null,
+                observer_certificate_no: generalInfo.observer_certificate_no || null,
+                responsible_person: generalInfo.responsible_person || null,
+                employer_representative_title: generalInfo.employer_representative_title || null,
+                employer_representative_name: generalInfo.employer_representative_name || null,
+                report_no: generalInfo.report_no || null,
+                service_company_logo_url: generalInfo.company_logo_url || selectedCompany?.logo_url || null,
+              })
+              .select("id")
+              .single();
+
+            if (sessionError) {
+              console.warn("bulk_capa_sessions insert failed:", sessionError);
+            } else if (sessionRow?.id) {
+              const bulkEntries = entries.map((entry) => ({
+                session_id: sessionRow.id,
+                description: entry.description,
+                risk_definition: entry.riskDefinition,
+                corrective_action: entry.correctiveAction,
+                preventive_action: entry.preventiveAction,
+                priority:
+                  entry.importance_level === "Kritik"
+                    ? "critical"
+                    : entry.importance_level === "Yüksek"
+                    ? "high"
+                    : entry.importance_level === "Düşük"
+                    ? "low"
+                    : "medium",
+                due_date: entry.termin_date || null,
+                related_department: entry.related_department || null,
+                notification_method: entry.notification_method || null,
+                responsible_name: entry.responsible_name || null,
+                responsible_role: entry.responsible_role || null,
+                approver_name: entry.approver_name || null,
+                approver_title: entry.approver_title || null,
+                include_stamp: entry.include_stamp,
+                media_urls: entry.media_urls || [],
+                ai_analyzed: entry.ai_analyzed,
+              }));
+
+              const { error: bulkEntriesError } = await (supabase as any)
+                .from("bulk_capa_entries")
+                .insert(bulkEntries);
+
+              if (bulkEntriesError) {
+                console.warn("bulk_capa_entries insert failed:", bulkEntriesError);
+              }
+            }
+
             for (const entry of entries) {
               await supabase.from("findings").insert({
                 inspection_id: inspection.id,
@@ -1679,36 +3375,42 @@ const handleSaveAndExport = async () => {
                     ? "critical"
                     : entry.importance_level === "Yüksek"
                     ? "high"
+                    : entry.importance_level === "Düşük"
+                    ? "low"
                     : "medium",
                 notification_method: entry.notification_method,
               });
             }
-            toast.success("Veriler veritabanına kaydedildi");
+            toast.success("Veriler veritabanina kaydedildi");
           }
         }
       } catch (dbError) {
         console.warn("Database save failed:", dbError);
-        toast.warning("Veritabanı kaydı başarısız, Word raporu oluşturuluyor.");
+        toast.warning("Veritabani kaydi basarisiz, Word raporu olusturuluyor.");
       }
     }
 
-    // ✅ 2. WORD DOKÜMANI OLUŞTUR
+    // ? 2. WORD DOKÜMANI OLUSTUR
     if (orgData && orgData.id) {
-      toast.info("Word raporu oluşturuluyor");
+      toast.info("Word raporu olusturuluyor");
       
-      // ✅ await ile blob al
+      // ? await ile blob al
       const wordBlob = await generateWordDocument(
         entries,
-        siteName,
+        effectiveLocation,
+        reportCompanyName,
         orgData,
+        selectedCompany,
         user,
         orgData.id,
-        overallAnalysis
+        overallAnalysis,
+        profileContext,
+        generalInfo
       );
 
-      // ✅ 3. DOSYA ADI (Supabase object key için güvenli)
+      // ? 3. DOSYA ADI (Supabase object key için güvenli)
       const today = new Date();
-      const safeSiteName = (siteName || "saha")
+      const safeSiteName = (effectiveLocation || "firma")
         .normalize("NFD")
         .replace(/[\u0300-\u036f]/g, "")
         .replace(/[^a-zA-Z0-9 _-]/g, "")
@@ -1717,7 +3419,7 @@ const handleSaveAndExport = async () => {
         .slice(0, 80) || "saha";
       reportFileName = `DOF_Raporu_${safeSiteName}_${today.toISOString().split("T")[0]}.docx`;
 
-      // ✅ 4. SUPABASE STORAGE'A YÜKLE
+      // ? 4. SUPABASE STORAGE'A YÜKLE
       const storagePath = `${orgData.id}/${reportFileName}`;
 
       const { data: uploadData, error: uploadError } = await supabase.storage
@@ -1731,7 +3433,7 @@ const handleSaveAndExport = async () => {
         console.error("Storage upload error:", uploadError);
           toast.error(getUserFriendlyErrorMessage(`storage upload: ${uploadError.message}`, "export"));
       } else {
-        // ✅ 5. PUBLIC URL AL
+        // ? 5. PUBLIC URL AL
         const { data: publicUrlData } = supabase.storage
           .from("dof-reports")
           .getPublicUrl(uploadData.path);
@@ -1739,21 +3441,33 @@ const handleSaveAndExport = async () => {
         savedReportUrl = publicUrlData.publicUrl;
       }
 
-      // ✅ 6. REPORTS TABLOSUNA KAYDET (upload basariliysa file_url dolu gelir)
+      // ? 6. REPORTS TABLOSUNA KAYDET (upload basariliysa file_url dolu gelir)
       const { error: dbError } = await supabase.from("reports").insert({
         org_id: orgData.id,
         user_id: user?.id,
-        title: `DÖF Raporu - ${siteName}`,
+        title: `DÖF Raporu - ${effectiveLocation}`,
         report_type: "inspection",
         generated_at: today.toISOString(),
         export_format: "docx",
         file_url: savedReportUrl,
         content: {
+          company_name: reportCompanyName,
+          report_no: generalInfo.report_no || null,
+          report_date: generalInfo.report_date || null,
+          observation_range: generalInfo.observation_range || null,
+          observer_name: generalInfo.observer_name || null,
+          observer_certificate_no: generalInfo.observer_certificate_no || null,
+          employer_representative_name: generalInfo.employer_representative_name || null,
+          employer_representative_title: generalInfo.employer_representative_title || null,
+          responsible_person: generalInfo.responsible_person || null,
+          area_region: generalInfo.area_region || null,
+          company_logo_url: generalInfo.company_logo_url || null,
+          provider_logo_url: generalInfo.provider_logo_url || null,
           inspection_id: createdInspectionId,
           report_kind: "dof",
           entries_count: entries.length,
           ai_analyzed_count: entries.filter((e) => e.ai_analyzed).length,
-          location: siteName,
+          location: effectiveLocation,
           overall_analysis: overallAnalysis || null,
           storage_upload_ok: !uploadError,
           storage_error: uploadError?.message ?? null,
@@ -1762,44 +3476,66 @@ const handleSaveAndExport = async () => {
 
       if (dbError) {
         console.error("Reports insert error:", dbError);
-         toast.error(`Rapor kaydı oluşturulamadı: ${dbError.message}`);
+         toast.error(`Rapor kaydi olusturulamadi: ${dbError.message}`);
       } else {
-        toast.success("Rapor arşivlendi");
+        toast.success("Rapor arsivlendi");
       }
 
-      // ✅ 7. DOSYAYI İNDİR
+      // ? 7. DOSYAYI INDIR
       
       saveAs(wordBlob, reportFileName);
       
-      // ✅ 8. E-POSTA GÖNDERİM SEÇENEĞİ
+      // ? 8. E-POSTA GÖNDERIM SEÇENEGI
       toast.info("E-posta için: Denetimler > Detay > E-posta Gönder");
 
-      // ✅ 9. FORMU TEMIZLE
+      // ? 9. FORMU TEMIZLE
       setEntries([]);
-      setSiteName("");
+      setSelectedCompanyId("");
+      setManualCompanyName("");
+      setCompanyInputMode("existing");
       setOverallAnalysis("");
+      setGeneralInfo({
+        company_name: "",
+        company_logo_url: null,
+        provider_logo_url: null,
+        area_region: "",
+        observation_range: "",
+        report_date: new Date().toISOString().split("T")[0],
+        observer_name: profileContext?.full_name || "",
+        observer_certificate_no: "",
+        responsible_person: "İŞVEREN / İŞVEREN VEKİLİ",
+        employer_representative_title: "İşveren / İşveren Vekili",
+        employer_representative_name: "",
+        report_no: "",
+      });
+      setCreateStep("general");
       setNewEntry({
         id: "",
         description: "",
         riskDefinition: "",
         correctiveAction: "",
         preventiveAction: "",
-        importance_level: "Normal",
+        importance_level: "Orta",
         termin_date: "",
-        related_department: "Diğer",
+        related_department: "Diger",
         notification_method: "E-mail",
+        responsible_name: "",
+        responsible_role: "",
+        approver_name: generalInfo.observer_name || profileContext?.full_name || "",
+        approver_title: profileContext?.position || "İş Güvenliği Uzmanı",
+        include_stamp: true,
         media_urls: [],
         ai_analyzed: false,
       });
 
-      toast.success("DÖF raporu oluşturuldu");
+      toast.success("DÖF raporu olusturuldu");
 
-      // ✅ 10. YÖNLENDIR
+      // ? 10. YÖNLENDIR
       setTimeout(() => {
         navigate("/inspections");
       }, 3000);
     } else {
-      toast.error("Kuruluş bilgisi bulunamadı");
+      toast.error("Kurulus bilgisi bulunamadi");
     }
   } catch (error: any) {
     console.error("Error:", error);
@@ -1824,621 +3560,1562 @@ const handleSaveAndExport = async () => {
 
   return (
     <div className="space-y-8">
-      {/* HEADER */}
-      <div>
-        <h1 className="text-3xl font-bold text-foreground flex items-center gap-2">
-          Toplu DÖF Formu
-          <Sparkles className="h-8 w-8 text-yellow-500" />
-        </h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          AI destekli düzeltici ve önleyici faaliyet planı oluştur
-        </p>
+      <div className="rounded-[28px] border border-primary/20 bg-[radial-gradient(circle_at_top_left,rgba(124,58,237,0.2),transparent_32%),linear-gradient(135deg,rgba(15,23,42,0.98),rgba(2,6,23,0.94))] p-6 shadow-[0_28px_100px_rgba(15,23,42,0.45)] md:p-8">
+        <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+          <div className="space-y-6">
+            <div className="flex flex-wrap gap-2">
+              <span className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-xs font-semibold tracking-wide text-cyan-200">
+                Yapay zekâ destekli DÖF üretimi
+              </span>
+              <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-slate-300">
+                Toplu çikti ve takip odakli
+              </span>
+            </div>
+
+            <div className="space-y-4">
+              <h1 className="text-4xl font-black tracking-tight text-white md:text-5xl">
+                Toplu DÖF Formu
+              </h1>
+              <p className="max-w-2xl text-base leading-7 text-slate-300 md:text-lg">
+                Bulgulari, riskleri ve faaliyetleri tek bir is akisinda toplayin. Yapay zekâ ilk taslagi hazirlasin, ekip ise kuruma uygun hale getirip hizla çiktiya dönüstürsün.
+              </p>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                <p className="text-xs uppercase tracking-[0.24em] text-slate-400">Açik maddeler</p>
+                <p className="mt-3 text-3xl font-bold text-white">{entries.length}</p>
+                <p className="mt-2 text-xs leading-relaxed text-slate-400">Toplu rapor için hazirlanan bulgular</p>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                <p className="text-xs uppercase tracking-[0.24em] text-slate-400">AI hazirlananlar</p>
+                <p className="mt-3 text-3xl font-bold text-white">{aiEntryCount}</p>
+                <p className="mt-2 text-xs leading-relaxed text-slate-400">Fotograf veya nottan üretilen ilk taslaklar</p>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                <p className="text-xs uppercase tracking-[0.24em] text-slate-400">Kritik öncelik</p>
+                <p className="mt-3 text-3xl font-bold text-white">{criticalEntryCount}</p>
+                <p className="mt-2 text-xs leading-relaxed text-slate-400">Yakin takip gerektiren DÖF maddeleri</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-[24px] border border-white/10 bg-slate-950/50 p-5">
+            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-cyan-200">
+              Operasyon özeti
+            </p>
+            <h2 className="mt-2 text-lg font-semibold text-white">
+              Kullaniciya siradaki adimi gösteren arayüz
+            </h2>
+            <p className="mt-3 text-sm leading-6 text-slate-300">
+              {activeHeroSummary}
+            </p>
+
+            <div className="mt-5 space-y-3">
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm font-semibold text-white">Hazirlik durumu</span>
+                  <span className="rounded-full bg-primary/15 px-3 py-1 text-xs font-semibold text-primary">
+                    {completedFieldCount}/{requiredFieldChecks.length}
+                  </span>
+                </div>
+                <p className="mt-2 text-xs leading-6 text-slate-400">
+                  {requiredFieldChecks.find((field) => !field.ready)?.label || "Bulgu listeye eklenebilir"}
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                <span className="text-sm font-semibold text-white">Yaklasan termin</span>
+                <p className="mt-2 text-xs leading-6 text-slate-400">
+                  {nearestDueEntry
+                    ? `${new Date(nearestDueEntry.termin_date).toLocaleDateString("tr-TR")} • ${nearestDueEntry.related_department}`
+                    : "Termin belirlenince burada öne çikarilir"}
+                </p>
+              </div>
+
+              <div className="rounded-2xl border border-cyan-400/20 bg-cyan-400/10 p-4">
+                <span className="text-sm font-semibold text-cyan-100">Bu modül neden güçlü?</span>
+                <ul className="mt-2 space-y-2 text-xs leading-6 text-cyan-50/90">
+                  <li>• Sablon, fotograf ve manuel akis ayni ekranda birlesir.</li>
+                  <li>• AI ilk taslagi üretirken kullanici karar kontrolünü korur.</li>
+                  <li>• Seçilen firma için geçmis DÖF kayitlari öneri motoruna dahil edilir.</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
-      {/* MAIN CARD */}
-      <div className="glass-card p-8 border border-primary/20 space-y-8">
-        {/* SITE INFO */}
-        <div className="space-y-3">
-          <Label className="text-sm font-bold text-foreground">
-            Saha/Tesis Adı
-          </Label>
-          <Input
-            placeholder="Örn: Ankara Üretim Fabrikası"
-            value={siteName}
-            onChange={(e) => setSiteName(e.target.value)}
-            className="bg-secondary/50 border-border/50 h-11"
-          />
-          
-          {/* ✅ UYARI MESAJI */}
-          {entries.length > 0 && !siteName.trim() && (
-            <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 flex gap-3">
-              <AlertCircle className="h-5 w-5 text-amber-500 shrink-0 mt-0.5" />
-              <div>
-                <p className="text-sm font-semibold text-amber-700">
-                  Saha Adı Gerekli
-                </p>
-                <p className="text-xs text-amber-600 leading-relaxed mt-1">
-                  "Kaydet ve Word İndir" butonunu etkinleştirmek için saha/tesis adını girmelisiniz.
-                </p>
-              </div>
+      <div className="glass-card space-y-8 border border-primary/20 p-6 lg:p-8">
+        <div className="space-y-6">
+        <div className="rounded-[24px] border border-border/60 bg-background/70 p-6">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary/80">
+                DÖF oluşturma ekranı
+              </p>
+              <h3 className="text-lg font-bold text-foreground">
+                Sayfa bütünlüğünü bozmadan odaklı oluşturma deneyimi
+              </h3>
+              <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
+                Yapay zeka panelleri, kalite skoru ve benzer kayıt alanları sayfada kalır. Formu yalnızca işlem anında açarsınız; böylece ekran daha temiz ve daha kolay kullanılır.
+              </p>
             </div>
-          )}
-        </div>
-
-        {/* NEW ENTRY FORM */}
-        <div className="border border-border/50 rounded-lg p-6 space-y-6 bg-secondary/20">
-          <h3 className="text-lg font-bold text-foreground flex items-center gap-2">
-            <Plus className="h-5 w-5 text-primary" />
-            Yeni Bulgu Ekle
-          </h3>
-
-          {/* AI INFO BOX */}
-          <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4 flex gap-3">
-            <Sparkles className="h-5 w-5 text-blue-500 shrink-0 mt-0.5" />
-            <div>
-              <p className="text-sm font-semibold text-blue-700">
-                AI Analizi Kullan
-              </p>
-              <p className="text-xs text-blue-600 leading-relaxed mt-1">
-                Fotoğraf yükleyin ve AI ile Analiz Et butonuna basın. Tüm alanlar otomatik doldurulur.
-              </p>
-               <p className="text-xs text-blue-600 leading-relaxed mt-1">
-                Yapay zeka tüm fotoğrafları birlikte yorumlar. Sonuçları yine de kontrol edin.
-              </p>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <Button
+                type="button"
+                onClick={() => {
+                  resetEntryDraft();
+                  setCreateMode("single");
+                  setCreateStep("items");
+                  setCreateDialogOpen(true);
+                }}
+                className="h-12 gap-2 gradient-primary border-0 text-foreground font-semibold"
+              >
+                <Plus className="h-4 w-4" />
+                DÖF Oluştur
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  resetEntryDraft();
+                  setPreviewFocusEntryId(null);
+                  setCreateMode("bulk");
+                  setCreateStep("general");
+                  setCreateDialogOpen(true);
+                }}
+                className="h-12 gap-2"
+              >
+                <Sparkles className="h-4 w-4" />
+                Çoklu DÖF Akışını Aç
+              </Button>
             </div>
           </div>
 
-          {/* DRAG & DROP */}
-          <div className="space-y-3">
-            <Label className="text-sm font-semibold flex items-center gap-2">
-              <ImageIcon className="h-4 w-4" />
-              Fotoğraflar (Zorunlu)
-            </Label>
+          <div className="mt-5 grid grid-cols-2 gap-4 xl:grid-cols-4">
+            {creationOverviewCards.map((card) => (
+              <ModuleCard
+                key={card.key}
+                eyebrow={card.eyebrow}
+                title={card.title}
+                className="min-h-[172px] bg-secondary/20"
+              >
+                <p className="text-xs leading-6 text-muted-foreground">{card.body}</p>
+              </ModuleCard>
+            ))}
+          </div>
+        </div>
 
-            <div
-              ref={dropZoneRef}
-              onDragEnter={handleDrag}
-              onDragLeave={handleDrag}
-              onDragOver={handleDrag}
-              onDrop={handleDrop}
-              className={`relative border-2 border-dashed rounded-lg p-8 text-center transition-all cursor-pointer ${
-                dragActive
-                  ? "border-primary bg-primary/10 scale-105"
-                  : "border-border/50 bg-secondary/30 hover:border-primary/50"
-              }`}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                accept="image/*"
-                onChange={handleImageUpload}
-                className="hidden"
-              />
-
-              <div className="space-y-3">
-                <div className="flex justify-center">
-                  {dragActive ? (
-                    <Cloud className="h-12 w-12 text-primary animate-bounce" />
-                  ) : (
-                    <Upload className="h-12 w-12 text-muted-foreground" />
-                  )}
-                </div>
-
+        <Dialog
+          open={createDialogOpen}
+          onOpenChange={(open) => {
+            setCreateDialogOpen(open);
+            if (!open) setCreateStep(createMode === "bulk" ? "general" : "items");
+          }}
+        >
+          <DialogContent className={cn("overflow-hidden border-primary/20 bg-slate-950/95 p-0 text-slate-100", createMode === "single" ? "max-h-[84vh] sm:max-w-xl lg:max-w-[860px]" : "max-h-[88vh] sm:max-w-2xl lg:max-w-3xl")}>
+            <DialogHeader className={cn("border-b border-white/10 text-left", createMode === "single" ? "bg-[linear-gradient(135deg,rgba(8,145,178,0.92),rgba(16,185,129,0.86))] px-5 py-3.5" : "bg-[linear-gradient(135deg,rgba(124,58,237,0.92),rgba(168,85,247,0.86))] px-6 py-4")}>
+              <div className="flex items-start justify-between gap-4">
                 <div>
-                  <p className="text-sm font-semibold text-foreground">
-                    {dragActive
-                      ? "Fotoğrafları buraya bırakın"
-                      : "Fotoğraf Yükle"}
-                  </p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {dragActive
-                      ? "Fotoğraflar yüklenecek"
-                      : "Sürükle-bırak veya dosya seç (Max 5MB)"}
+                  <div className={cn("flex flex-wrap items-center gap-2", createMode === "single" ? "mb-2" : "mb-3")}>
+                    <span className="rounded-full bg-white/15 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-white/90">
+                      {createMode === "single" ? "Tekli DÖF Oluştur" : "Çoklu DÖF Oluştur"}
+                    </span>
+                    {createMode === "bulk" ? (
+                      <span className="rounded-full bg-emerald-400/15 px-3 py-1 text-[11px] font-semibold text-emerald-100">
+                        Genel Bilgiler → Maddeler → Önizleme
+                      </span>
+                    ) : (
+                      <span className="rounded-full bg-cyan-400/15 px-3 py-1 text-[11px] font-semibold text-cyan-100">
+                        Tek form → Tek kayıt
+                      </span>
+                    )}
+                  </div>
+                  <DialogTitle className={cn("flex items-center gap-2 font-bold text-white", createMode === "single" ? "text-lg" : "text-xl")}>
+                    {createMode === "single" ? <CheckCircle2 className="h-5 w-5" /> : <Sparkles className="h-5 w-5" />}
+                    {createMode === "single" ? "Tekli DÖF Akışı" : "Çoklu DÖF Akışı"}
+                  </DialogTitle>
+                  <p className={cn("text-white/80", createMode === "single" ? "mt-1 text-[13px] leading-5" : "mt-2 text-sm")}>
+                    {createMode === "single"
+                      ? "Tek bir uygunsuzluğu hızlıca hazırlayın, yapay zekâ ile destekleyin ve tek kayıt olarak ekleyin."
+                      : "Önce rapor üst bilgisini oluşturun, ardından maddeleri kontrollü şekilde ekleyin."}
                   </p>
                 </div>
-
-                {!dragActive && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="mt-2"
-                  >
-                    <Upload className="h-3 w-3 mr-2" />
-                    Dosya Seç
-                  </Button>
-                )}
+                <div className={cn("hidden rounded-2xl border border-white/15 bg-white/10 text-right text-xs text-white/80 sm:block", createMode === "single" ? "px-3 py-2.5" : "px-4 py-3")}>
+                  <p className="font-semibold text-white">Aktif firma</p>
+                  <p className="mt-1">{reportCompanyName || "Henüz seçilmedi"}</p>
+                </div>
               </div>
-            </div>
+            </DialogHeader>
 
-            {/* IMAGE PREVIEW */}
-            {newEntry.media_urls.length > 0 && (
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <p className="text-xs text-muted-foreground">
-                    {newEntry.media_urls.length} fotoğraf yüklendi
-                  </p>
-                  {!newEntry.ai_analyzed && (
-                    <Button
-                      onClick={handleAIAnalysis}
-                      disabled={
-                        analyzing || newEntry.media_urls.length === 0
-                      }
-                      className="gap-2 h-9 text-sm gradient-primary border-0 text-foreground font-semibold"
-                    >
-                      {analyzing ? (
-                        <>
-                          <Loader2 className="h-4 w-4 animate-spin" />
-                          Analiz ediliyor...
-                        </>
-                      ) : (
-                        <>
-                          <Sparkles className="h-4 w-4" />
-                          AI ile Analiz Et
-                        </>
-                      )}
-                    </Button>
-                  )}
-                  {newEntry.ai_analyzed && (
-                    <div className="flex items-center gap-1 text-xs px-3 py-2 rounded bg-success/10 text-success font-semibold">
-                      <CheckCircle2 className="h-4 w-4" />
-                      AI Analiz Tamamlandı
-                    </div>
-                  )}
-                </div>
-
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  {newEntry.media_urls.map((url, idx) => (
-                    <div key={buildMediaKey(url, idx)} className="relative group">
-                      <img
-                        src={url}
-                        alt={`Upload ${idx}`}
-                        className="w-full h-24 object-cover rounded-lg border border-border shadow-sm"
-                      />
-                      <button
-                        onClick={() => handleRemoveImage(idx)}
-                        className="absolute top-1 right-1 bg-destructive text-white p-1.5 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+            {createMode === "bulk" ? (
+              <div className="border-b border-white/10 bg-slate-950/70 px-6 py-3">
+                <div className="flex flex-wrap items-center gap-2 text-xs font-semibold">
+                  {[
+                    { key: "general", label: "Genel Bilgiler" },
+                    { key: "items", label: `Maddeler (${entries.length})` },
+                    { key: "preview", label: "Önizleme" },
+                  ].map((step, index) => (
+                    <div key={step.key} className="flex items-center gap-2">
+                      <span
+                        className={cn(
+                          "rounded-full px-3 py-1.5",
+                          (createStep === step.key || (step.key === "preview" && previewOpen))
+                            ? "bg-emerald-500/15 text-emerald-300"
+                            : "bg-white/5 text-slate-400"
+                        )}
                       >
-                        <X className="h-3 w-3" />
-                      </button>
+                        {step.label}
+                      </span>
+                      {index < 2 ? <ChevronRight className="h-3.5 w-3.5 text-slate-600" /> : null}
                     </div>
                   ))}
                 </div>
               </div>
-            )}
-          </div>
+            ) : null}
 
-          {/* FORM FIELDS */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 pt-6 border-t border-border">
-            {/* Description */}
-            <div className="lg:col-span-2 space-y-2">
-              <Label className="text-sm font-semibold flex items-center gap-2">
-                <AlertCircle className="h-4 w-4 text-destructive" />
-                Bulgu Açıklaması *
-                {newEntry.ai_analyzed && (
-                  <Sparkles className="h-3 w-3 text-yellow-500" />
-                )}
-              </Label>
-              <Textarea
-                placeholder="Uygunsuzluğu / Riski açıklayın... (AI analiz sonrasında otomatik doldurulur)"
-                value={newEntry.description}
-                onChange={(e) =>
-                  setNewEntry({
-                    ...newEntry,
-                    description: e.target.value,
-                  })
-                }
-                className="bg-secondary/50 border-border/50 min-h-28 resize-none"
-              />
-            </div>
+            <div className={cn("overflow-y-auto px-4 sm:px-6", createMode === "single" ? "max-h-[calc(84vh-96px)] py-3.5 sm:py-4" : "max-h-[calc(88vh-128px)] py-4 sm:py-5")}>
+              {createMode === "bulk" && createStep === "general" ? (
+                <div className="space-y-5">
+                  <div className="rounded-[24px] border border-emerald-400/20 bg-emerald-400/10 p-4 text-sm leading-6 text-emerald-100">
+                    📋 Önce genel bilgileri doldurun. Bu bilgiler PDF raporunun üst sabit kısmında yer alacaktır.
+                  </div>
 
-            {/* Risk Definition */}
-            <div className="lg:col-span-2 space-y-2">
-              <Label className="text-sm font-semibold flex items-center gap-2">
-                <AlertTriangle className="h-4 w-4 text-warning" />
-                Risk Tanımı *
-                {newEntry.ai_analyzed && (
-                  <Sparkles className="h-3 w-3 text-yellow-500" />
-                )}
-              </Label>
-              <Textarea
-                placeholder="Riskin ne olduğunu ve sonuçlarını açıklayın... (AI analiz sonrasında otomatik doldurulur)"
-                value={newEntry.riskDefinition}
-                onChange={(e) =>
-                  setNewEntry({
-                    ...newEntry,
-                    riskDefinition: e.target.value,
-                  })
-                }
-                className="bg-secondary/50 border-border/50 min-h-24 resize-none"
-              />
-            </div>
+                  {(suggestedGeneralTemplate || recentHeaderSuggestion) && (
+                    <div className="grid gap-3 lg:grid-cols-2">
+                      {suggestedGeneralTemplate ? (
+                        <div className="rounded-[24px] border border-cyan-400/20 bg-cyan-400/10 p-4">
+                          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-cyan-200">Önerilen şablon</p>
+                          <p className="mt-2 text-base font-semibold text-white">{suggestedGeneralTemplate.name}</p>
+                          <p className="mt-2 text-sm leading-6 text-slate-200">
+                            {suggestedTemplateReason || "Bu firmaya benzer kayıtlar için daha önce kaydedilmiş genel bilgi şablonu bulundu."}
+                          </p>
+                          <Button type="button" variant="outline" onClick={() => applySavedTemplate(suggestedGeneralTemplate)} className="mt-4 border-cyan-300/30 bg-cyan-400/10 text-cyan-100 hover:bg-cyan-400/15">
+                            Şablonu Uygula
+                          </Button>
+                        </div>
+                      ) : null}
 
-            {/* Corrective Action */}
-            <div className="lg:col-span-2 space-y-2">
-              <Label className="text-sm font-semibold flex items-center gap-2">
-                Düzeltici Faaliyet *
-                {newEntry.ai_analyzed && (
-                  <Sparkles className="h-3 w-3 text-yellow-500" />
-                )}
-              </Label>
-              <Textarea
-                placeholder="Mevcut sorunu çözmek için alınacak adımlar... (AI analiz sonrasında otomatik doldurulur)"
-                value={newEntry.correctiveAction}
-                onChange={(e) =>
-                  setNewEntry({
-                    ...newEntry,
-                    correctiveAction: e.target.value,
-                  })
-                }
-                className="bg-secondary/50 border-border/50 min-h-24 resize-none"
-              />
-            </div>
+                      {recentHeaderSuggestion ? (
+                        <div className="rounded-[24px] border border-amber-400/20 bg-amber-400/10 p-4">
+                          <p className="text-xs font-semibold uppercase tracking-[0.22em] text-amber-200">Son kullanılan üst bilgi</p>
+                          <p className="mt-2 text-base font-semibold text-white">{recentHeaderSuggestion.area_region || "Alan belirtilmemiş"}</p>
+                          <p className="mt-2 text-sm leading-6 text-slate-200">
+                            {recentHeaderSuggestionReason || "Bu firmada en son kullanılan rapor üst bilgisi bulundu. Tek tıkla yeniden uygulayabilirsiniz."}
+                          </p>
+                          <Button type="button" variant="outline" onClick={applyRecentHeaderSuggestion} className="mt-4 border-amber-300/30 bg-amber-400/10 text-amber-100 hover:bg-amber-400/15">
+                            Son Üst Bilgiyi Kullan
+                          </Button>
+                        </div>
+                      ) : null}
+                    </div>
+                  )}
 
-            {/* Preventive Action */}
-            <div className="lg:col-span-2 space-y-2">
-              <Label className="text-sm font-semibold flex items-center gap-2">
-                Önleyici Faaliyet *
-                {newEntry.ai_analyzed && (
-                  <Sparkles className="h-3 w-3 text-yellow-500" />
-                )}
-              </Label>
-              <Textarea
-                placeholder="Aynı sorunun tekrar olmasını önlemek için alınacak adımlar... (AI analiz sonrasında otomatik doldurulur)"
-                value={newEntry.preventiveAction}
-                onChange={(e) =>
-                  setNewEntry({
-                    ...newEntry,
-                    preventiveAction: e.target.value,
-                  })
-                }
-                className="bg-secondary/50 border-border/50 min-h-24 resize-none"
-              />
-            </div>
+                  <div className="space-y-2">
+                    <Label className="text-sm font-semibold text-white">Firma *</Label>
+                    <div className="flex flex-wrap gap-2">
+                      <button type="button" onClick={() => handleCompanyModeChange("existing")} className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${companyInputMode === "existing" ? "bg-primary/15 text-primary" : "bg-secondary/40 text-muted-foreground hover:bg-secondary"}`}>Firma seç</button>
+                      <button type="button" onClick={() => handleCompanyModeChange("manual")} className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${companyInputMode === "manual" ? "bg-primary/15 text-primary" : "bg-secondary/40 text-muted-foreground hover:bg-secondary"}`}>Manuel yaz</button>
+                    </div>
+                    {companyInputMode === "existing" ? (
+                      <Popover open={companyComboboxOpen} onOpenChange={setCompanyComboboxOpen}>
+                        <PopoverTrigger asChild>
+                          <Button type="button" variant="outline" role="combobox" aria-expanded={companyComboboxOpen} className="h-12 w-full justify-between rounded-2xl border-white/15 bg-white/5 text-left font-normal text-white">
+                            <span className="truncate">{selectedCompany ? selectedCompany.name : "Firma seçin veya arayın..."}</span>
+                            <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[var(--radix-popover-trigger-width)] border-border bg-card p-0" align="start">
+                          <Command>
+                            <CommandInput placeholder="Firma ara..." value={companySearch} onValueChange={setCompanySearch} />
+                            <CommandList>
+                              <CommandEmpty>Bu aramada firma bulunamadı. İsterseniz manuel yaz moduna geçebilirsiniz.</CommandEmpty>
+                              {filteredCompanies.map((company) => (
+                                <CommandItem key={company.id} value={company.name} onSelect={() => { setSelectedCompanyId(company.id); setCompanyComboboxOpen(false); setCompanySearch(""); }}>
+                                  <Check className={cn("mr-2 h-4 w-4", selectedCompanyId === company.id ? "opacity-100" : "opacity-0")} />
+                                  {company.name}
+                                </CommandItem>
+                              ))}
+                            </CommandList>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
+                    ) : (
+                      <Input placeholder="Firma adını manuel yazın..." value={manualCompanyName} onChange={(e) => setManualCompanyName(e.target.value)} className="h-12 rounded-2xl border-white/15 bg-white/5 text-white placeholder:text-slate-500" />
+                    )}
+                    <p className="text-xs text-slate-400">
+                      {companyInputMode === "existing"
+                        ? companies.length > 0
+                          ? "Sisteme eklediğiniz firmalar arasından seçim yapabilirsiniz."
+                          : "Henüz kayıtlı firma bulunamadı. Manuel yaz modunu kullanabilirsiniz."
+                        : "Firma sistemde yoksa adını manuel olarak yazabilirsiniz."}
+                    </p>
+                  </div>
 
-            {/* Importance Level */}
-            <div className="space-y-2">
-              <Label className="text-sm font-semibold">
-                Önemlilik Seviyesi
-              </Label>
-              <Select
-                value={newEntry.importance_level || "Normal"}
-                onValueChange={(value: any) =>
-                  setNewEntry({
-                    ...newEntry,
-                    importance_level: value,
-                  })
-                }
-              >
-                <SelectTrigger className="bg-secondary/50 border-border/50 h-11">
-                  <SelectValue placeholder="Seçiniz" />
-                </SelectTrigger>
-                <SelectContent className="bg-card border-border">
-                  {IMPORTANCE_LEVELS.map((level) => (
-                    <SelectItem key={level.value} value={level.value}>
-                      {level.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label className="text-sm font-semibold text-white">Hizmet Alan Firma Logosu</Label>
+                      <button type="button" onClick={() => clientLogoInputRef.current?.click()} className="flex h-[84px] w-full items-center justify-center rounded-[20px] border border-dashed border-white/15 bg-white/5 text-sm text-slate-300 transition hover:border-primary/40 hover:bg-primary/10">
+                        {generalInfo.company_logo_url || selectedCompany?.logo_url ? "Logo Güncelle" : "Logo Yükle (max 2MB)"}
+                      </button>
+                      <input ref={clientLogoInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => void handleLogoUpload(e, "company_logo_url")} />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-sm font-semibold text-white">Hizmet Veren Firma Logosu</Label>
+                      <button type="button" onClick={() => providerLogoInputRef.current?.click()} className="flex h-[84px] w-full items-center justify-center rounded-[20px] border border-dashed border-white/15 bg-white/5 text-sm text-slate-300 transition hover:border-primary/40 hover:bg-primary/10">
+                        {generalInfo.provider_logo_url ? "Logo Güncelle" : "Logo Yükle (opsiyonel)"}
+                      </button>
+                      <input ref={providerLogoInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => void handleLogoUpload(e, "provider_logo_url")} />
+                      <p className="text-xs text-slate-400">Sadece PDF çıktısında gösterilir, kaydedilmez.</p>
+                    </div>
+                  </div>
 
-            {/* Department */}
-            <div className="space-y-2">
-              <Label className="text-sm font-semibold flex items-center gap-2">
-                <Users className="h-4 w-4" />
-                İlgili Bölüm
-              </Label>
-              <Select
-                value={newEntry.related_department || "Diğer"}
-                onValueChange={(value) =>
-                  setNewEntry({
-                    ...newEntry,
-                    related_department: value,
-                  })
-                }
-              >
-                <SelectTrigger className="bg-secondary/50 border-border/50 h-11">
-                  <SelectValue placeholder="Seçiniz" />
-                </SelectTrigger>
-                <SelectContent className="bg-card border-border">
-                  {DEPARTMENTS.map((dept) => (
-                    <SelectItem key={dept} value={dept}>
-                      {dept}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label className="text-sm font-semibold text-white">Alan / Bölge</Label>
+                      <Input value={generalInfo.area_region} onChange={(e) => handleGeneralInfoChange("area_region", e.target.value)} placeholder="Örn: Üretim Sahası, Depo Alanı" className="h-12 rounded-2xl border-white/15 bg-white/5 text-white placeholder:text-slate-500" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-sm font-semibold text-white">Gözetim Yapılan Tarih Aralığı</Label>
+                      <Input value={generalInfo.observation_range} onChange={(e) => handleGeneralInfoChange("observation_range", e.target.value)} placeholder="Örn: Ocak - Aralık" className="h-12 rounded-2xl border-white/15 bg-white/5 text-white placeholder:text-slate-500" />
+                    </div>
+                  </div>
 
-            {/* Due Date */}
-            <div className="space-y-2">
-              <Label className="text-sm font-semibold flex items-center gap-2">
-                <Calendar className="h-4 w-4" />
-                Termin Tarihi *
-              </Label>
-              <Input
-                type="date"
-                value={newEntry.termin_date}
-                onChange={(e) =>
-                  setNewEntry({
-                    ...newEntry,
-                    termin_date: e.target.value,
-                  })
-                }
-                className="bg-secondary/50 border-border/50 h-11"
-              />
-            </div>
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label className="text-sm font-semibold text-white">Rapor Tarihi</Label>
+                      <Input type="date" value={generalInfo.report_date} onChange={(e) => handleGeneralInfoChange("report_date", e.target.value)} className="h-12 rounded-2xl border-white/15 bg-white/5 text-white" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-sm font-semibold text-white">Rapor No</Label>
+                      <Input value={generalInfo.report_no} onChange={(e) => handleGeneralInfoChange("report_no", e.target.value)} placeholder="Rapor numarası giriniz" className="h-12 rounded-2xl border-white/15 bg-white/5 text-white placeholder:text-slate-500" />
+                    </div>
+                  </div>
 
-            {/* ✅ Notification Method - TEXT INPUT */}
-            <div className="space-y-2">
-              <Label className="text-sm font-semibold flex items-center gap-2">
-                Bildirim Şekli
-              </Label>
-              <Input
-                placeholder="Örn: E-mail, SMS, Telefon, Yüz Yüze, vb..."
-                value={newEntry.notification_method || ""}
-                onChange={(e) =>
-                  setNewEntry({
-                    ...newEntry,
-                    notification_method: e.target.value,
-                  })
-                }
-                className="bg-secondary/50 border-border/50 h-11"
-              />
-            </div>
-          </div>
-
-          {/* ADD BUTTON */}
-          <Button
-            onClick={handleAddEntry}
-            className="w-full gap-2 gradient-primary border-0 text-foreground font-semibold h-12"
-          >
-            <Plus className="h-5 w-5" />
-            Bulgayı Ekle
-          </Button>
-        </div>
-        {/* ENTRIES LIST */}
-        {entries.length > 0 && (
-          <div className="space-y-4">
-            <h3 className="text-lg font-bold text-foreground">
-              Eklenen Bulgular ({entries.length})
-            </h3>
-
-            <div className="space-y-3">
-              {entries.map((entry, idx) => (
-                <div
-                  key={entry.id}
-                  className="glass-card p-4 border border-border/50 space-y-3 hover:border-primary/50 transition-colors"
-                >
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1 min-w-0">
-                      <p className="font-bold text-foreground flex items-center gap-2">
-                        MADDE {idx + 1}:{" "}
-                        {entry.description.substring(0, 50)}...
-                        {entry.ai_analyzed && (
-                          <Sparkles className="h-4 w-4 text-yellow-500 shrink-0" />
-                        )}
-                      </p>
-                      <div className="flex flex-wrap gap-2 mt-2">
-                        <span
-                          className={`text-xs px-2 py-1 rounded font-semibold ${
-                            IMPORTANCE_LEVELS.find(
-                              (l) => l.value === entry.importance_level
-                            )?.color
-                          }`}
-                        >
-                          {entry.importance_level}
-                        </span>
-                        <span className="text-xs px-2 py-1 rounded bg-secondary/50 text-muted-foreground">
-                          {entry.related_department}
-                        </span>
-                        <span className="text-xs px-2 py-1 rounded bg-blue-500/10 text-blue-600">
-                          
-                          {new Date(entry.termin_date).toLocaleDateString(
-                            "tr-TR"
-                          )}
-                        </span>
-                        
-                        {entry.media_urls.length > 0 && (
-                          <span className="text-xs px-2 py-1 rounded bg-purple-500/10 text-purple-600">
-                            {entry.media_urls.length} fotoğraf
-                          </span>
-                        )}
-                        {/* ✅ YENİ */}
-                        <span className="text-xs px-2 py-1 rounded bg-green-500/10 text-green-600">
-                          Bildirim: {entry.notification_method || "E-mail"}
-                        </span>
+                  <div className="rounded-[24px] border border-indigo-400/20 bg-indigo-400/5 p-5">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <h4 className="text-lg font-semibold text-white">Gözetim Yapan (İSG Uzmanı)</h4>
+                        <p className="mt-1 text-sm text-slate-300">Kaşe seçimi ve uzman bilgileri rapor üst bilgisinde kullanılır.</p>
+                      </div>
+                      <button type="button" onClick={() => setNewEntry((prev) => ({ ...prev, include_stamp: !prev.include_stamp }))} className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm font-semibold text-white">Kaşe Ekle</button>
+                    </div>
+                    <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium text-slate-200">Ad Soyad</Label>
+                        <Input value={generalInfo.observer_name} onChange={(e) => { handleGeneralInfoChange("observer_name", e.target.value); setNewEntry((prev) => ({ ...prev, approver_name: e.target.value })); }} placeholder="Ad Soyad" className="h-12 rounded-2xl border-white/15 bg-white/5 text-white placeholder:text-slate-500" />
+                      </div>
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium text-slate-200">Sertifika No</Label>
+                        <Input value={generalInfo.observer_certificate_no} onChange={(e) => handleGeneralInfoChange("observer_certificate_no", e.target.value)} placeholder="İSG Uzmanı Sertifika No" className="h-12 rounded-2xl border-white/15 bg-white/5 text-white placeholder:text-slate-500" />
                       </div>
                     </div>
+                  </div>
+
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label className="text-sm font-semibold text-white">Sorumlu Kişi</Label>
+                      <Input value={generalInfo.responsible_person} onChange={(e) => handleGeneralInfoChange("responsible_person", e.target.value)} placeholder="İŞVEREN/İŞVEREN VEKİLİ" className="h-12 rounded-2xl border-white/15 bg-white/5 text-white placeholder:text-slate-500" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-sm font-semibold text-white">İşveren/İşveren Vekili</Label>
+                      <Input value={generalInfo.employer_representative_name} onChange={(e) => handleGeneralInfoChange("employer_representative_name", e.target.value)} placeholder="Ad Soyad" className="h-12 rounded-2xl border-white/15 bg-white/5 text-white placeholder:text-slate-500" />
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px]">
                     <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleDeleteEntry(entry.id)}
-                      className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                      type="button"
+                      variant="outline"
+                      onClick={() => setTemplateDialogOpen(true)}
+                      className="h-12 w-full rounded-2xl border-primary/30 bg-primary/10 text-primary hover:bg-primary/15"
                     >
-                      <Trash2 className="h-4 w-4" />
+                      Kaydedilmiş DÖF Şablonlarım
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        setTemplateName(`${reportCompanyName || "Yeni"} şablonu`);
+                        setTemplateDialogOpen(true);
+                      }}
+                      className="h-12 rounded-2xl border-white/10 bg-white/5 text-slate-200 hover:bg-white/10"
+                    >
+                      Şablon Olarak Kaydet
+                    </Button>
+                  </div>
+
+                  <div className="flex items-center justify-between gap-4 border-t border-white/10 pt-4">
+                    <span className={`rounded-full px-3 py-1.5 text-xs font-semibold ${generalInfoReady ? "bg-emerald-500/10 text-emerald-300" : "bg-amber-500/10 text-amber-300"}`}>
+                      {generalInfoReady ? "Genel bilgiler hazır" : "Eksik alan var"}
+                    </span>
+                    <Button type="button" disabled={!generalInfoReady} onClick={() => setCreateStep("items")} className="h-12 rounded-2xl bg-emerald-500 px-6 font-semibold text-white hover:bg-emerald-400">
+                      Madde Eklemeye Geç
                     </Button>
                   </div>
                 </div>
-              ))}
-            </div>
-          </div>
-        )}
+              ) : (
+              <div className="space-y-5">
+                <div className={cn("flex flex-col rounded-[24px] md:flex-row md:items-center md:justify-between", createMode === "single" ? "gap-2.5 border border-cyan-400/15 bg-cyan-400/5 p-3.5" : "gap-3 border border-primary/15 bg-primary/5 p-4")}>
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.22em] text-primary/80">
+                      {createMode === "single" ? "Tekli DÖF formu" : "Madde akışı"}
+                    </p>
+                    <p className={cn("text-slate-300", createMode === "single" ? "mt-1 text-[13px] leading-5" : "mt-2 text-sm leading-6")}>
+                      {createMode === "single"
+                        ? "Tek bir uygunsuzluğu hızlıca oluşturun. Yapay zekâ taslağı destekler, siz son kontrolü yapıp kaydı tamamlayın."
+                        : "Tek bir maddeyi hazırlayıp listeye ekleyin veya kayıtlı madde şablonlarından hızlı başlangıç yapın."}
+                    </p>
+                  </div>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        setTemplateDialogMode("item");
+                        setTemplateDialogOpen(true);
+                      }}
+                      className="border-primary/30 bg-primary/10 text-primary hover:bg-primary/15"
+                    >
+                      Madde Şablonlarım
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        setTemplateDialogMode("item");
+                        setTemplateName(`${newEntry.related_department || "Yeni"} madde şablonu`);
+                        setTemplateDialogOpen(true);
+                      }}
+                      className="border-white/10 bg-white/5 text-slate-200 hover:bg-white/10"
+                    >
+                      Maddeyi Şablon Kaydet
+                    </Button>
+                  </div>
+                </div>
 
-        {entries.length > 0 && (
-          <div className="border border-border/50 rounded-lg p-6 space-y-4 bg-secondary/20">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <div>
-                <h3 className="text-lg font-bold text-foreground">Genel Analiz</h3>
-                <p className="text-sm text-muted-foreground mt-1">
-                  Eklenen tüm DÖF maddeleri için tek bir genel değerlendirme oluşturabilirsiniz.
+                {createMode === "bulk" ? (
+                <div className="rounded-[24px] border border-white/10 bg-white/5 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">Madde etiketleri</p>
+                      <p className="mt-1 text-sm text-slate-300">Şablonları daha sonra daha hızlı bulmak için konu etiketleri seçin.</p>
+                    </div>
+                    {itemTemplateTags.length > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => setItemTemplateTags([])}
+                        className="text-xs font-semibold text-slate-400 transition hover:text-white"
+                      >
+                        Temizle
+                      </button>
+                    ) : null}
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {ITEM_TEMPLATE_TAGS.map((tag) => {
+                      const active = itemTemplateTags.includes(tag);
+                      return (
+                        <button
+                          key={tag}
+                          type="button"
+                          onClick={() =>
+                            setItemTemplateTags((prev) =>
+                              prev.includes(tag) ? prev.filter((item) => item !== tag) : [...prev, tag]
+                            )
+                          }
+                          className={cn(
+                            "rounded-full border px-3 py-1.5 text-xs font-semibold transition-all",
+                            active
+                              ? "border-cyan-400/40 bg-cyan-400/15 text-cyan-100"
+                              : "border-white/10 bg-white/5 text-slate-300 hover:border-white/20 hover:bg-white/10"
+                          )}
+                        >
+                          {tag}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                ) : null}
+
+                <div className="grid gap-3 md:grid-cols-[110px_minmax(0,1fr)_152px]">
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">DÖF No</p>
+                    <p className="mt-3 text-lg font-bold text-white">{nextDofNumber}</p>
+                  </div>
+                  <div className="rounded-2xl border border-primary/20 bg-primary/10 p-4">
+                    <div className="flex gap-3">
+                      <span className="text-lg">💡</span>
+                      <p className="text-xs leading-6 text-slate-200">
+                        Hazırladığınız DÖF raporunu bir sonraki adımda firmaya kolayca e-posta ile gönderebilirsiniz.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="rounded-2xl border border-dashed border-white/15 bg-white/5 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-300">Fotoğraf (Opsiyonel)</p>
+                        <p className="mt-2 text-[11px] leading-5 text-slate-400">Max 2 foto • 5MB • Önerilen: 800x600px</p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="flex h-16 w-16 items-center justify-center rounded-2xl border border-dashed border-primary/35 bg-slate-900/80 text-primary transition-colors hover:border-primary hover:bg-primary/10"
+                      >
+                        <Upload className="h-5 w-5" />
+                      </button>
+                    </div>
+                    <input ref={fileInputRef} type="file" multiple accept="image/*" onChange={handleImageUpload} className="hidden" />
+                  </div>
+                </div>
+
+                {newEntry.media_urls.length > 0 ? (
+                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                    {newEntry.media_urls.map((url, idx) => (
+                      <div key={buildMediaKey(url, idx)} className="group relative">
+                        <img src={url} alt={`Upload ${idx}`} className="h-24 w-full rounded-2xl border border-white/10 object-cover" />
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveImage(idx)}
+                          className="absolute right-2 top-2 rounded-full bg-slate-950/80 p-1.5 text-white opacity-0 transition-opacity group-hover:opacity-100"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+
+                {createMode === "single" && editingEntryId ? (
+                <div className="rounded-[24px] border border-cyan-400/20 bg-cyan-400/5 p-4">
+                    <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-[0.22em] text-cyan-200">
+                          Düzenleme Özeti
+                        </p>
+                        <p className="mt-2 text-sm leading-6 text-slate-300">
+                          Aşağıda, önizlemeden geri döndüğünüz kayıtta değiştirdiğiniz alanları canlı olarak görebilirsiniz.
+                        </p>
+                      </div>
+                      <span className="rounded-full bg-cyan-400/10 px-3 py-1 text-xs font-semibold text-cyan-100">
+                        {singleEditDiffs.length} alan değişti
+                      </span>
+                    </div>
+
+                    <div className="mt-4 grid gap-3 md:grid-cols-2">
+                      {singleEditDiffs.length > 0 ? (
+                        singleEditDiffs.map((diff) => (
+                          <div key={String(diff.key)} className="rounded-2xl border border-cyan-300/15 bg-slate-950/30 p-3">
+                            <div className="flex items-center justify-between gap-3">
+                              <p className="text-sm font-semibold text-white">{diff.label}</p>
+                              <span className="rounded-full border border-cyan-300/20 bg-cyan-400/10 px-2.5 py-1 text-[11px] font-semibold text-cyan-100">
+                                Güncellendi
+                              </span>
+                            </div>
+                            <p className="mt-2 text-xs text-slate-400">
+                              <span className="mr-2 inline-flex rounded-full border border-slate-700 bg-slate-900/80 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-300">
+                                Önce
+                              </span>
+                              {diff.before}
+                            </p>
+                            <p className="mt-2 text-xs text-cyan-200">
+                              <span className="mr-2 inline-flex rounded-full border border-cyan-400/20 bg-cyan-400/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-cyan-100">
+                                Şimdi
+                              </span>
+                              {diff.after}
+                            </p>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="rounded-2xl border border-emerald-400/15 bg-emerald-400/5 p-3 text-sm text-emerald-200">
+                          Henüz alan değişikliği yapılmadı. Formu güncelledikçe farklar burada görünecek.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : null}
+
+                <div className="space-y-2">
+                  <Label className="text-sm font-semibold text-white">Firma *</Label>
+                  <div className="flex flex-wrap gap-2">
+                    <button type="button" onClick={() => handleCompanyModeChange("existing")} className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${companyInputMode === "existing" ? "bg-primary/15 text-primary" : "bg-secondary/40 text-muted-foreground hover:bg-secondary"}`}>Kayıtlı firmadan seç</button>
+                    <button type="button" onClick={() => handleCompanyModeChange("manual")} className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${companyInputMode === "manual" ? "bg-primary/15 text-primary" : "bg-secondary/40 text-muted-foreground hover:bg-secondary"}`}>Manuel firma gir</button>
+                  </div>
+                  {companyInputMode === "existing" ? (
+                    <Popover open={companyComboboxOpen} onOpenChange={setCompanyComboboxOpen}>
+                      <PopoverTrigger asChild>
+                        <Button type="button" variant="outline" role="combobox" aria-expanded={companyComboboxOpen} className="h-12 w-full justify-between rounded-2xl border-white/15 bg-white/5 text-left font-normal text-white">
+                          <span className="truncate">{selectedCompany ? selectedCompany.name : "Firma seçin veya arayın..."}</span>
+                          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                        </Button>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-[var(--radix-popover-trigger-width)] border-border bg-card p-0" align="start">
+                        <Command>
+                          <CommandInput placeholder="Firma ara..." value={companySearch} onValueChange={setCompanySearch} />
+                          <CommandList>
+                            <CommandEmpty>Bu aramada firma bulunamadı. İsterseniz manuel firma girişi yapabilirsiniz.</CommandEmpty>
+                            {filteredCompanies.map((company) => (
+                              <CommandItem key={company.id} value={company.name} onSelect={() => { setSelectedCompanyId(company.id); setCompanyComboboxOpen(false); setCompanySearch(""); }}>
+                                <Check className={cn("mr-2 h-4 w-4", selectedCompanyId === company.id ? "opacity-100" : "opacity-0")} />
+                                {company.name}
+                              </CommandItem>
+                            ))}
+                          </CommandList>
+                        </Command>
+                      </PopoverContent>
+                    </Popover>
+                  ) : (
+                    <Input placeholder="Firma adını manuel yazın..." value={manualCompanyName} onChange={(e) => setManualCompanyName(e.target.value)} className="h-12 rounded-2xl border-white/15 bg-white/5 text-white placeholder:text-slate-500" />
+                  )}
+                  <p className="text-xs text-slate-400">
+                    {companyInputMode === "existing"
+                      ? companies.length > 0
+                        ? "Sisteme eklediğiniz firmalardan seçim yapabilirsiniz."
+                        : "Kayıtlı firma bulunamadı. Manuel giriş modunu kullanabilirsiniz."
+                      : "Firma listede yoksa adını kendiniz yazabilirsiniz."}
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-sm font-semibold text-white">Bölüm</Label>
+                  <Input placeholder="Örn: Üretim Sahası, Depo Alanı" value={newEntry.related_department} onChange={(e) => setNewEntry((prev) => ({ ...prev, related_department: e.target.value }))} className="h-12 rounded-2xl border-white/15 bg-white/5 text-white placeholder:text-slate-500" />
+                </div>
+
+                <div className="rounded-[24px] border border-white/10 bg-white/[0.04] p-5">
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className="h-4 w-4 text-amber-400" />
+                      <h4 className="text-lg font-semibold text-white">Bulgular</h4>
+                    </div>
+                    <span className="text-xs font-medium text-fuchsia-300">AI ile analiz edilir</span>
+                  </div>
+                  <div className="mt-4 space-y-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <Label className="text-sm font-medium text-slate-200">Açıklama (Sadece Burayı Doldur)* <span className="text-slate-400">(20-300 karakter)</span></Label>
+                      <span className="text-xs text-slate-500">{newEntry.description.length}/300 karakter</span>
+                    </div>
+                    <Textarea placeholder="örn: Korkuluklar standartlara uygun değil, Uygun olmayan istifleme, Yetersiz aydınlatma v.b." value={newEntry.description} maxLength={300} onChange={(e) => setNewEntry((prev) => ({ ...prev, description: e.target.value }))} className="min-h-28 rounded-2xl border-white/10 bg-slate-950/60 text-white placeholder:text-slate-500" />
+                  </div>
+                  <div className="mt-4 space-y-2">
+                    <Label className="text-sm font-medium text-slate-200">Uygunsuzluk Tanımı <span className="text-slate-400">(AI ile oluşturulur)</span></Label>
+                    <Textarea placeholder="Yapay zeka bu alanı otomatik dolduracak..." value={newEntry.riskDefinition} onChange={(e) => setNewEntry((prev) => ({ ...prev, riskDefinition: e.target.value }))} className="min-h-24 rounded-2xl border-white/10 bg-slate-950/60 text-white placeholder:text-slate-500" />
+                  </div>
+                  <Button type="button" onClick={handleAIAnalysis} disabled={analyzing || newEntry.media_urls.length === 0} className="mt-4 h-12 w-full rounded-2xl border-0 bg-[linear-gradient(90deg,rgba(216,180,254,0.95),rgba(192,132,252,0.95),rgba(168,85,247,0.95))] font-semibold text-white shadow-[0_18px_40px_rgba(147,51,234,0.25)]">
+                    {analyzing ? (<><Loader2 className="mr-2 h-4 w-4 animate-spin" />Yapay zeka hazırlıyor...</>) : (<><Sparkles className="mr-2 h-4 w-4" />Yapay Zeka ile Hazırla</>)}
+                  </Button>
+                </div>
+
+                <div className="space-y-2">
+                  <Label className="text-sm font-semibold text-white">Düzeltici Faaliyet</Label>
+                  <Textarea placeholder="Yapay zeka bu alanı otomatik dolduracak veya manuel yazabilirsiniz..." value={newEntry.correctiveAction} onChange={(e) => setNewEntry((prev) => ({ ...prev, correctiveAction: e.target.value }))} className="min-h-28 rounded-2xl border-white/15 bg-white/5 text-white placeholder:text-slate-500" />
+                </div>
+
+                <div className="grid gap-5 lg:grid-cols-2">
+                  <div className="space-y-3">
+                    <Label className="text-sm font-semibold text-white">Öncelik</Label>
+                    <div className="grid grid-cols-2 gap-3">
+                      {IMPORTANCE_LEVELS.map((level) => (
+                        <button key={level.value} type="button" onClick={() => setNewEntry((prev) => ({ ...prev, importance_level: level.value as HazardEntry["importance_level"] }))} className={cn("rounded-2xl border px-4 py-3 text-left text-sm font-semibold transition-all", newEntry.importance_level === level.value ? level.color : "border-white/10 bg-white/5 text-slate-200 hover:border-white/20 hover:bg-white/10")}>{level.label}</button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="space-y-3">
+                    <Label className="text-sm font-semibold text-white">Termin Tarihi</Label>
+                    <Input type="date" value={newEntry.termin_date} onChange={(e) => setNewEntry((prev) => ({ ...prev, termin_date: e.target.value }))} className="h-12 rounded-2xl border-white/15 bg-white/5 text-white" />
+                    <button type="button" onClick={() => setQuickDueDate(suggestedDueDays)} className="text-xs font-medium text-primary hover:text-primary/80">➥ Önerilen termini uygula</button>
+                  </div>
+                </div>
+
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label className="text-sm font-semibold text-white">Sorumlu Kişi(ler)</Label>
+                    <Input placeholder="Ad Soyad" value={newEntry.responsible_name} onChange={(e) => setNewEntry((prev) => ({ ...prev, responsible_name: e.target.value }))} className="h-12 rounded-2xl border-white/15 bg-white/5 text-white placeholder:text-slate-500" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-sm font-semibold text-white">Sorumlu Görev</Label>
+                    <Input placeholder="Örn: Üretim Müdürü, Bakım Teknisyeni" value={newEntry.responsible_role} onChange={(e) => setNewEntry((prev) => ({ ...prev, responsible_role: e.target.value }))} className="h-12 rounded-2xl border-white/15 bg-white/5 text-white placeholder:text-slate-500" />
+                  </div>
+                </div>
+
+                <div className="rounded-[24px] border border-indigo-400/20 bg-indigo-400/5 p-5">
+                  <div className="flex items-center gap-2">
+                    <Shield className="h-4 w-4 text-indigo-300" />
+                    <h4 className="text-lg font-semibold text-white">Onaylayan (İş Güvenliği Uzmanı)</h4>
+                  </div>
+                  <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label className="text-sm font-medium text-slate-200">Ad Soyad</Label>
+                      <Input placeholder="İSG Uzmanı Ad Soyad" value={newEntry.approver_name} onChange={(e) => setNewEntry((prev) => ({ ...prev, approver_name: e.target.value }))} className="h-12 rounded-2xl border-white/15 bg-white/5 text-white placeholder:text-slate-500" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-sm font-medium text-slate-200">Ünvan</Label>
+                      <Input placeholder="İş Güvenliği Uzmanı" value={newEntry.approver_title} onChange={(e) => setNewEntry((prev) => ({ ...prev, approver_title: e.target.value }))} className="h-12 rounded-2xl border-white/15 bg-white/5 text-white placeholder:text-slate-500" />
+                    </div>
+                  </div>
+                  <div className="mt-4 flex items-center justify-between gap-4 rounded-2xl border border-indigo-300/20 bg-indigo-300/5 px-4 py-3">
+                    <div>
+                      <p className="text-sm font-semibold text-indigo-100">İSG Uzmanı Kaşesi Ekle</p>
+                      <p className="mt-1 text-xs leading-5 text-indigo-200/80">Kaşe yüklemek için Profilim → Ayarlar → Kaşe Bilgisi Yükle bölümünü kullanın.</p>
+                    </div>
+                    <Switch checked={newEntry.include_stamp} onCheckedChange={(checked) => setNewEntry((prev) => ({ ...prev, include_stamp: checked }))} />
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-3 border-t border-white/10 pt-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex flex-wrap gap-2">
+                    <span className={`rounded-full px-3 py-1.5 text-xs font-semibold ${newEntry.ai_analyzed ? "bg-primary/15 text-primary" : "bg-secondary/50 text-muted-foreground"}`}>{newEntry.ai_analyzed ? "AI ile hazırlandı" : "Manuel giriş"}</span>
+                    <span className={`rounded-full px-3 py-1.5 text-xs font-semibold ${formReady ? "bg-emerald-500/10 text-emerald-300" : "bg-amber-500/10 text-amber-300"}`}>{formReady ? "Kayda hazır" : "Eksik alan var"}</span>
+                  </div>
+                  <div className="flex flex-col gap-3 sm:flex-row">
+                    {createMode === "bulk" ? (
+                      <Button type="button" variant="outline" onClick={() => setCreateStep("general")} className="h-12 rounded-2xl border-white/10 bg-white/5 text-slate-200 hover:bg-white/10">
+                        Genel Bilgilere Dön
+                      </Button>
+                    ) : null}
+                    <Button onClick={createMode === "single" ? handleCreateSingleDOF : handleAddEntry} className="h-12 min-w-[220px] rounded-2xl border-0 bg-emerald-500 font-semibold text-white shadow-[0_18px_40px_rgba(16,185,129,0.25)] hover:bg-emerald-400">
+                      <CheckCircle2 className="mr-2 h-5 w-5" />
+                      {createMode === "single" ? (editingEntryId ? "Değişiklikleri Kaydet" : "Tekli DÖF Oluştur") : "DÖF Oluştur"}
+                    </Button>
+                  </div>
+                </div>
+              </div>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={templateDialogOpen} onOpenChange={setTemplateDialogOpen}>
+          <DialogContent className="border-primary/20 bg-slate-950/95 text-slate-100 sm:max-w-xl">
+            <DialogHeader className="border-b border-white/10 pb-4">
+              <DialogTitle className="text-xl font-bold text-white">
+                {templateDialogMode === "general" ? "DÖF Genel Bilgi Şablonları" : "DÖF Madde Şablonları"}
+              </DialogTitle>
+              <p className="text-sm text-slate-300">
+                {templateDialogMode === "general"
+                  ? "Genel bilgiler adımını tekrar tekrar doldurmamak için şablon seçebilir veya mevcut alanları şablon olarak kaydedebilirsiniz."
+                  : "Sık kullandığınız bulgu ve faaliyet yapısını şablon olarak kaydedip tek tıkla yeni maddeye uygulayabilirsiniz."}
+              </p>
+            </DialogHeader>
+
+            <div className="space-y-5 pt-2">
+              <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_140px]">
+                <Input
+                  value={templateName}
+                  onChange={(e) => setTemplateName(e.target.value)}
+                  placeholder={templateDialogMode === "general" ? "Örn: Yıllık saha gözetim raporu" : "Örn: KKD uygunsuzluğu standart maddesi"}
+                  className="h-11 rounded-2xl border-white/10 bg-white/5 text-white placeholder:text-slate-500"
+                />
+                <Button
+                  type="button"
+                  onClick={() => void (templateDialogMode === "general" ? saveCurrentTemplate() : saveCurrentItemTemplate())}
+                  className="h-11 rounded-2xl bg-emerald-500 text-white hover:bg-emerald-400"
+                >
+                  Kaydet
+                </Button>
+              </div>
+
+              <div className="space-y-3">
+                {templatesLoading ? (
+                  <div className="rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-slate-300">Şablonlar yükleniyor...</div>
+                ) : (templateDialogMode === "general" ? savedTemplates : savedItemTemplates).length > 0 ? (
+                  (templateDialogMode === "general" ? savedTemplates : savedItemTemplates).map((template) => (
+                    <button
+                      key={template.id}
+                      type="button"
+                      onClick={() => (templateDialogMode === "general" ? applySavedTemplate(template) : applySavedItemTemplate(template))}
+                      className="w-full rounded-[20px] border border-white/10 bg-white/5 p-4 text-left transition hover:border-primary/35 hover:bg-primary/10"
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div>
+                          <p className="text-sm font-semibold text-white">{template.name}</p>
+                          <p className="mt-2 text-xs leading-6 text-slate-400">
+                            {templateDialogMode === "general"
+                              ? `${template.payload.company_name || "Firma belirtilmedi"} • ${template.payload.area_region || "Alan belirtilmedi"} • ${template.payload.observation_range || "Tarih aralığı belirtilmedi"}`
+                              : `${template.payload.related_department || "Bölüm belirtilmedi"} • ${template.payload.importance_level || "Öncelik yok"} • ${template.payload.notification_method || "Bildirim yok"}`}
+                          </p>
+                          {templateDialogMode === "item" && Array.isArray(template.payload.tags) && template.payload.tags.length > 0 ? (
+                            <div className="mt-3 flex flex-wrap gap-2">
+                              {template.payload.tags.map((tag: string) => (
+                                <span key={`${template.id}-${tag}`} className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-2.5 py-1 text-[11px] font-semibold text-cyan-100">
+                                  {tag}
+                                </span>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
+                        <span className="rounded-full bg-white/10 px-3 py-1 text-[11px] font-semibold text-slate-300">
+                          Uygula
+                        </span>
+                      </div>
+                    </button>
+                  ))
+                ) : (
+                  <div className="rounded-2xl border border-dashed border-white/10 bg-white/5 p-5 text-sm leading-6 text-slate-300">
+                    {templateDialogMode === "general"
+                      ? "Henüz kayıtlı bir DÖF şablonu yok. Genel bilgileri doldurup bu pencereden şablon olarak kaydedebilirsiniz."
+                      : "Henüz kayıtlı bir madde şablonu yok. Sık kullandığınız bulgu ve faaliyet setlerini burada saklayabilirsiniz."}
+                  </div>
+                )}
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        <section className="grid grid-cols-1 gap-4 xl:grid-cols-12">
+          <ModuleCard eyebrow="AI öneri paneli" title="Kuruma göre ilk karar seti" className="min-h-[320px] border-primary/20 bg-[linear-gradient(180deg,rgba(59,130,246,0.08),rgba(15,23,42,0.88))] xl:col-span-6">
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-border/60 bg-background/80 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="text-sm font-semibold text-foreground">Önerilen öncelik</span>
+                  <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${IMPORTANCE_LEVELS.find((level) => level.value === suggestedPriority)?.color}`}>
+                    {suggestedPriority}
+                  </span>
+                </div>
+                <p className="mt-2 text-xs leading-6 text-muted-foreground">
+                  {suggestedPriority === "Kritik"
+                    ? "Bulgu metni ve firma geçmişi kritik yaralanma veya ciddi teknik risk sinyali veriyor."
+                    : suggestedPriority === "Yüksek"
+                    ? "Bu kayıt hızlı aksiyon isteyen yüksek riskli bir kategoriye yakın görünüyor."
+                    : "Mevcut girdiye göre kontrollü ama takip edilmesi gereken bir kayıt yapısı var."}
+                </p>
+                <p className="mt-2 text-xs leading-6 text-cyan-300">
+                  {reportCompanyName
+                    ? `"${reportCompanyName}" bağlamı ve geçmiş kayıtları bu öneri paneline dahil edildi.`
+                    : "Firma seçildiğinde öneriler şirket bağlamını daha net yansıtır."}
                 </p>
               </div>
-              <Button
-                type="button"
-                onClick={generateOverallAnalysis}
-                disabled={overallAnalyzing || entries.length === 0}
-                className="gap-2 border-0 text-foreground font-semibold h-11 gradient-primary"
-              >
-                {overallAnalyzing ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Genel analiz hazırlanıyor...
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="h-4 w-4" />
-                    AI ile Genel Analiz Oluştur
-                  </>
-                )}
-              </Button>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-2xl border border-border/60 bg-background/80 p-4">
+                  <div className="flex items-center gap-2 text-foreground">
+                    <Users className="h-4 w-4 text-primary" />
+                    <span className="text-sm font-semibold">Önerilen sorumlu</span>
+                  </div>
+                  <p className="mt-3 text-sm font-semibold text-foreground">{suggestedDepartment}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{suggestedRole}</p>
+                  <p className="mt-2 text-[11px] leading-5 text-muted-foreground">
+                    {reportCompanyName
+                      ? `${reportCompanyName} için seçilen bulgu diline göre en uygun ilk atama rolü.`
+                      : "Firma seçildiğinde rol önerisi daha güvenilir hale gelir."}
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border border-border/60 bg-background/80 p-4">
+                  <div className="flex items-center gap-2 text-foreground">
+                    <Calendar className="h-4 w-4 text-primary" />
+                    <span className="text-sm font-semibold">Önerilen termin</span>
+                  </div>
+                  <p className="mt-3 text-sm font-semibold text-foreground">{suggestedDueDays} gün</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {historicalDueSuggestion
+                      ? "Geçmiş firma kayıtlarındaki ortalama kapanış süresine göre önerildi"
+                      : "Risk düzeyine göre önerilen takip süresi"}
+                  </p>
+                  <Button type="button" variant="outline" size="sm" onClick={() => setQuickDueDate(suggestedDueDays)} className="mt-3">
+                    Önerilen termini uygula
+                  </Button>
+                </div>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="rounded-2xl border border-border/60 bg-background/80 p-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">Firma geçmişi</p>
+                  <p className="mt-3 text-2xl font-bold text-foreground">{historicalFindings.length}</p>
+                  <p className="mt-2 text-xs leading-6 text-muted-foreground">Aynı firma için taranan geçmiş bulgu ve DÖF kaydı</p>
+                </div>
+                <div className="rounded-2xl border border-border/60 bg-background/80 p-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">Açık kayıtlar</p>
+                  <p className="mt-3 text-2xl font-bold text-foreground">{historicalOpenCount}</p>
+                  <p className="mt-2 text-xs leading-6 text-muted-foreground">Aynı firmada halen kapanmamış takip gerektiren kayıt</p>
+                </div>
+                <div className="rounded-2xl border border-border/60 bg-background/80 p-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">Tekrar sinyali</p>
+                  <p className="mt-3 text-2xl font-bold text-foreground">{repeatedIssueCount}</p>
+                  <p className="mt-2 text-xs leading-6 text-muted-foreground">Mevcut bulguya yakın içerikte geçmiş eşleşme</p>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-cyan-400/20 bg-cyan-400/10 p-4">
+                <div className="flex items-center gap-2 text-cyan-100">
+                  <Building2 className="h-4 w-4" />
+                  <span className="text-sm font-semibold">Aktif firma bağlamı</span>
+                </div>
+                <p className="mt-3 text-sm font-semibold text-white">{reportCompanyName || "Firma henüz seçilmedi"}</p>
+                <p className="mt-2 text-xs leading-6 text-cyan-50/90">{companyContextSummary}</p>
+              </div>
             </div>
-            <Textarea
-              placeholder="Genel analiz burada yer alır. İsterseniz düzenleyebilirsiniz."
-              value={overallAnalysis}
-              onChange={(e) => setOverallAnalysis(e.target.value)}
-              className="bg-secondary/50 border-border/50 min-h-32 resize-y"
-            />
+          </ModuleCard>
+
+          <ModuleCard eyebrow="Benzer eski DÖF’ler" title="Tekrarlayan uygunsuzluk sinyali" badge={`${historicalSimilarEntries.length} eşleşme`} className="min-h-[320px] xl:col-span-3">
+            <div className="space-y-3">
+              {historicalLoading ? (
+                <div className="rounded-2xl border border-border/60 bg-secondary/10 p-4 text-sm text-muted-foreground">Firma geçmişi taranıyor...</div>
+              ) : historicalSimilarEntries.length > 0 ? (
+                historicalSimilarEntries.map((entry) => (
+                  <div key={entry.id} className="rounded-2xl border border-border/60 bg-secondary/20 p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-sm font-semibold text-foreground">{entry.location_name}</span>
+                      <span className="rounded-full bg-amber-500/10 px-2.5 py-1 text-[11px] font-semibold text-amber-600">%{Math.round(entry.similarity * 100)} benzer</span>
+                    </div>
+                    <p className="mt-2 text-xs leading-6 text-muted-foreground">{entry.description}</p>
+                    <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
+                      <span className="rounded-full bg-background px-2 py-1">{entry.priority}</span>
+                      <span className="rounded-full bg-background px-2 py-1">{new Date(entry.created_at).toLocaleDateString("tr-TR")}</span>
+                      <span className="rounded-full bg-background px-2 py-1">{entry.is_resolved ? "Kapatıldı" : "Açık"}</span>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="rounded-2xl border border-dashed border-border/70 bg-secondary/10 p-4 text-sm text-muted-foreground">Bu firmaya ait güçlü benzerlikte geçmiş DÖF kaydı bulunmadı. Yeni kayıtlarla tekrar eden uygunsuzlukları burada göstereceğiz.</div>
+              )}
+            </div>
+          </ModuleCard>
+
+          <ModuleCard eyebrow="DÖF kalite skoru" title="Taslağın gücü ve eksikleri" badge={`${qualityScore}/100`} className="min-h-[320px] xl:col-span-3">
+            <div className="rounded-2xl border border-border/60 bg-secondary/20 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-sm font-semibold text-foreground">{qualityLabel}</span>
+                <div className="h-2 w-28 overflow-hidden rounded-full bg-secondary">
+                  <div className="h-full rounded-full bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-500" style={{ width: `${qualityScore}%` }} />
+                </div>
+              </div>
+              <p className="mt-3 text-xs leading-6 text-muted-foreground">Açıklama netliği, risk tanımı, faaliyetlerin uygulanabilirliği ve takip alanlarına göre hesaplanır.</p>
+            </div>
+            <div className="mt-4 space-y-2">
+              {qualityFeedback.length > 0 ? (
+                qualityFeedback.map((item) => (
+                  <div key={item} className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs leading-6 text-amber-700">{item}</div>
+                ))
+              ) : (
+                <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 text-xs leading-6 text-emerald-700">Taslak güçlü görünüyor. Şimdi maddeyi kaydedip toplu rapora ekleyebilirsiniz.</div>
+              )}
+            </div>
+          </ModuleCard>
+        </section>
+
+        {entries.length > 0 && (
+          <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
+            <div className="rounded-[24px] border border-border/60 bg-background/60 p-6">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-lg font-bold text-foreground">
+                  Eklenen Bulgular ({entries.length})
+                </h3>
+                <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+                  Liste hazir
+                </span>
+              </div>
+
+              <div className="mt-4 space-y-3">
+                {entries.map((entry, idx) => (
+                  <div
+                    key={entry.id}
+                    className="rounded-2xl border border-border/60 bg-background/80 p-4 transition-colors hover:border-primary/50"
+                  >
+                    <div className="flex items-start justify-between gap-4">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="rounded-full bg-secondary px-2.5 py-1 text-[11px] font-semibold text-muted-foreground">
+                            MADDE {idx + 1}
+                          </span>
+                          {entry.ai_analyzed && (
+                            <span className="rounded-full bg-primary/10 px-2.5 py-1 text-[11px] font-semibold text-primary">
+                              AI
+                            </span>
+                          )}
+                        </div>
+                        <p className="mt-3 text-sm font-semibold leading-6 text-foreground">
+                          {entry.description}
+                        </p>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <span
+                            className={`text-xs px-2 py-1 rounded font-semibold ${
+                              IMPORTANCE_LEVELS.find(
+                                (l) => l.value === entry.importance_level
+                              )?.color
+                            }`}
+                          >
+                            {entry.importance_level}
+                          </span>
+                          <span className="text-xs px-2 py-1 rounded bg-secondary/50 text-muted-foreground">
+                            {entry.related_department}
+                          </span>
+                          <span className="text-xs px-2 py-1 rounded bg-blue-500/10 text-blue-600">
+                            {new Date(entry.termin_date).toLocaleDateString("tr-TR")}
+                          </span>
+                          {entry.media_urls.length > 0 && (
+                            <span className="text-xs px-2 py-1 rounded bg-purple-500/10 text-purple-600">
+                              {entry.media_urls.length} fotograf
+                            </span>
+                          )}
+                          <span className="text-xs px-2 py-1 rounded bg-green-500/10 text-green-600">
+                            Bildirim: {entry.notification_method || "E-mail"}
+                          </span>
+                        </div>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleDeleteEntry(entry.id)}
+                        className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-6">
+              <div className="rounded-[24px] border border-border/60 bg-secondary/20 p-6 space-y-4">
+                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                  <div>
+                    <h3 className="text-lg font-bold text-foreground">Genel Analiz</h3>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Tüm DÖF maddeleri için tek bir yönetici özeti ve genel degerlendirme üretin.
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    onClick={generateOverallAnalysis}
+                    disabled={overallAnalyzing || entries.length === 0}
+                    className="gap-2 border-0 text-foreground font-semibold h-11 gradient-primary"
+                  >
+                    {overallAnalyzing ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        Genel analiz hazirlaniyor...
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="h-4 w-4" />
+                        AI ile Genel Analiz Olustur
+                      </>
+                    )}
+                  </Button>
+                </div>
+                <Textarea
+                  placeholder="Genel analiz burada yer alir. Isterseniz düzenleyebilirsiniz."
+                  value={overallAnalysis}
+                  onChange={(e) => setOverallAnalysis(e.target.value)}
+                  className="bg-secondary/50 border-border/50 min-h-32 resize-y"
+                />
+              </div>
+
+              <div className="rounded-[24px] border border-border/60 bg-background/60 p-6">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.24em] text-primary/80">
+                      Çıktı Merkezi
+                    </p>
+                    <h3 className="mt-2 text-lg font-bold text-foreground">
+                      Önizle, kaydet ve raporu indir
+                    </h3>
+                  </div>
+                  <span className="rounded-full border border-border/60 bg-background px-3 py-1 text-xs text-muted-foreground">
+                    Word çıktısı
+                  </span>
+                </div>
+
+                <div className="mt-5 flex gap-3 pt-1">
+                  <Button
+                    variant="outline"
+                    className="gap-2 flex-1 h-11"
+                    onClick={() => {
+                      setPreviewFocusEntryId(null);
+                      setPreviewOpen(true);
+                    }}
+                    disabled={entries.length === 0}
+                  >
+                    <Eye className="h-4 w-4" />
+                    Önizleme
+                  </Button>
+                  <Button
+                    onClick={handleSaveAndExport}
+                    disabled={saving || entries.length === 0 || !reportCompanyName.trim() || !generalInfoReady}
+                    className={`gap-2 flex-1 border-0 text-foreground font-semibold h-11 ${
+                      saving || entries.length === 0 || !reportCompanyName.trim() || !generalInfoReady
+                        ? "bg-gray-500 cursor-not-allowed opacity-50"
+                        : "gradient-primary"
+                    }`}
+                  >
+                    {saving ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        İşleniyor...
+                      </>
+                    ) : (
+                      <>
+                        <Download className="h-4 w-4" />
+                        Kaydet ve Word İndir
+                      </>
+                    )}
+                  </Button>
+                </div>
+
+                <p className="mt-4 text-xs leading-6 text-muted-foreground">
+                  E-posta paylaşımı bu ekranda kaldırıldı. Raporu indirdikten sonra Denetimler sayfasındaki ilgili kayıt detayından paylaşabilirsiniz.
+                </p>
+              </div>
+            </div>
           </div>
         )}
-        {/* ACTION BUTTONS */}
-        <div className="flex gap-3 pt-4 border-t border-border">
-          <Button
-            variant="outline"
-            className="gap-2 flex-1 h-11"
-            onClick={() => setPreviewOpen(true)}
-            disabled={entries.length === 0}
-          >
-            <Eye className="h-4 w-4" />
-            Önizleme
-          </Button>
-          <Button
-            onClick={handleSaveAndExport}
-            disabled={saving || entries.length === 0 || siteName.trim() === ""}
-            className={`gap-2 flex-1 border-0 text-foreground font-semibold h-11 ${
-              saving || entries.length === 0 || siteName.trim() === ""
-                ? "bg-gray-500 cursor-not-allowed opacity-50"
-                : "gradient-primary"
-            }`}
-          >
-            {saving ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                İşleniyor...
-              </>
-            ) : (
-              <>
-                <Download className="h-4 w-4" />
-                Kaydet ve Word İndir
-              </>
-            )}
-          </Button>
-        </div>
-        <p className="text-xs text-muted-foreground">E-posta paylaşımı bu ekranda kaldırıldı. Raporu indirdikten sonra Denetimler sayfasında ilgili denetim detayından "E-posta Gönder" ile paylaşabilirsiniz.</p>
+      </div>
       </div>
 
-      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+      <Dialog open={previewOpen} onOpenChange={(open) => {
+        setPreviewOpen(open);
+        if (!open) setPreviewFocusEntryId(null);
+      }}>
+        <DialogContent className="max-w-5xl max-h-[92vh] overflow-y-auto border-border/50 bg-slate-200/95 p-0 shadow-[0_40px_120px_rgba(15,23,42,0.45)]">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-xl">
-              Rapor Önizlemesi
-              <Sparkles className="h-5 w-5 text-yellow-500" />
+            <DialogTitle className="flex items-center gap-2 border-b border-slate-300 bg-white px-6 py-4 text-xl text-slate-900">
+              {previewFocusEntryId ? "Tekli DÖF Önizlemesi" : "Rapor Önizlemesi"}
+              {previewFocusEntryId ? <CheckCircle2 className="h-5 w-5 text-emerald-500" /> : <Sparkles className="h-5 w-5 text-yellow-500" />}
             </DialogTitle>
           </DialogHeader>
 
-          <div className="space-y-6">
-              {/* SUMMARY */}
-              <div className="bg-secondary/50 p-4 rounded space-y-2">
-                <p>
-                  <strong>Firma:</strong> {orgData?.name}
-                </p>
-                <p>
-                  <strong>Saha:</strong> {siteName}
-                </p>
-                <p>
-                  <strong>Toplam Bulgular:</strong> {entries.length}
-                </p>
-                <p>
-                  <strong>AI Analiz:</strong>{" "}
-                  {entries.filter((e) => e.ai_analyzed).length} /{" "}
-                  {entries.length}
-                </p>
+          <div className="max-h-[calc(92vh-76px)] overflow-y-auto bg-slate-200 px-4 py-6 md:px-8">
+            {previewFocusEntryId && focusedPreviewEntry ? (
+              <div className="mx-auto mb-6 flex max-w-[794px] flex-col gap-3 rounded-[24px] border border-emerald-200 bg-white/95 p-4 shadow-[0_18px_50px_rgba(15,23,42,0.08)] md:flex-row md:items-center md:justify-between">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.24em] text-emerald-600">
+                    Tekli Kayıt Aksiyonları
+                  </p>
+                  <p className="mt-2 text-sm leading-6 text-slate-600">
+                    Tekli DÖF kaydı hazır. Bu kaydı arşivleyip kompakt Word çıktısını hemen indirebilirsiniz.
+                  </p>
+                </div>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  {lastSingleInspectionId ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        setPreviewOpen(false);
+                        navigate("/inspections", {
+                          state: { focusInspectionId: lastSingleInspectionId },
+                        });
+                      }}
+                      className="border-violet-300 bg-violet-50 text-violet-900 hover:bg-violet-100"
+                    >
+                      Denetimler Kaydını Aç
+                    </Button>
+                  ) : null}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleReturnSinglePreviewToEdit}
+                    className="border-cyan-300 bg-cyan-50 text-cyan-900 hover:bg-cyan-100"
+                  >
+                    Düzenlemeye Geri Dön
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => setPreviewOpen(false)}
+                    className="border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
+                  >
+                    Kapat
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={() => void handleSaveSinglePreviewExport()}
+                    disabled={saving}
+                    className="bg-emerald-500 text-white shadow-[0_18px_40px_rgba(16,185,129,0.2)] hover:bg-emerald-400"
+                  >
+                    {saving ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Hazırlanıyor...
+                      </>
+                    ) : (
+                      "Kaydet / Word İndir"
+                    )}
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+            {previewFocusEntryId && focusedPreviewEntry ? (
+              <div className="mx-auto mb-6 flex max-w-[794px] flex-wrap items-center gap-2 rounded-[20px] border border-slate-200 bg-white/90 px-4 py-3 shadow-[0_12px_30px_rgba(15,23,42,0.06)]">
+                <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+                  Inspection ID: {lastSingleInspectionId || "Henüz oluşturulmadı"}
+                </span>
+                <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+                  Rapor No: {generalInfo.report_no || "Belirtilmedi"}
+                </span>
+                <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+                  Firma: {reportCompanyName || "Belirtilmedi"}
+                </span>
+                <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+                  Oluşturulma Saati: {lastSingleCreatedAt ? new Date(lastSingleCreatedAt).toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" }) : "Henüz yok"}
+                </span>
+              </div>
+            ) : null}
+            <div className="mx-auto min-h-[1123px] max-w-[794px] rounded-[6px] bg-white px-8 py-10 text-slate-900 shadow-[0_24px_80px_rgba(15,23,42,0.18)] md:px-14 md:py-14">
+              <div className="flex flex-col gap-5 border-b border-slate-200 pb-6 md:flex-row md:items-start md:justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                    {generalInfo.company_logo_url || selectedCompany?.logo_url || orgData?.logo_url ? (
+                      <img
+                        src={generalInfo.company_logo_url || selectedCompany?.logo_url || orgData?.logo_url || ""}
+                        alt={`${reportCompanyName || orgData?.name || "Kurum"} logosu`}
+                        className="h-full w-full object-contain"
+                      />
+                    ) : (
+                      <span className="text-lg font-bold text-slate-700">
+                        {(reportCompanyName || orgData?.name || "İV").slice(0, 2).toUpperCase()}
+                      </span>
+                    )}
+                  </div>
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.26em] text-slate-500">
+                      Resmî Belge Önizlemesi
+                    </p>
+                    <h3 className="mt-2 text-2xl font-bold text-slate-950">
+                      Düzeltici ve Önleyici Faaliyet Formu (DÖF)
+                    </h3>
+                    <p className="mt-2 text-sm text-slate-600">
+                      {reportCompanyName || "N/A"} • {generalInfo.area_region || "Konum belirtilmedi"} •{" "}
+                      {generalInfo.report_date
+                        ? new Date(generalInfo.report_date).toLocaleDateString("tr-TR")
+                        : new Date().toLocaleDateString("tr-TR")}
+                    </p>
+                    {(selectedCompany?.industry || selectedCompany?.employee_count) && (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {selectedCompany?.industry ? (
+                          <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600">
+                            {selectedCompany.industry} sektörü
+                          </span>
+                        ) : null}
+                        {selectedCompany?.employee_count ? (
+                          <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600">
+                            {selectedCompany.employee_count}+ çalışan
+                          </span>
+                        ) : null}
+                        <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600">
+                          {generalInfo.observation_range || "Gözetim aralığı belirtilmedi"}
+                        </span>
+                        <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-medium text-slate-600">
+                          Rapor No: {generalInfo.report_no || "Belirtilmedi"}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                  <p>
+                    <strong>Toplam bulgu:</strong> {previewEntries.length}
+                  </p>
+                  <p className="mt-1">
+                    <strong>AI analizi:</strong> {previewEntries.filter((e) => e.ai_analyzed).length} / {previewEntries.length}
+                  </p>
+                </div>
               </div>
 
+              {previewEntries.length > 0 && (
+                <div className="mt-8 overflow-hidden rounded-[24px] border border-slate-200">
+                  <div className="flex items-center justify-between border-b border-slate-200 bg-slate-50 px-5 py-4">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">
+                        Onay Bloğu
+                      </p>
+                      <h3 className="mt-2 text-lg font-bold text-slate-950">
+                        Onaylayan (İş Güvenliği Uzmanı)
+                      </h3>
+                    </div>
+                    <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-medium text-slate-600">
+                      Kurumsal imza alanı
+                    </span>
+                  </div>
+
+                  <div className="grid gap-0 md:grid-cols-[1.15fr_0.85fr]">
+                    <div className="space-y-4 p-5">
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">
+                          Kurum
+                        </p>
+                        <p className="mt-3 text-lg font-semibold text-slate-900">
+                          {reportCompanyName || orgData?.name || "N/A"}
+                        </p>
+                      </div>
+
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">
+                          Ad Soyad
+                        </p>
+                        <p className="mt-3 text-xl font-semibold text-slate-950">
+                          {generalInfo.observer_name ||
+                            [...entries].reverse().find((entry) => entry.approver_name)?.approver_name ||
+                            profileContext?.full_name ||
+                            "N/A"}
+                        </p>
+                      </div>
+
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">
+                          Ünvan
+                        </p>
+                        <p className="mt-3 text-base text-slate-700">
+                          {[...entries].reverse().find((entry) => entry.approver_title)?.approver_title ||
+                            profileContext?.position ||
+                            "İş Güvenliği Uzmanı"}
+                        </p>
+                        <p className="mt-2 text-sm text-slate-600">
+                          Sertifika No: {generalInfo.observer_certificate_no || "Belirtilmedi"}
+                        </p>
+                        <p className="mt-2 text-xs leading-5 text-slate-500">
+                          Bu bilgi Word çıktısında onaylayan uzman alanında yer alır.
+                        </p>
+                      </div>
+
+                      <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">
+                          İşveren / İşveren Vekili
+                        </p>
+                        <p className="mt-3 text-base font-semibold text-slate-900">
+                          {generalInfo.employer_representative_name || "Belirtilmedi"}
+                        </p>
+                        <p className="mt-1 text-sm text-slate-600">
+                          {generalInfo.employer_representative_title || "İşveren / İşveren Vekili"}
+                        </p>
+                      </div>
+
+                      <div className="rounded-2xl border border-cyan-200 bg-cyan-50 p-4">
+                        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-cyan-800">
+                          Kaşe Durumu
+                        </p>
+                        <p className="mt-3 text-sm leading-6 text-cyan-950/80">
+                          {[...entries].reverse().find((entry) => entry.include_stamp)?.include_stamp
+                            ? profileContext?.stamp_url
+                              ? "Ayarlar sayfasında yüklenen kaşe bu rapora eklenecek."
+                              : "Kaşe işaretli ancak ayarlarda yüklenmiş bir kaşe bulunmuyor."
+                            : "Bu rapor için kaşe eklenmeden çıktı oluşturulacak."}
+                        </p>
+                        {!profileContext?.stamp_url &&
+                        [...entries].reverse().find((entry) => entry.include_stamp)?.include_stamp ? (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="mt-4 border-cyan-300 bg-white text-cyan-900 hover:bg-cyan-100"
+                            onClick={() => {
+                              setPreviewOpen(false);
+                              navigate("/settings");
+                            }}
+                          >
+                            Ayarlar’a Git
+                          </Button>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    <div className="border-t border-slate-200 bg-slate-50/70 p-5 md:border-l md:border-t-0">
+                      <div className="rounded-[24px] border border-dashed border-slate-300 bg-white p-4">
+                        <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">
+                          Kaşe / İmza Alanı
+                        </p>
+                        <div className="mt-4 flex min-h-[220px] items-center justify-center rounded-[20px] border border-slate-200 bg-slate-50 p-4">
+                          <div className="w-full space-y-4 text-center">
+                            {generalInfo.provider_logo_url || orgData?.logo_url ? (
+                              <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-full border border-slate-200 bg-white p-2 shadow-sm">
+                                <img
+                                  src={generalInfo.provider_logo_url || orgData?.logo_url || ""}
+                                  alt={`${reportCompanyName || orgData?.name || "Kurum"} mührü`}
+                                  className="h-full w-full object-contain"
+                                />
+                              </div>
+                            ) : null}
+                            {[...entries].reverse().find((entry) => entry.include_stamp)?.include_stamp &&
+                            profileContext?.stamp_url ? (
+                              <img
+                                src={profileContext.stamp_url}
+                                alt="İSG uzmanı kaşesi"
+                                className="mx-auto max-h-40 w-full object-contain"
+                              />
+                            ) : (
+                              <div className="space-y-3 text-center">
+                                <div className="mx-auto h-px w-28 bg-slate-300" />
+                                <p className="text-xs text-slate-500">
+                                  Kaşe önizlemesi burada gösterilir.
+                                </p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <p className="mt-4 text-center text-xs text-slate-500">
+                          Çıktıda kaşe alanı onaylayan uzman bölümünün sağında yer alır.
+                        </p>
+                        <div className="mt-5 border-t border-slate-200 pt-4 text-center">
+                          <p className="text-[11px] uppercase tracking-[0.24em] text-slate-500">
+                            İmza Çizgisi
+                          </p>
+                          <div className="mx-auto mt-4 h-px w-40 bg-slate-300" />
+                          <p className="mt-3 text-xs text-slate-500">
+                            Onay Tarihi: {new Date().toLocaleDateString("tr-TR")}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {overallAnalysis.trim() && (
-                <div className="bg-secondary/50 p-4 rounded space-y-2 border border-border/50">
-                  <p className="font-semibold text-foreground">Genel Analiz ve Kapanış</p>
-                  <p className="text-sm leading-6 text-muted-foreground whitespace-pre-wrap">
+                <div className="mt-8 rounded-[20px] border border-slate-200 bg-slate-50 p-5">
+                  <p className="font-semibold text-slate-900">Genel Analiz ve Kapanış</p>
+                  <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-slate-700">
                     {overallAnalysis}
                   </p>
                 </div>
               )}
 
-              {/* ENTRIES WITH IMAGE GALLERY */}
-              {entries.map((entry, idx) => (
-                <div
-                  key={entry.id}
-                  className="border border-border/50 rounded-lg p-4 space-y-4"
-                >
-                  <h4 className="font-bold text-lg flex items-center gap-2">
-                    MADDE {idx + 1} – UYGUNSUZLUK / RİSK
-                    {entry.ai_analyzed && (
-                      <Sparkles className="h-4 w-4 text-yellow-500" />
-                    )}
-                  </h4>
-
-                  <div className="grid grid-cols-1 gap-3">
-                    <p className="text-sm line-clamp-3">
-                      <strong>Bulgu:</strong> {entry.description}
-                    </p>
-                    <p className="text-sm">
-                      <strong>Önemlilik:</strong> {entry.importance_level}
-                    </p>
-                    <p className="text-sm">
-                      <strong>Bölüm:</strong> {entry.related_department}
-                    </p>
-                    <p className="text-sm">
-                      <strong>Termin:</strong>{" "}
-                      {new Date(entry.termin_date).toLocaleDateString("tr-TR")}
-                    </p>
-                  </div>
-
-                  {/* ✅ IMAGE GALLERY */}
-                  {entry.media_urls.length > 0 && (
-                    <div className="space-y-3 pt-4 border-t border-border">
-                      <p className="text-sm font-semibold">
-                        Fotoğraflar ({entry.media_urls.length})
+              <div className="mt-8 space-y-5">
+                {previewPageChunks[0]?.map((entry, idx) => (
+                  <div
+                    key={entry.id}
+                    className="rounded-[20px] border border-slate-200 bg-white p-5 shadow-[0_10px_28px_rgba(15,23,42,0.06)]"
+                  >
+                    <div className="flex items-center justify-between gap-3 border-b border-slate-200 pb-4">
+                      <h4 className="flex items-center gap-2 text-lg font-bold text-slate-950">
+                        Madde {idx + 1} – Uygunsuzluk / Risk
+                        {entry.ai_analyzed && <Sparkles className="h-4 w-4 text-yellow-500" />}
+                      </h4>
+                      <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                        Kurumsal Kayıt
+                      </span>
+                    </div>
+                    <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+                      <p className="text-sm leading-6 text-slate-700">
+                        <strong className="text-slate-950">Bulgu:</strong> {entry.description}
                       </p>
-                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                        {entry.media_urls.map((imageUrl, imgIdx) => (
-                          <div
-                            key={buildMediaKey(imageUrl, imgIdx)}
-                            className="relative group rounded-lg overflow-hidden border border-border shadow-sm hover:shadow-md transition-shadow"
-                          >
-                            <img
-                              src={imageUrl}
-                              alt={`Fotoğraf ${imgIdx + 1}`}
-                              className="w-full h-32 object-cover hover:scale-110 transition-transform duration-300"
-                            />
-                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center">
-                              <span className="text-white text-xs font-semibold opacity-0 group-hover:opacity-100 transition-opacity">
-                                {imgIdx + 1}/{entry.media_urls.length}
-                              </span>
+                      <p className="text-sm leading-6 text-slate-700">
+                        <strong className="text-slate-950">Önemlilik:</strong> {entry.importance_level}
+                      </p>
+                      <p className="text-sm leading-6 text-slate-700">
+                        <strong className="text-slate-950">Bölüm:</strong> {entry.related_department}
+                      </p>
+                      <p className="text-sm leading-6 text-slate-700">
+                        <strong className="text-slate-950">Termin:</strong>{" "}
+                        {new Date(entry.termin_date).toLocaleDateString("tr-TR")}
+                      </p>
+                    </div>
+
+                    {entry.media_urls.length > 0 && (
+                      <div className="mt-5 space-y-3 border-t border-slate-200 pt-4">
+                        <p className="text-sm font-semibold text-slate-900">
+                          Fotoğraflar ({entry.media_urls.length})
+                        </p>
+                        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+                          {entry.media_urls.map((imageUrl, imgIdx) => (
+                            <div
+                              key={buildMediaKey(imageUrl, imgIdx)}
+                              className="relative overflow-hidden rounded-xl border border-slate-200 bg-slate-50"
+                            >
+                              <img
+                                src={imageUrl}
+                                alt={`Fotoğraf ${imgIdx + 1}`}
+                                className="h-32 w-full object-cover"
+                              />
                             </div>
-                          </div>
-                        ))}
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-10 flex flex-col gap-3 border-t border-slate-200 pt-5 text-[11px] uppercase tracking-[0.22em] text-slate-400 md:flex-row md:items-center md:justify-between">
+                <span>
+                  {(reportCompanyName || orgData?.name || "İSGVİZYON").toUpperCase()} • Resmî belge önizlemesi
+                </span>
+                <span>
+                  {selectedCompany?.industry ? `${selectedCompany.industry.toUpperCase()} • ` : ""}
+                  Sayfa 1 / {previewPageChunks.length}
+                </span>
+              </div>
+            </div>
+
+            {previewPageChunks.slice(1).map((pageEntries, pageIndex) => (
+              <div
+                key={`preview-page-${pageIndex + 2}`}
+                className="mx-auto mt-8 min-h-[1123px] max-w-[794px] rounded-[6px] bg-white px-8 py-10 text-slate-900 shadow-[0_24px_80px_rgba(15,23,42,0.18)] md:px-14 md:py-14"
+              >
+                <div className="flex items-center justify-between border-b border-slate-200 pb-5">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.24em] text-slate-500">
+                      Belge Devamı
+                    </p>
+                    <h4 className="mt-2 text-xl font-bold text-slate-950">
+                      DÖF Maddeleri • Sayfa {pageIndex + 2}
+                    </h4>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {generalInfo.company_logo_url || selectedCompany?.logo_url || orgData?.logo_url ? (
+                      <img
+                        src={generalInfo.company_logo_url || selectedCompany?.logo_url || orgData?.logo_url || ""}
+                        alt={`${reportCompanyName || orgData?.name || "Kurum"} logosu`}
+                        className="h-12 w-12 rounded-xl border border-slate-200 bg-slate-50 object-contain p-2"
+                      />
+                    ) : null}
+                    <div className="text-right text-xs text-slate-500">
+                      <p>{reportCompanyName || orgData?.name || "N/A"}</p>
+                      <p>{new Date().toLocaleDateString("tr-TR")}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-8 space-y-5">
+                  {pageEntries.map((entry, idx) => (
+                    <div
+                      key={entry.id}
+                      className="rounded-[20px] border border-slate-200 bg-white p-5 shadow-[0_10px_28px_rgba(15,23,42,0.06)]"
+                    >
+                      <div className="flex items-center justify-between gap-3 border-b border-slate-200 pb-4">
+                        <h4 className="flex items-center gap-2 text-lg font-bold text-slate-950">
+                          Madde {(pageIndex + 1) * 3 + idx + 1} – Uygunsuzluk / Risk
+                          {entry.ai_analyzed && <Sparkles className="h-4 w-4 text-yellow-500" />}
+                        </h4>
+                        <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                          Devam Sayfası
+                        </span>
+                      </div>
+                      <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+                        <p className="text-sm leading-6 text-slate-700">
+                          <strong className="text-slate-950">Bulgu:</strong> {entry.description}
+                        </p>
+                        <p className="text-sm leading-6 text-slate-700">
+                          <strong className="text-slate-950">Önemlilik:</strong> {entry.importance_level}
+                        </p>
+                        <p className="text-sm leading-6 text-slate-700">
+                          <strong className="text-slate-950">Bölüm:</strong> {entry.related_department}
+                        </p>
+                        <p className="text-sm leading-6 text-slate-700">
+                          <strong className="text-slate-950">Termin:</strong>{" "}
+                          {new Date(entry.termin_date).toLocaleDateString("tr-TR")}
+                        </p>
                       </div>
                     </div>
-                  )}
+                  ))}
                 </div>
-              ))}
+
+                <div className="mt-10 flex flex-col gap-3 border-t border-slate-200 pt-5 text-[11px] uppercase tracking-[0.22em] text-slate-400 md:flex-row md:items-center md:justify-between">
+                  <span>
+                    {(reportCompanyName || orgData?.name || "İSGVİZYON").toUpperCase()} • Resmî belge önizlemesi
+                  </span>
+                  <span>
+                    {selectedCompany?.industry ? `${selectedCompany.industry.toUpperCase()} • ` : ""}
+                    Sayfa {pageIndex + 2} / {previewPageChunks.length}
+                  </span>
+                </div>
+              </div>
+            ))}
           </div>
+
           <Button
             onClick={() => setPreviewOpen(false)}
-            className="w-full"
+            className="m-4 mt-0 w-[calc(100%-2rem)]"
             variant="outline"
           >
             Kapat
@@ -2456,3 +5133,7 @@ export default function BulkCAPA() {
     </BulkCAPAErrorBoundary>
   );
 }
+
+
+
+

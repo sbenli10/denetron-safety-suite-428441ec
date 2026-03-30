@@ -1,4 +1,4 @@
-﻿import { useState, useEffect } from "react";
+﻿import { useState, useEffect, useRef } from "react";
 import {
   Settings as SettingsIcon,
   Shield,
@@ -20,6 +20,8 @@ import {
   Crown,
   CheckCircle,
   Clock,
+  Upload,
+  ImagePlus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -42,6 +44,7 @@ type TabType = "general" | "security" | "billing" | "notifications";
 
 interface ProfileData {
   id: string;
+  stamp_url: string | null;
   full_name: string;
   email: string;
   phone: string | null;
@@ -79,8 +82,10 @@ export default function Settings() {
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [currentFactorId, setCurrentFactorId] = useState<string | null>(null);
   const [trustedDevices, setTrustedDevices] = useState<any[]>([]);
+  const [uploadingStamp, setUploadingStamp] = useState(false);
+  const stampInputRef = useRef<HTMLInputElement | null>(null);
 
-  // ✅ State tanımlamaları (en üstte)
+  // Yardımcı state tanımlamaları
   const [show2FASetupModal, setShow2FASetupModal] = useState(false);
   const [qrCodeData, setQRCodeData] = useState<{
     qr_code: string;
@@ -119,6 +124,7 @@ export default function Settings() {
   const [sessions, setSessions] = useState<UserSession[]>([]);
   const [billingHistory, setBillingHistory] = useState<BillingHistory[]>([]);
   const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
+  const [animatedSecurityScore, setAnimatedSecurityScore] = useState(0);
 
 useEffect(() => {
   if (user) {
@@ -166,7 +172,7 @@ useEffect(() => {
 
     void fetchSettingsData(Boolean(cached));
     
-    // ✅ Session'ı sadece ilk render'da kaydet
+    // Session bilgisini yalnızca ilk render'da kaydet
     const sessionRecorded = sessionStorage.getItem('session_recorded');
     if (!sessionRecorded) {
       recordSession(user.id);
@@ -183,12 +189,12 @@ useEffect(() => {
       setLoading(true);
     }
     try {
-      console.log("📊 Fetching settings data...");
+      console.log("?? Fetching settings data...");
       let loadedOrganizationData: OrganizationData | null = null;
       let typedSessions: UserSession[] = [];
       let typedBilling: BillingHistory[] = [];
 
-      // ✅ FETCH PROFILE
+      // Profil verisini çek
       const { data: profileData, error: profileError } = await supabase
         .from("profiles")
         .select("*")
@@ -217,7 +223,7 @@ useEffect(() => {
         department: profileData.department || "",
       });
 
-      // ✅ FETCH ORGANIZATION
+      // Organizasyon verisini çek
       if (profileData.organization_id) {
         const { data: orgData, error: orgError } = await supabase
           .from("organizations")
@@ -238,7 +244,7 @@ useEffect(() => {
         }
       }
 
-      // ✅ FETCH SESSIONS (with type casting)
+      // Oturum kayıtlarını çek
       const { data: sessionsData, error: sessionsError } = await supabase
         .from("user_sessions")
         .select("*")
@@ -263,7 +269,7 @@ useEffect(() => {
         setSessions(typedSessions);
       }
 
-      // ✅ FETCH BILLING HISTORY (with type casting)
+      // Fatura geçmişini çek
       const { data: billingData, error: billingError } = await supabase
         .from("billing_history")
         .select("*")
@@ -289,7 +295,7 @@ useEffect(() => {
         setBillingHistory(typedBilling);
       }
 
-      // ✅ FETCH NOTIFICATION PREFERENCES (from localStorage)
+      // Bildirim tercihlerini localStorage'dan yükle
       const savedNotifications = localStorage.getItem("userNotifications");
       if (savedNotifications) {
         setNotifications(JSON.parse(savedNotifications));
@@ -321,10 +327,10 @@ useEffect(() => {
         })
       );
 
-      console.log("✅ Settings data loaded");
-      toast.success("✅ Ayarlar yüklendi");
+      console.log("Settings data loaded");
+      toast.success("Ayarlar yüklendi");
     } catch (err: any) {
-      console.error("❌ Settings error:", err);
+      console.error("Settings error:", err);
       toast.error("Ayarlar yüklenemedi", {
         description: err.message,
       });
@@ -333,7 +339,7 @@ useEffect(() => {
     }
   };
 
-  // ✅ SAVE PROFILE
+  // Profil bilgilerini kaydet
   const handleSaveProfile = async () => {
     if (!user) return;
 
@@ -364,7 +370,7 @@ useEffect(() => {
           : null
       );
 
-      toast.success("✅ Profil bilgileri kaydedildi", {
+      toast.success("Profil bilgileri kaydedildi", {
         description: "Değişiklikler başarıyla uygulandı",
       });
     } catch (err: any) {
@@ -377,7 +383,88 @@ useEffect(() => {
     }
   };
 
-  // ✅ SAVE ORGANIZATION
+  const handleStampUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !user) return;
+
+    if (!file.type.startsWith("image/")) {
+      toast.error("Yalnızca görsel dosyaları yüklenebilir");
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error("Kaşe görseli 5MB'ı aşamaz");
+      return;
+    }
+
+    setUploadingStamp(true);
+    try {
+      const fileExt = file.name.split(".").pop() || "png";
+      const fileName = `stamps/${user.id}/${Date.now()}.${fileExt}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("dof-images")
+        .upload(fileName, file, {
+          cacheControl: "3600",
+          upsert: true,
+        });
+
+      if (uploadError) throw uploadError;
+
+      const { data: urlData } = supabase.storage.from("dof-images").getPublicUrl(fileName);
+
+      const { error: updateError } = await supabase
+        .from("profiles")
+        .update({
+          stamp_url: urlData.publicUrl,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", user.id);
+
+      if (updateError) throw updateError;
+
+      setProfileData((prev) => (prev ? { ...prev, stamp_url: urlData.publicUrl } : prev));
+      toast.success("İSG uzmanı kaşesi güncellendi");
+    } catch (err: any) {
+      console.error("Stamp upload error:", err);
+      toast.error("Kaşe yüklenemedi", {
+        description: err.message,
+      });
+    } finally {
+      setUploadingStamp(false);
+      if (stampInputRef.current) {
+        stampInputRef.current.value = "";
+      }
+    }
+  };
+
+  const handleRemoveStamp = async () => {
+    if (!user) return;
+
+    setUploadingStamp(true);
+    try {
+      const { error } = await supabase
+        .from("profiles")
+        .update({
+          stamp_url: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", user.id);
+
+      if (error) throw error;
+
+      setProfileData((prev) => (prev ? { ...prev, stamp_url: null } : prev));
+      toast.success("Kaşe kaldırıldı");
+    } catch (err: any) {
+      console.error("Remove stamp error:", err);
+      toast.error("Kaşe kaldırılamadı", {
+        description: err.message,
+      });
+    } finally {
+      setUploadingStamp(false);
+    }
+  };
+  // Organizasyon bilgilerini kaydet
   const handleSaveOrganization = async () => {
     if (!organizationData) return;
 
@@ -397,7 +484,7 @@ useEffect(() => {
 
       if (error) throw error;
 
-      toast.success("✅ Şirket bilgileri kaydedildi", {
+      toast.success("Şirket bilgileri kaydedildi", {
         description: "Organizasyon ayarları güncellendi",
       });
     } catch (err: any) {
@@ -410,20 +497,20 @@ useEffect(() => {
     }
   };
 
-  // ✅ CHANGE PASSWORD
+  // ? CHANGE PASSWORD
   const handleChangePassword = async () => {
     if (!newPassword || !confirmPassword) {
-      toast.error("❌ Lütfen parolaları girin");
+      toast.error("Lütfen parolaları girin");
       return;
     }
 
     if (newPassword !== confirmPassword) {
-      toast.error("❌ Parolalar eşleşmiyor");
+      toast.error("Parolalar eşleşmiyor");
       return;
     }
 
     if (newPassword.length < 6) {
-      toast.error("❌ Parola en az 6 karakter olmalıdır");
+      toast.error("Parola en az 6 karakter olmalıdır");
       return;
     }
 
@@ -437,12 +524,12 @@ useEffect(() => {
 
       setNewPassword("");
       setConfirmPassword("");
-      toast.success("✅ Parola başarıyla güncellendi", {
+      toast.success("Parola başarıyla güncellendi", {
         description: "Yeni parolanızla giriş yapabilirsiniz",
       });
     } catch (err: any) {
       console.error("Password change error:", err);
-      toast.error("❌ Parola güncellenemedi", {
+      toast.error("Parola güncellenemedi", {
         description: err.message,
       });
     } finally {
@@ -450,25 +537,25 @@ useEffect(() => {
     }
   };
 
-// ✅ TOGGLE 2FA - GERÇEK SUPABASE MFA (FINAL - WORKING VERSION)
+// 2FA ana akışı
 const handleToggle2FA = async (enabled: boolean) => {
   if (!user) return;
 
   setSaving(true);
   try {
     if (enabled) {
-      // ✅ 1. Tüm factor'leri kontrol et
+      // Mevcut factor'leri kontrol et
       const { data: existingFactors, error: listError } = await supabase.auth.mfa.listFactors();
       
       if (listError) {
-        console.error('❌ List factors error:', listError);
+        console.error("List factors error:", listError);
         throw listError;
       }
 
-      console.log('📋 Existing factors:', existingFactors);
-      console.log('📋 ALL factors:', existingFactors?.all);
+      console.log("Existing factors:", existingFactors);
+      console.log("ALL factors:", existingFactors?.all);
 
-      // ✅ 2. Verified TOTP factor varsa, kullanıcıya bilgi ver
+      // ? 2. Verified TOTP factor varsa, kullaniciya bilgi ver
       if (existingFactors && existingFactors.all && existingFactors.all.length > 0) {
         const verifiedTotpFactors = existingFactors.all.filter(
           (factor: any) => 
@@ -477,7 +564,7 @@ const handleToggle2FA = async (enabled: boolean) => {
         );
 
         if (verifiedTotpFactors.length > 0) {
-          console.log('✅ Found verified TOTP factors:', verifiedTotpFactors.length);
+          console.log("Found verified TOTP factors:", verifiedTotpFactors.length);
           
           // Zaten aktif 2FA var
           await supabase
@@ -490,44 +577,44 @@ const handleToggle2FA = async (enabled: boolean) => {
 
           setTwoFactorEnabled(true);
           
-          toast.info('ℹ️ 2FA zaten aktif', {
-            description: 'Yeniden kurmak için önce kapatın',
+          toast.info("2FA zaten aktif", {
+            description: "Yeniden kurmak için önce kapatın",
           });
           
           setSaving(false);
           return;
         }
 
-        // ✅ 3. Unverified factor'leri temizle
+        // ? 3. Unverified factor'leri temizle
         const unverifiedFactors = existingFactors.all.filter(
           (factor: any) => factor.status !== 'verified'
         );
 
         if (unverifiedFactors.length > 0) {
-          console.log('🗑️ Cleaning unverified factors:', unverifiedFactors.length);
+          console.log('??? Cleaning unverified factors:', unverifiedFactors.length);
           
           for (const factor of unverifiedFactors) {
             try {
-              console.log('🗑️ Removing unverified factor:', factor.id);
+              console.log('??? Removing unverified factor:', factor.id);
               await supabase.auth.mfa.unenroll({ factorId: factor.id });
-              console.log('✅ Factor removed:', factor.id);
+              console.log('? Factor removed:', factor.id);
             } catch (unenrollErr: any) {
-              console.error('⚠️ Failed to remove factor:', factor.id, unenrollErr);
+              console.error('?? Failed to remove factor:', factor.id, unenrollErr);
             }
           }
           
-          // Supabase'in sync olması için bekle
+          // Supabase'in senkronize olması için kısa süre bekle
           await new Promise(resolve => setTimeout(resolve, 500));
         }
       }
 
-      // ✅ 4. Yeni TOTP factor oluştur
-      console.log('➕ Creating new TOTP factor...');
+      // ? 4. Yeni TOTP factor olustur
+      console.log("Creating new TOTP factor...");
       
       // Unique friendly name (timestamp + random)
       const uniqueFriendlyName = `ISGVIZYON-${user.email?.split('@')[0] || 'User'}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
       
-      console.log('📝 Friendly name:', uniqueFriendlyName);
+      console.log('?? Friendly name:', uniqueFriendlyName);
 
       const { data: enrollData, error: enrollError } = await supabase.auth.mfa.enroll({
         factorType: 'totp',
@@ -535,15 +622,15 @@ const handleToggle2FA = async (enabled: boolean) => {
       });
 
       if (enrollError) {
-        console.error('❌ Enroll error:', enrollError);
+        console.error("Enroll error:", enrollError);
         throw enrollError;
       }
 
       if (enrollData && enrollData.totp) {
-        console.log('✅ TOTP factor created:', enrollData);
-        console.log('🔑 Factor ID:', enrollData.id); // ✅ ÖNEMLİ
+        console.log("TOTP factor created:", enrollData);
+        console.log("Factor ID:", enrollData.id);
         
-        // ✅ Factor ID'yi kaydet
+        // ? Factor ID'yi kaydet
         setCurrentFactorId(enrollData.id);
         
         // QR Code verilerini sakla
@@ -553,46 +640,46 @@ const handleToggle2FA = async (enabled: boolean) => {
           uri: enrollData.totp.uri,
         };
         
-        console.log('💾 Setting QR data:', qrData);
-        console.log('💾 Setting Factor ID:', enrollData.id);
+        console.log('?? Setting QR data:', qrData);
+        console.log('?? Setting Factor ID:', enrollData.id);
         
         setQRCodeData(qrData);
         setShow2FASetupModal(true);
 
-        toast.info('📱 2FA Kurulumu Başlatıldı', {
-          description: 'Google Authenticator ile QR kodu tarayın',
+        toast.info("2FA kurulumu başlatıldı", {
+          description: "Google Authenticator ile QR kodunu tarayın",
           duration: 5000,
         });
       } else {
-        throw new Error('TOTP data bulunamadı');
+        throw new Error('TOTP data bulunamadi');
       }
     } else {
-      // ✅ DISABLE 2FA - TÜM FACTOR'LERİ SİL
-      console.log('🔴 Disabling 2FA...');
+      // DISABLE 2FA - tüm factor'leri temizle
+      console.log('?? Disabling 2FA...');
       
       const { data: factors, error: listError } = await supabase.auth.mfa.listFactors();
       
       if (listError) {
-        console.error('❌ List factors error:', listError);
+        console.error('? List factors error:', listError);
         throw listError;
       }
       
-      console.log('📋 Factors to remove:', factors?.all?.length || 0);
+      console.log('?? Factors to remove:', factors?.all?.length || 0);
 
       // ALL array'inden tüm factor'leri sil
       if (factors && factors.all && factors.all.length > 0) {
         for (const factor of factors.all) {
           try {
-            console.log('🗑️ Removing factor:', factor.id, factor.friendly_name);
+            console.log('??? Removing factor:', factor.id, factor.friendly_name);
             
             await supabase.auth.mfa.unenroll({
               factorId: factor.id,
             });
             
-            console.log('✅ Factor removed:', factor.id);
+            console.log('? Factor removed:', factor.id);
           } catch (unenrollErr: any) {
-            console.error('⚠️ Failed to remove factor:', factor.id, unenrollErr);
-            // Devam et, diğer factor'leri de dene
+            console.error('?? Failed to remove factor:', factor.id, unenrollErr);
+            // Devam et, diger factor'leri de dene
           }
         }
       }
@@ -608,29 +695,29 @@ const handleToggle2FA = async (enabled: boolean) => {
 
       setTwoFactorEnabled(false);
       
-      toast.success('✅ İki faktörlü doğrulama kapatıldı', {
-        description: 'Tüm 2FA ayarları temizlendi',
+      toast.success("İki faktörlü doğrulama kapatıldı", {
+        description: "Tüm 2FA ayarları temizlendi",
       });
     }
   } catch (err: any) {
-    console.error('❌ 2FA toggle error:', err);
+    console.error('? 2FA toggle error:', err);
     
-    let errorMessage = 'İşlem başarısız';
+    let errorMessage = 'Islem basarisiz';
     let errorDescription = err.message || 'Bilinmeyen hata';
 
     // Specific error messages
     if (err.message?.includes('already exists')) {
-      errorMessage = '2FA çakışması tespit edildi';
-      errorDescription = 'Lütfen "2FA\'yı Sıfırla" butonunu kullanın veya sayfayı yenileyin';
+      errorMessage = "2FA çakışması tespit edildi";
+      errorDescription = "Lütfen \"2FA'yı Sıfırla\" butonunu kullanın veya sayfayı yenileyin";
     } else if (err.message?.includes('not found')) {
-      errorMessage = 'Factor bulunamadı';
-      errorDescription = 'Sayfayı yenileyip tekrar deneyin';
+      errorMessage = 'Factor bulunamadi';
+      errorDescription = 'Sayfayi yenileyip tekrar deneyin';
     } else if (err.message?.includes('TOTP data')) {
-      errorMessage = 'QR kod oluşturulamadı';
-      errorDescription = 'Lütfen sayfayı yenileyip tekrar deneyin';
+      errorMessage = 'QR kod olusturulamadi';
+      errorDescription = "Lütfen sayfayı yenileyip tekrar deneyin";
     }
 
-    toast.error(`❌ ${errorMessage}`, {
+    toast.error(`${errorMessage}`, {
       description: errorDescription,
       duration: 5000,
     });
@@ -639,17 +726,17 @@ const handleToggle2FA = async (enabled: boolean) => {
   }
 };
 
-// ✅ Force Reset 2FA
+// 2FA'yı zorla sıfırla
 const handleForceReset2FA = async () => {
   if (!user) return;
   
-  if (!confirm('⚠️ Mevcut 2FA ayarlarınız silinecek. Devam edilsin mi?')) {
+  if (!confirm("Mevcut 2FA ayarlarınız silinecek. Devam edilsin mi?")) {
     return;
   }
 
   setSaving(true);
   try {
-    console.log('🔄 Force resetting 2FA...');
+    console.log('?? Force resetting 2FA...');
     
     // Get all factors
     const { data: factors } = await supabase.auth.mfa.listFactors();
@@ -659,7 +746,7 @@ const handleForceReset2FA = async () => {
       for (const factor of factors.all) {
         try {
           await supabase.auth.mfa.unenroll({ factorId: factor.id });
-          console.log('✅ Removed factor:', factor.id);
+          console.log('? Removed factor:', factor.id);
         } catch (err) {
           console.error('Failed to remove factor:', factor.id, err);
         }
@@ -677,8 +764,8 @@ const handleForceReset2FA = async () => {
 
     setTwoFactorEnabled(false);
     
-    toast.success('✅ 2FA tamamen sıfırlandı', {
-      description: 'Şimdi yeniden kurulum yapabilirsiniz',
+    toast.success("2FA tamamen sıfırlandı", {
+      description: "Şimdi yeniden kurulum yapabilirsiniz",
     });
     
     // Refresh page
@@ -687,108 +774,106 @@ const handleForceReset2FA = async () => {
     }, 1500);
   } catch (err: any) {
     console.error('Force reset error:', err);
-    toast.error('❌ Sıfırlama başarısız');
+    toast.error("Sıfırlama başarısız");
   } finally {
     setSaving(false);
   }
 };
-  // ✅ TERMINATE SESSION
+  // SAVE NOTIFICATIONS
+  const handleSaveNotifications = () => {
+    localStorage.setItem("userNotifications", JSON.stringify(notifications));
+    toast.success("Bildirim tercihleri kaydedildi");
+  };
+
+  // TERMINATE SESSION
   const handleTerminateSession = async (sessionId: string) => {
     const success = await terminateSession(sessionId);
 
     if (success) {
       setSessions((prev) => prev.filter((s) => s.id !== sessionId));
-      toast.success("✅ Oturum sonlandırıldı", {
+      toast.success("Oturum sonlandırıldı", {
         description: "Cihaz bağlantısı kesildi",
       });
     } else {
-      toast.error("❌ Oturum sonlandırılamadı");
+      toast.error("Oturum sonlandırılamadı");
     }
   };
 
-  // ✅ FORCE CLEAN - Tüm factor'leri temizle (Debug için)
-const handleForceCleanFactors = async () => {
-  if (!user) return;
-  
-  const confirmed = confirm(
-    '⚠️ UYARI: Tüm 2FA ayarlarınız silinecek!\n\n' +
-    'Bu işlem:\n' +
-    '• Tüm factor\'leri siler\n' +
-    '• 2FA\'yı tamamen devre dışı bırakır\n' +
-    '• Sayfayı yeniler\n\n' +
-    'Devam etmek istiyor musunuz?'
-  );
-  
-  if (!confirmed) return;
+  // FORCE CLEAN - Tüm factor'leri temizle (debug için)
+  const handleForceCleanFactors = async () => {
+    if (!user) return;
 
-  setSaving(true);
-  try {
-    console.log('🔥 FORCE CLEANING ALL FACTORS...');
-    
-    // List all factors
-    const { data: factors } = await supabase.auth.mfa.listFactors();
-    
-    console.log('📋 Total factors found:', factors?.all?.length || 0);
+    const confirmed = confirm(
+      "UYARI: Tüm 2FA ayarlarınız silinecek!\n\n" +
+      "Bu işlem:\n" +
+      "• Tüm factor'leri siler\n" +
+      "• 2FA'yı tamamen devre dışı bırakır\n" +
+      "• Sayfayı yeniler\n\n" +
+      "Devam etmek istiyor musunuz?"
+    );
 
-    if (factors && factors.all) {
-      console.log('🗑️ Deleting factors:', factors.all.map((f: any) => ({
-        id: f.id,
-        name: f.friendly_name,
-        type: f.factor_type,
-        status: f.status,
-      })));
+    if (!confirmed) return;
 
-      // Delete each factor
-      for (const factor of factors.all) {
-        try {
-          await supabase.auth.mfa.unenroll({ factorId: factor.id });
-          console.log('✅ Deleted:', factor.id);
-        } catch (err) {
-          console.error('❌ Failed to delete:', factor.id, err);
+    setSaving(true);
+    try {
+      console.log("FORCE CLEANING ALL FACTORS...");
+
+      const { data: factors } = await supabase.auth.mfa.listFactors();
+      console.log("Total factors found:", factors?.all?.length || 0);
+
+      if (factors?.all) {
+        console.log(
+          "Deleting factors:",
+          factors.all.map((factor: any) => ({
+            id: factor.id,
+            name: factor.friendly_name,
+            type: factor.factor_type,
+            status: factor.status,
+          }))
+        );
+
+        for (const factor of factors.all) {
+          try {
+            await supabase.auth.mfa.unenroll({ factorId: factor.id });
+            console.log("Deleted:", factor.id);
+          } catch (err) {
+            console.error("Failed to delete:", factor.id, err);
+          }
         }
       }
+
+      await supabase
+        .from("profiles")
+        .update({
+          two_factor_enabled: false,
+          two_factor_method: null,
+        })
+        .eq("id", user.id);
+
+      toast.success("Tüm 2FA ayarları temizlendi", {
+        description: "Sayfa yenileniyor...",
+      });
+
+      setTimeout(() => {
+        window.location.reload();
+      }, 1500);
+    } catch (err: any) {
+      console.error("Force clean error:", err);
+      toast.error("Temizleme başarısız", {
+        description: err.message,
+      });
+    } finally {
+      setSaving(false);
     }
-
-    // Reset profile
-    await supabase
-      .from('profiles')
-      .update({
-        two_factor_enabled: false,
-        two_factor_method: null,
-      })
-      .eq('id', user.id);
-
-    toast.success('✅ Tüm 2FA ayarları temizlendi', {
-      description: 'Sayfa yenileniyor...',
-    });
-
-    // Reload page
-    setTimeout(() => {
-      window.location.reload();
-    }, 1500);
-  } catch (err: any) {
-    console.error('❌ Force clean error:', err);
-    toast.error('❌ Temizleme başarısız', {
-      description: err.message,
-    });
-  } finally {
-    setSaving(false);
-  }
-};
-
-  // ✅ SAVE NOTIFICATIONS
-  const handleSaveNotifications = () => {
-    localStorage.setItem("userNotifications", JSON.stringify(notifications));
-    toast.success("✅ Bildirim tercihleri kaydedildi");
   };
 
-  // ✅ LOGOUT
+  // LOGOUT
   const handleLogout = async () => {
     await signOut();
     navigate("/auth");
   };
 
-  // ✅ DOWNLOAD DATA
+  // DOWNLOAD DATA
   const handleDownloadData = () => {
     const data = {
       profile: profileData,
@@ -806,19 +891,19 @@ const handleForceCleanFactors = async () => {
     linkElement.setAttribute("download", exportFileDefaultName);
     linkElement.click();
 
-    toast.success("✅ Veriler indirildi", {
-      description: "JSON dosyası bilgisayarınıza kaydedildi",
+    toast.success("Veriler indirildi", {
+        description: "JSON dosyası bilgisayarınıza kaydedildi",
     });
   };
 
-  // ✅ DELETE ACCOUNT
+  // DELETE ACCOUNT
   const handleDeleteAccount = () => {
     if (
       confirm(
-        "⚠️ Hesabınızı kalıcı olarak silmek istediğinizden emin misiniz?\n\nBu işlem GERİ ALINAMAZ!"
+        "Hesabınızı kalıcı olarak silmek istediğinizden emin misiniz?\n\nBu işlem GERİ ALINAMAZ!"
       )
     ) {
-      toast.error("🗑️ Hesap silme talebi alındı", {
+      toast.error("Hesap silme talebi alındı", {
         description: "Destek ekibimiz en kısa sürede sizinle iletişime geçecek",
         duration: 8000,
       });
@@ -847,9 +932,117 @@ const handleForceCleanFactors = async () => {
     }
   };
 
+  const subscriptionLabel =
+    status === "premium"
+      ? "Premium üyelik aktif"
+      : status === "trial"
+        ? `Deneme sürümü · ${daysLeftInTrial} gün kaldı`
+        : "Temel plan";
+
+  const subscriptionTone =
+    status === "premium"
+      ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-100"
+      : status === "trial" && !isTrialExpired
+        ? "border-amber-400/20 bg-amber-400/10 text-amber-100"
+        : "border-rose-400/20 bg-rose-400/10 text-rose-100";
+
+  const premiumInputClassName =
+    "h-11 rounded-2xl border-white/10 bg-slate-950/60 text-slate-100 placeholder:text-slate-500 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)] focus-visible:border-cyan-400/40 focus-visible:ring-2 focus-visible:ring-cyan-400/20";
+  const premiumOutlineButtonClassName =
+    "border-white/10 bg-white/5 text-slate-100 hover:bg-white/10 hover:text-white";
+  const premiumPrimaryButtonClassName =
+    "bg-gradient-to-r from-fuchsia-600 to-cyan-500 text-white shadow-[0_14px_30px_rgba(34,211,238,0.18)] hover:from-fuchsia-500 hover:to-cyan-400";
+  const premiumGhostButtonClassName =
+    "text-slate-200 hover:bg-white/10 hover:text-white";
+  const microCardEyebrowClassName =
+    "text-[11px] font-medium uppercase tracking-[0.24em] text-slate-400";
+  const microCardTitleClassName = "mt-2 text-xl font-semibold text-white";
+  const microCardBodyClassName = "mt-2 text-sm text-slate-300";
+
+  const securityRiskLevel = !twoFactorEnabled
+    ? "Yüksek"
+    : trustedDevices.length >= 5
+      ? "Orta"
+      : "Düşük";
+
+  const securityRiskTone =
+    securityRiskLevel === "Yüksek"
+      ? "border-rose-400/25 bg-rose-400/10 text-rose-100"
+      : securityRiskLevel === "Orta"
+        ? "border-amber-400/25 bg-amber-400/10 text-amber-100"
+        : "border-emerald-400/25 bg-emerald-400/10 text-emerald-100";
+
+  const securityRecommendedAction = !twoFactorEnabled
+    ? "Google Authenticator kurulumu tamamlanmalı ve en az bir güvenilir cihaz doğrulanmalı."
+    : trustedDevices.length >= 5
+      ? "Güvenilir cihaz listesini gözden geçirip artık kullanılmayan cihazları kaldırın."
+      : "Mevcut koruma dengeli görünüyor. Parola rotasyonu ve oturum kontrolünü sürdürün.";
+
+  const enabledFeatureCount = [
+    features.aiRiskAnalysis,
+    features.pdfExport,
+    features.excelExport,
+    features.prioritySupport,
+  ].filter(Boolean).length + 2;
+
+  const monthlyPlanPrice = 499.99;
+  const yearlyPlanPrice = 4999;
+  const yearlyEquivalent = monthlyPlanPrice * 12;
+  const yearlySavingsPercent = Math.round(((yearlyEquivalent - yearlyPlanPrice) / yearlyEquivalent) * 100);
+
+  const securityScore = Math.max(
+    24,
+    Math.min(
+      100,
+      (twoFactorEnabled ? 58 : 24) +
+        Math.min(trustedDevices.length, 3) * 9 +
+        Math.min(sessions.length, 4) * 4
+    )
+  );
+
+  const usageSummary = [
+    {
+      label: "Açık özellik",
+      value: `${enabledFeatureCount}+`,
+      detail: "Planınızla erişebildiğiniz modül ve premium araç sayısı.",
+    },
+    {
+      label: "Aktif durum",
+      value: status === "premium" ? "Tam erişim" : status === "trial" ? "Deneme" : "Temel",
+      detail: "Hesabınızın güncel kullanım kapsamı.",
+    },
+    {
+      label: "Fatura kaydı",
+      value: `${billingHistory.length}`,
+      detail: "Arşivlenen ödeme veya fatura hareketi.",
+    },
+  ];
+
+  useEffect(() => {
+    const duration = 700;
+    const stepMs = 16;
+    const steps = Math.max(1, Math.round(duration / stepMs));
+    const increment = securityScore / steps;
+    let current = 0;
+
+    setAnimatedSecurityScore(0);
+
+    const interval = window.setInterval(() => {
+      current += increment;
+      if (current >= securityScore) {
+        setAnimatedSecurityScore(securityScore);
+        window.clearInterval(interval);
+        return;
+      }
+      setAnimatedSecurityScore(Math.round(current));
+    }, stepMs);
+
+    return () => window.clearInterval(interval);
+  }, [securityScore]);
+
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 p-6 space-y-6">
+      <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(34,211,238,0.12),_transparent_22%),radial-gradient(circle_at_top_right,_rgba(168,85,247,0.14),_transparent_28%),linear-gradient(180deg,#020617,#0f172a)] p-6 md:p-8 space-y-6">
         <div className="flex items-center justify-between">
           <div className="space-y-2">
             <div className="h-8 w-40 animate-pulse rounded bg-slate-800" />
@@ -874,107 +1067,134 @@ const handleForceCleanFactors = async () => {
 
   return (
     <>
-      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 p-6 space-y-6">
-        {/* ✅ HEADER */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-foreground flex items-center gap-3">
-              <SettingsIcon className="h-8 w-8 text-blue-500" />
-              Ayarlar
-            </h1>
-            <p className="text-muted-foreground mt-1">
-              Hesap, güvenlik ve tercihlerinizi yönetin
-            </p>
+      <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(34,211,238,0.12),_transparent_22%),radial-gradient(circle_at_top_right,_rgba(168,85,247,0.14),_transparent_28%),linear-gradient(180deg,#020617,#0f172a)] p-6 md:p-8 space-y-6">
+        <section className="overflow-hidden rounded-[28px] border border-white/10 bg-[linear-gradient(135deg,rgba(15,23,42,0.92),rgba(17,24,39,0.84))] shadow-[0_24px_80px_rgba(2,6,23,0.45)] backdrop-blur-xl">
+          <div className="grid gap-6 p-6 md:p-8 xl:grid-cols-[1.15fr_0.85fr]">
+            <div className="space-y-5">
+              <div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-xs font-medium uppercase tracking-[0.18em] text-cyan-100">
+                <SettingsIcon className="h-3.5 w-3.5" />
+                Hesap ve operasyon ayarları
+              </div>
+              <div className="space-y-3">
+                <h1 className="flex items-center gap-3 text-3xl font-semibold tracking-tight text-white md:text-4xl">
+                  <span className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-white/5 shadow-inner shadow-cyan-500/10">
+                    <SettingsIcon className="h-6 w-6 text-cyan-300" />
+                  </span>
+                  Ayarlar
+                </h1>
+                <p className="max-w-2xl text-sm leading-6 text-slate-300 md:text-base">
+                  Profilinizi, güvenlik tercihlerinizi, bildirim akışınızı ve kurumsal bilgilerinizi
+                  tek merkezden yönetin. Bu alan ekip kullanımını daha güvenli ve daha tutarlı
+                  hale getirmek için tasarlandı.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <Badge className={`rounded-full border px-3 py-1 text-xs font-medium ${subscriptionTone}`}>
+                  {subscriptionLabel}
+                </Badge>
+                <Badge variant="outline" className="rounded-full border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-200">
+                  {twoFactorEnabled ? "2FA aktif" : "2FA önerilir"}
+                </Badge>
+              </div>
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="rounded-3xl border border-white/10 bg-white/5 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
+                <p className={microCardEyebrowClassName}>Plan durumu</p>
+                <p className={microCardTitleClassName}>{status === "premium" ? "Premium" : status === "trial" ? "Deneme" : "Temel"}</p>
+                <p className={microCardBodyClassName}>
+                  {status === "premium"
+                    ? "Tüm gelişmiş modüller aktif."
+                    : status === "trial"
+                      ? `${daysLeftInTrial} gün daha tüm premium özellikler açık.`
+                      : "Temel kullanım paketiyle devam ediyorsunuz."}
+                </p>
+              </div>
+              <div className="rounded-3xl border border-white/10 bg-white/5 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
+                <p className={microCardEyebrowClassName}>Güvenlik özeti</p>
+                <p className={microCardTitleClassName}>{twoFactorEnabled ? "Koruma açık" : "Ek doğrulama kapalı"}</p>
+                <p className={microCardBodyClassName}>
+                  {twoFactorEnabled
+                    ? `${trustedDevices.length} güvenilir cihaz kayıtlı.`
+                    : "Google Authenticator ile hesabınızı ek katmanla koruyabilirsiniz."}
+                </p>
+              </div>
+            </div>
           </div>
-          <Button variant="outline" onClick={() => navigate("/profile")}>
-            Geri Dön
-          </Button>
-        </div>
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 bg-slate-950/20 px-6 py-4 md:px-8">
+            <div className="flex items-center gap-3 text-sm text-slate-300">
+              <span className="inline-flex h-2.5 w-2.5 rounded-full bg-emerald-400 shadow-[0_0_18px_rgba(52,211,153,0.55)]" />
+              Ayarlar değişiklikleri hesabınıza anında yansır.
+            </div>
+            <Button variant="outline" onClick={() => navigate("/profile")} className={premiumOutlineButtonClassName}>
+              Geri Dön
+            </Button>
+          </div>
+        </section>
 
-        {/* ✅ SUBSCRIPTION STATUS BANNER */}
-        {status === 'trial' && !isTrialExpired && (
-          <Card className="border-l-4 border-l-yellow-500 bg-yellow-500/10">
-            <CardContent className="p-4 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <Clock className="h-5 w-5 text-yellow-500" />
+        {status === "trial" && !isTrialExpired && (
+          <Card className="border border-amber-400/20 bg-amber-400/10 shadow-[0_16px_40px_rgba(245,158,11,0.08)]">
+            <CardContent className="flex flex-col gap-4 p-5 md:flex-row md:items-center md:justify-between">
+              <div className="flex items-start gap-3">
+                <Clock className="mt-0.5 h-5 w-5 text-amber-300" />
                 <div>
-                  <p className="font-semibold text-foreground">
-                    Deneme Sürümü Aktif
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    {daysLeftInTrial} gün kaldı · Tüm premium özellikler açık
-                  </p>
+                  <p className="font-semibold text-amber-50">Deneme sürümü aktif</p>
+                  <p className="text-sm text-amber-100/80">{daysLeftInTrial} gün kaldı. Tüm premium özellikler şu anda kullanılabilir.</p>
                 </div>
               </div>
-              <Button
-                onClick={() => setShowUpgradeModal(true)}
-                className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
-              >
-                <Crown className="h-4 w-4 mr-2" />
-                Yükselt
+              <Button onClick={() => setShowUpgradeModal(true)} className="bg-gradient-to-r from-fuchsia-600 to-cyan-500 text-white hover:from-fuchsia-500 hover:to-cyan-400">
+                <Crown className="mr-2 h-4 w-4" />
+                Paketi Yükselt
               </Button>
             </CardContent>
           </Card>
         )}
 
-        {status === 'trial' && isTrialExpired && (
-          <Card className="border-l-4 border-l-red-500 bg-red-500/10">
-            <CardContent className="p-4 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <AlertCircle className="h-5 w-5 text-red-500" />
+        {status === "trial" && isTrialExpired && (
+          <Card className="border border-rose-400/20 bg-rose-400/10 shadow-[0_16px_40px_rgba(244,63,94,0.08)]">
+            <CardContent className="flex flex-col gap-4 p-5 md:flex-row md:items-center md:justify-between">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="mt-0.5 h-5 w-5 text-rose-300" />
                 <div>
-                  <p className="font-semibold text-foreground">
-                    Deneme Süresi Sona Erdi
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    Devam etmek için bir paket seçin
-                  </p>
+                  <p className="font-semibold text-rose-50">Deneme süresi sona erdi</p>
+                  <p className="text-sm text-rose-100/80">Premium modülleri kullanmaya devam etmek için uygun planı seçin.</p>
                 </div>
               </div>
-              <Button
-                onClick={() => setShowUpgradeModal(true)}
-                className="bg-gradient-to-r from-red-600 to-orange-600 hover:from-red-700 hover:to-orange-700"
-              >
-                Paketi Seç
+              <Button onClick={() => setShowUpgradeModal(true)} className="bg-gradient-to-r from-rose-600 to-orange-500 text-white hover:from-rose-500 hover:to-orange-400">
+                Planı Gör
               </Button>
             </CardContent>
           </Card>
         )}
 
-        {status === 'premium' && (
-          <Card className="border-l-4 border-l-green-500 bg-green-500/10">
-            <CardContent className="p-4 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <CheckCircle className="h-5 w-5 text-green-500" />
+        {status === "premium" && (
+          <Card className="border border-emerald-400/20 bg-emerald-400/10 shadow-[0_16px_40px_rgba(16,185,129,0.08)]">
+            <CardContent className="flex flex-col gap-4 p-5 md:flex-row md:items-center md:justify-between">
+              <div className="flex items-start gap-3">
+                <CheckCircle className="mt-0.5 h-5 w-5 text-emerald-300" />
                 <div>
-                  <p className="font-semibold text-foreground">
-                    Premium Üyelik Aktif
-                  </p>
-                  <p className="text-sm text-muted-foreground">
-                    Tüm özelliklere sınırsız erişim
-                  </p>
+                  <p className="font-semibold text-emerald-50">Premium üyelik aktif</p>
+                  <p className="text-sm text-emerald-100/80">Tüm gelişmiş özellikler, güvenlik ayarları ve çıktı araçları kullanımda.</p>
                 </div>
               </div>
-              <Badge className="bg-gradient-to-r from-purple-600 to-blue-600">
-                <Crown className="h-3 w-3 mr-1" />
-                Uzman
+              <Badge className="rounded-full bg-gradient-to-r from-fuchsia-600 to-cyan-500 px-3 py-1 text-white">
+                <Crown className="mr-1 h-3 w-3" />
+                Uzman plan
               </Badge>
             </CardContent>
           </Card>
         )}
 
-        {/* ✅ TABS */}
-        <Card>
-          <CardContent className="p-4">
-            <div className="flex gap-2 border-b border-border pb-3 overflow-x-auto">
+        <Card className="border-white/10 bg-slate-950/55 shadow-[0_24px_60px_rgba(2,6,23,0.35)] backdrop-blur-xl">
+          <CardContent className="p-4 md:p-5">
+            <div className="flex gap-2 overflow-x-auto rounded-2xl border border-white/10 bg-white/5 p-2">
               {tabs.map((tab) => (
                 <button
                   key={tab.id}
                   onClick={() => setCurrentTab(tab.id)}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${
+                  className={`flex items-center gap-2 rounded-xl px-4 py-2.5 text-sm font-medium transition-all whitespace-nowrap ${
                     currentTab === tab.id
-                      ? "bg-gradient-to-r from-purple-600 to-blue-600 text-white shadow-lg"
-                      : "text-muted-foreground hover:text-foreground hover:bg-secondary"
+                      ? "bg-gradient-to-r from-fuchsia-600 to-cyan-500 text-white shadow-[0_12px_30px_rgba(34,211,238,0.22)]"
+                      : "text-slate-300 hover:bg-white/10 hover:text-white"
                   }`}
                 >
                   {tab.icon}
@@ -983,18 +1203,23 @@ const handleForceCleanFactors = async () => {
               ))}
             </div>
 
-            {/* ✅ TAB CONTENT */}
+            {/* Sekme içeriği */}
             <div className="mt-6">
               {/* GENERAL TAB */}
               {currentTab === "general" && (
                 <div className="space-y-6">
                   {/* Profile Section */}
-                  <div>
-                    <h2 className="text-lg font-bold mb-4">👤 Profil Bilgileri</h2>
+                  <div className="rounded-[24px] border border-white/10 bg-white/5 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] md:p-6">
+                    <div className="mb-5">
+                      <p className="text-xs font-medium uppercase tracking-[0.22em] text-cyan-300/80">Profil merkezi</p>
+                      <h2 className="mt-2 text-lg font-semibold text-white">Profil Bilgileri</h2>
+                      <p className="mt-1 text-sm text-slate-400">Kişisel iletişim ve görev bilgilerinizi ekip görünürlüğü için güncel tutun.</p>
+                    </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <Label>Ad Soyad *</Label>
                         <Input
+                          className={premiumInputClassName}
                           value={formData.fullName}
                           onChange={(e) =>
                             setFormData({ ...formData, fullName: e.target.value })
@@ -1004,11 +1229,12 @@ const handleForceCleanFactors = async () => {
                       </div>
                       <div className="space-y-2">
                         <Label>E-posta</Label>
-                        <Input value={profileData?.email || ""} disabled />
+                        <Input value={profileData?.email || ""} disabled className={premiumInputClassName} />
                       </div>
                       <div className="space-y-2">
                         <Label>Telefon</Label>
                         <Input
+                          className={premiumInputClassName}
                           value={formData.phone}
                           onChange={(e) =>
                             setFormData({ ...formData, phone: e.target.value })
@@ -1019,6 +1245,7 @@ const handleForceCleanFactors = async () => {
                       <div className="space-y-2">
                         <Label>Pozisyon</Label>
                         <Input
+                          className={premiumInputClassName}
                           value={formData.position}
                           onChange={(e) =>
                             setFormData({ ...formData, position: e.target.value })
@@ -1029,6 +1256,7 @@ const handleForceCleanFactors = async () => {
                       <div className="space-y-2 md:col-span-2">
                         <Label>Departman</Label>
                         <Input
+                          className={premiumInputClassName}
                           value={formData.department}
                           onChange={(e) =>
                             setFormData({ ...formData, department: e.target.value })
@@ -1037,10 +1265,45 @@ const handleForceCleanFactors = async () => {
                         />
                       </div>
                     </div>
+                    <div className="space-y-3 md:col-span-2">
+                      <Label>İSG Uzmanı Kaşesi</Label>
+                      <Card className="border-indigo-500/20 bg-gradient-to-br from-indigo-500/10 to-cyan-500/10">
+                        <CardContent className="p-4">
+                          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                            <div className="flex items-center gap-4">
+                              <div className="flex h-24 w-24 items-center justify-center overflow-hidden rounded-2xl border border-dashed border-indigo-400/30 bg-slate-950/40">
+                                {profileData?.stamp_url ? (
+                                  <img src={profileData.stamp_url} alt="Kaşe önizleme" className="h-full w-full object-contain p-2" />
+                                ) : (
+                                  <ImagePlus className="h-8 w-8 text-indigo-300" />
+                                )}
+                              </div>
+                              <div className="space-y-1">
+                                <p className="font-medium text-foreground">Toplu DÖF, kurul ve resmî çıktı alanlarında kullanılır.</p>
+                                <p className="text-sm text-muted-foreground">PNG veya JPG yükleyin. Şeffaf arka planlı PNG en iyi sonucu verir.</p>
+                              </div>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                              <input ref={stampInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={handleStampUpload} />
+                              <Button type="button" variant="outline" onClick={() => stampInputRef.current?.click()} disabled={uploadingStamp} className={premiumOutlineButtonClassName}>
+                                {uploadingStamp ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Upload className="mr-2 h-4 w-4" />}
+                                Kaşe Yükle
+                              </Button>
+                              {profileData?.stamp_url ? (
+                                <Button type="button" variant="ghost" onClick={handleRemoveStamp} disabled={uploadingStamp} className="border border-destructive/20 bg-destructive/5 text-destructive hover:bg-destructive/10">
+                                  <Trash2 className="mr-2 h-4 w-4" />
+                                  Kaldır
+                                </Button>
+                              ) : null}
+                            </div>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    </div>
                     <Button
                       onClick={handleSaveProfile}
                       disabled={saving}
-                      className="mt-4 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
+                      className={`mt-4 ${premiumPrimaryButtonClassName}`}
                     >
                       {saving ? (
                         <>
@@ -1060,12 +1323,17 @@ const handleForceCleanFactors = async () => {
                   {organizationData && (
                     <>
                       <div className="h-px bg-border" />
-                      <div>
-                        <h2 className="text-lg font-bold mb-4">🏢 Şirket Bilgileri</h2>
+                      <div className="rounded-[24px] border border-white/10 bg-white/5 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] md:p-6">
+                        <div className="mb-5">
+                          <p className="text-xs font-medium uppercase tracking-[0.22em] text-fuchsia-300/80">Kurumsal kimlik</p>
+                          <h2 className="mt-2 text-lg font-semibold text-white">Şirket Bilgileri</h2>
+                          <p className="mt-1 text-sm text-slate-400">Fatura, çıktı ve rapor üst bilgileri için kullanılan kurumsal verileri yönetin.</p>
+                        </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div className="space-y-2">
                             <Label>Şirket Adı</Label>
                             <Input
+                              className={premiumInputClassName}
                               value={orgFormData.name}
                               onChange={(e) =>
                                 setOrgFormData({ ...orgFormData, name: e.target.value })
@@ -1075,6 +1343,7 @@ const handleForceCleanFactors = async () => {
                           <div className="space-y-2">
                             <Label>Sektör</Label>
                             <Input
+                              className={premiumInputClassName}
                               value={orgFormData.industry}
                               onChange={(e) =>
                                 setOrgFormData({ ...orgFormData, industry: e.target.value })
@@ -1084,6 +1353,7 @@ const handleForceCleanFactors = async () => {
                           <div className="space-y-2">
                             <Label>Şehir</Label>
                             <Input
+                              className={premiumInputClassName}
                               value={orgFormData.city}
                               onChange={(e) =>
                                 setOrgFormData({ ...orgFormData, city: e.target.value })
@@ -1093,6 +1363,7 @@ const handleForceCleanFactors = async () => {
                           <div className="space-y-2">
                             <Label>Telefon</Label>
                             <Input
+                              className={premiumInputClassName}
                               value={orgFormData.phone}
                               onChange={(e) =>
                                 setOrgFormData({ ...orgFormData, phone: e.target.value })
@@ -1102,6 +1373,7 @@ const handleForceCleanFactors = async () => {
                           <div className="space-y-2 md:col-span-2">
                             <Label>Website</Label>
                             <Input
+                              className={premiumInputClassName}
                               value={orgFormData.website}
                               onChange={(e) =>
                                 setOrgFormData({ ...orgFormData, website: e.target.value })
@@ -1112,7 +1384,7 @@ const handleForceCleanFactors = async () => {
                         <Button
                           onClick={handleSaveOrganization}
                           disabled={saving}
-                          className="mt-4 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
+                          className={`mt-4 ${premiumPrimaryButtonClassName}`}
                         >
                           {saving ? (
                             <>
@@ -1135,20 +1407,129 @@ const handleForceCleanFactors = async () => {
               {/* SECURITY TAB */}
               {currentTab === "security" && (
                 <div className="space-y-6">
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="rounded-[24px] border border-cyan-400/15 bg-cyan-400/10 p-5">
+                      <p className={microCardEyebrowClassName}>Güvenlik durumu</p>
+                      <p className={microCardTitleClassName}>{twoFactorEnabled ? "Çok katmanlı koruma açık" : "Ek koruma öneriliyor"}</p>
+                      <p className={microCardBodyClassName}>{twoFactorEnabled ? "2FA, güvenilir cihazlar ve oturum yönetimi aktif durumda." : "Google Authenticator kurulumu ile hesabınızı daha güçlü koruyabilirsiniz."}</p>
+                    </div>
+                    <div className="rounded-[24px] border border-white/10 bg-white/5 p-5">
+                      <p className={microCardEyebrowClassName}>Aktif görünüm</p>
+                      <p className={microCardTitleClassName}>{sessions.length} oturum · {trustedDevices.length} güvenilir cihaz</p>
+                      <p className={microCardBodyClassName}>Oturumlarınızı kapatın, güvenilir cihaz listesini güncelleyin ve 2FA akışını tek panelden yönetin.</p>
+                    </div>
+                  </div>
+                  <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
+                    <div className={`rounded-[24px] border p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] ${securityRiskTone}`}>
+                      <p className={microCardEyebrowClassName}>Risk seviyesi</p>
+                      <div className="mt-3 flex items-center justify-between gap-3">
+                        <div>
+                          <p className="text-2xl font-semibold">{securityRiskLevel}</p>
+                          <p className="mt-2 text-sm opacity-90">
+                            {securityRiskLevel === "Yüksek"
+                              ? "2FA kapalı olduğu için hesabınız ek koruma gerektiriyor."
+                              : securityRiskLevel === "Orta"
+                                ? "Çok sayıda güvenilir cihaz olduğu için periyodik kontrol önerilir."
+                                : "Hesap koruması dengeli görünüyor."}
+                          </p>
+                        </div>
+                        <Shield className="h-8 w-8 opacity-80" />
+                      </div>
+                    </div>
+                    <div className="rounded-[24px] border border-white/10 bg-white/5 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+                      <p className={microCardEyebrowClassName}>Önerilen aksiyon</p>
+                      <p className="mt-3 text-lg font-semibold text-white">Güvenlik akışını bir sonraki seviyeye taşıyın</p>
+                      <p className="mt-2 text-sm leading-6 text-slate-300">{securityRecommendedAction}</p>
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        <Badge className="rounded-full border border-white/10 bg-slate-950/50 px-3 py-1 text-slate-200">
+                          {twoFactorEnabled ? "2FA aktif" : "2FA kurulmalı"}
+                        </Badge>
+                        <Badge className="rounded-full border border-white/10 bg-slate-950/50 px-3 py-1 text-slate-200">
+                          {trustedDevices.length} güvenilir cihaz
+                        </Badge>
+                        <Badge className="rounded-full border border-white/10 bg-slate-950/50 px-3 py-1 text-slate-200">
+                          {sessions.length} aktif oturum
+                        </Badge>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="grid gap-4 xl:grid-cols-[0.78fr_1.22fr]">
+                    <div className="rounded-[24px] border border-white/10 bg-white/5 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] md:p-6">
+                      <p className={microCardEyebrowClassName}>Güven puanı</p>
+                      <div className="mt-4 flex items-center gap-5">
+                        <div
+                          className="relative flex h-24 w-24 items-center justify-center rounded-full"
+                          style={{
+                            background: `conic-gradient(${securityScore >= 75 ? "#34d399" : securityScore >= 45 ? "#f59e0b" : "#fb7185"} ${animatedSecurityScore}%, rgba(255,255,255,0.08) ${animatedSecurityScore}% 100%)`,
+                          }}
+                        >
+                          <div className="absolute inset-0 rounded-full bg-[radial-gradient(circle,rgba(34,211,238,0.12),transparent_62%)] animate-pulse" />
+                          <div className="flex h-[78px] w-[78px] items-center justify-center rounded-full bg-slate-950 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+                            <div>
+                              <p className="text-xl font-semibold text-white">{animatedSecurityScore}</p>
+                              <p className="text-[10px] uppercase tracking-[0.22em] text-slate-400">/100</p>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="space-y-2">
+                          <p className="text-sm font-semibold text-white">Güvenlik görünümü dengesi</p>
+                          <p className="text-sm leading-6 text-slate-300">
+                            Güven puanı; 2FA kullanımı, güvenilir cihaz sayısı ve aktif oturum yoğunluğuna göre hesaplanır.
+                          </p>
+                          <div className="flex flex-wrap gap-2">
+                            <Badge className="rounded-full border border-white/10 bg-slate-950/50 px-3 py-1 text-slate-200">
+                              {twoFactorEnabled ? "2FA katkısı yüksek" : "2FA katkısı yok"}
+                            </Badge>
+                            <Badge className="rounded-full border border-white/10 bg-slate-950/50 px-3 py-1 text-slate-200">
+                              {trustedDevices.length} cihaz etkisi
+                            </Badge>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="rounded-[24px] border border-white/10 bg-white/5 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] md:p-6">
+                      <p className={microCardEyebrowClassName}>Önerilen güvenlik adımları</p>
+                      <div className="mt-4 grid gap-3 md:grid-cols-3">
+                        <div className="rounded-2xl border border-white/10 bg-slate-950/50 p-4">
+                          <p className="text-sm font-semibold text-white">2FA</p>
+                          <p className="mt-2 text-xs leading-5 text-slate-400">
+                            {twoFactorEnabled ? "Etkin, yeniden kurulum yedeği hazır tutulmalı." : "Öncelikli olarak kurulmalı."}
+                          </p>
+                        </div>
+                        <div className="rounded-2xl border border-white/10 bg-slate-950/50 p-4">
+                          <p className="text-sm font-semibold text-white">Cihazlar</p>
+                          <p className="mt-2 text-xs leading-5 text-slate-400">
+                            {trustedDevices.length > 3 ? "Eski cihazları temizleyin." : "Cihaz listesi kontrollü görünüyor."}
+                          </p>
+                        </div>
+                        <div className="rounded-2xl border border-white/10 bg-slate-950/50 p-4">
+                          <p className="text-sm font-semibold text-white">Oturumlar</p>
+                          <p className="mt-2 text-xs leading-5 text-slate-400">
+                            {sessions.length > 3 ? "Açık oturumları gözden geçirin." : "Oturum yoğunluğu dengeli."}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                   {/* Change Password */}
-                  <div>
-                    <h2 className="text-lg font-bold mb-4">🔐 Parola Değiştir</h2>
+                  <div className="rounded-[24px] border border-white/10 bg-white/5 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] md:p-6">
+                    <div className="mb-5">
+                      <p className="text-xs font-medium uppercase tracking-[0.22em] text-cyan-300/80">Kimlik doğrulama</p>
+                      <h2 className="mt-2 text-lg font-semibold text-white">Parola Değiştir</h2>
+                    </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <Label>Yeni Parola</Label>
                         <div className="relative">
                           <Input
+                            className={premiumInputClassName}
                             type={showPassword ? "text" : "password"}
                             value={newPassword}
                             onChange={(e) => setNewPassword(e.target.value)}
                             placeholder="En az 6 karakter"
                           />
                           <button
+                            type="button"
                             onClick={() => setShowPassword(!showPassword)}
                             className="absolute right-3 top-1/2 -translate-y-1/2"
                           >
@@ -1161,8 +1542,9 @@ const handleForceCleanFactors = async () => {
                         </div>
                       </div>
                       <div className="space-y-2">
-                        <Label>Parolayı Onayla</Label>
+                         <Label>Parolayı Onayla</Label>
                         <Input
+                          className={premiumInputClassName}
                           type="password"
                           value={confirmPassword}
                           onChange={(e) => setConfirmPassword(e.target.value)}
@@ -1173,7 +1555,7 @@ const handleForceCleanFactors = async () => {
                     <Button
                       onClick={handleChangePassword}
                       disabled={saving}
-                      className="mt-4 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
+                      className={`mt-4 ${premiumPrimaryButtonClassName}`}
                     >
                       {saving ? (
                         <>
@@ -1188,8 +1570,11 @@ const handleForceCleanFactors = async () => {
                       )}
                     </Button>
                   </div>
-                  <div>
-                    <h2 className="text-lg font-bold mb-4">💚 Güvenilir Cihazlar</h2>
+                  <div className="rounded-[24px] border border-white/10 bg-white/5 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] md:p-6">
+                    <div className="mb-5">
+                      <p className="text-xs font-medium uppercase tracking-[0.22em] text-emerald-300/80">Oturum güvenliği</p>
+                      <h2 className="mt-2 text-lg font-semibold text-white">Güvenilir Cihazlar</h2>
+                    </div>
                     <p className="text-sm text-muted-foreground mb-4">
                       Bu cihazlardan giriş yaparken 2FA kodu sorulmaz
                     </p>
@@ -1201,7 +1586,7 @@ const handleForceCleanFactors = async () => {
                         </p>
                       ) : (
                         trustedDevices.map((device) => (
-                          <Card key={device.id}>
+                          <Card key={device.id} className="border-white/10 bg-slate-950/50">
                             <CardContent className="p-4 flex items-center justify-between">
                               <div className="flex items-center gap-3">
                                 {getDeviceIcon(device.device_type)}
@@ -1212,7 +1597,7 @@ const handleForceCleanFactors = async () => {
                                     {new Date(device.last_used_at).toLocaleString("tr-TR")}
                                   </p>
                                   <p className="text-xs text-green-500 mt-1">
-                                    ✓ Güvenilir · Süresi:{" "}
+                                    Güvenilir · Süresi:{" "}
                                     {new Date(device.expires_at).toLocaleDateString("tr-TR")}
                                   </p>
                                 </div>
@@ -1225,11 +1610,11 @@ const handleForceCleanFactors = async () => {
                                     const success = await untrustDevice(device.id);
                                     if (success) {
                                       setTrustedDevices((prev) => prev.filter((d) => d.id !== device.id));
-                                      toast.success("✅ Cihaz kaldırıldı");
+                                      toast.success("Cihaz kaldırıldı");
                                     }
                                   }
                                 }}
-                                className="text-destructive"
+                                className="border border-destructive/20 bg-destructive/5 text-destructive hover:bg-destructive/10"
                               >
                                 <Trash2 className="h-4 w-4" />
                               </Button>
@@ -1243,10 +1628,13 @@ const handleForceCleanFactors = async () => {
                   <div className="h-px bg-border" />
 
                   {/* 2FA */}
-                  <div>
-                    <h2 className="text-lg font-bold mb-4">📱 İki Faktörlü Doğrulama</h2>
+                  <div className="rounded-[24px] border border-purple-400/15 bg-[linear-gradient(180deg,rgba(88,28,135,0.18),rgba(15,23,42,0.35))] p-5 shadow-[0_20px_60px_rgba(88,28,135,0.15)] md:p-6">
+                    <div className="mb-5">
+                      <p className="text-xs font-medium uppercase tracking-[0.22em] text-fuchsia-200/80">İleri koruma</p>
+                      <h2 className="mt-2 text-lg font-semibold text-white">İki Faktörlü Doğrulama</h2>
+                    </div>
                     
-                    <Card className="border-l-4 border-l-purple-500">
+                    <Card className="border-white/10 bg-slate-950/45 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
                       <CardContent className="p-6">
                         <div className="flex items-start justify-between gap-4">
                           <div className="flex-1">
@@ -1268,9 +1656,9 @@ const handleForceCleanFactors = async () => {
                                 variant="outline"
                                 size="sm"
                                 onClick={() => {
-                                  toast.info('Yedek kodlar özelliği yakında eklenecek');
+                                  toast.info("Yedek kodlar özelliği yakında eklenecek");
                                 }}
-                                className="text-blue-500 border-blue-500/30 hover:bg-blue-500/10"
+                                className="border-blue-500/30 bg-blue-500/10 text-blue-100 hover:bg-blue-500/20 hover:text-white"
                               >
                                 <Download className="h-4 w-4 mr-2" />
                                 Yedek Kodları İndir
@@ -1280,7 +1668,7 @@ const handleForceCleanFactors = async () => {
                                 size="sm"
                                 onClick={handleForceReset2FA}
                                 disabled={saving}
-                                className="text-red-500 border-red-500/30 hover:bg-red-500/10"
+                                className="border-red-500/30 bg-red-500/10 text-red-100 hover:bg-red-500/20 hover:text-white"
                               >
                                 <Trash2 className="h-4 w-4 mr-2" />
                                 2FA'yı Sıfırla
@@ -1288,10 +1676,10 @@ const handleForceCleanFactors = async () => {
                             </div>
                             ) : (
                               <div className="flex items-center gap-2 mt-3">
-                                <div className="flex items-center gap-2 px-3 py-1.5 bg-yellow-500/20 border border-yellow-500/30 rounded-lg">
+                                  <div className="flex items-center gap-2 rounded-lg border border-yellow-500/30 bg-yellow-500/20 px-3 py-1.5">
                                   <AlertCircle className="h-4 w-4 text-yellow-500" />
                                   <span className="text-sm font-semibold text-yellow-600">
-                                    2FA Kapalı
+                                     2FA Kapalı
                                   </span>
                                 </div>
                                 <p className="text-xs text-muted-foreground">
@@ -1310,14 +1698,14 @@ const handleForceCleanFactors = async () => {
                               className="data-[state=checked]:bg-green-500"
                             />
                             <span className="text-xs text-muted-foreground">
-                              {twoFactorEnabled ? 'Açık' : 'Kapalı'}
+                               {twoFactorEnabled ? "Açık" : "Kapalı"}
                             </span>
                           </div>
                         </div>
 
                         {/* Info Box */}
                         {!twoFactorEnabled && (
-                          <div className="mt-4 p-4 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+                          <div className="mt-4 rounded-lg border border-blue-500/30 bg-blue-500/10 p-4">
                             <div className="flex gap-3">
                               <div className="shrink-0">
                                 <div className="h-8 w-8 rounded-full bg-blue-500/20 flex items-center justify-center">
@@ -1329,9 +1717,9 @@ const handleForceCleanFactors = async () => {
                                   Neden 2FA kullanmalısınız?
                                 </p>
                                 <ul className="text-xs text-muted-foreground space-y-1">
-                                  <li>• Hesabınız çalınsa bile güvende kalırsınız</li>
-                                  <li>• Şifreniz ele geçse bile giriş yapılamaz</li>
-                                  <li>• Google Authenticator tamamen ücretsizdir</li>
+                                  <li>Hesabınız çalınsa bile güvende kalırsınız</li>
+                                  <li>Şifreniz ele geçse bile giriş yapılamaz</li>
+                                  <li>Google Authenticator tamamen ücretsizdir</li>
                                 </ul>
                               </div>
                             </div>
@@ -1346,12 +1734,12 @@ const handleForceCleanFactors = async () => {
                               size="sm"
                               onClick={() => {
                                 // Show backup codes modal
-                                toast.info('Yedek kodlar özelliği yakında eklenecek');
+                                toast.info("Yedek kodlar özelliği yakında eklenecek");
                               }}
-                              className="text-blue-500 border-blue-500/30 hover:bg-blue-500/10"
+                              className="border-blue-500/30 bg-blue-500/10 text-blue-100 hover:bg-blue-500/20 hover:text-white"
                             >
                               <Download className="h-4 w-4 mr-2" />
-                              Yedek Kodları İndir
+                               Yedek Kodları İndir
                             </Button>
                             <Button
                               variant="outline"
@@ -1362,7 +1750,7 @@ const handleForceCleanFactors = async () => {
                                 setTimeout(() => handleToggle2FA(true), 500);
                               }}
                               disabled={saving}
-                              className="text-purple-500 border-purple-500/30 hover:bg-purple-500/10"
+                              className="border-purple-500/30 bg-purple-500/10 text-purple-100 hover:bg-purple-500/20 hover:text-white"
                             >
                               <RefreshCw className="h-4 w-4 mr-2" />
                               Yeniden Kurulum
@@ -1377,7 +1765,7 @@ const handleForceCleanFactors = async () => {
                       <Card className="mt-4 bg-gradient-to-br from-purple-500/5 to-blue-500/5">
                         <CardContent className="p-4">
                           <p className="text-sm font-semibold mb-3 flex items-center gap-2">
-                            <span>📱</span>
+                            <span>🔐</span>
                             Google Authenticator Kurulumu
                           </p>
                           <div className="space-y-2 text-xs text-muted-foreground">
@@ -1405,7 +1793,7 @@ const handleForceCleanFactors = async () => {
                             </div>
                             <div className="flex gap-2">
                               <span className="font-bold text-purple-500">2.</span>
-                              <p>Yukarıdaki switch'i açın ve QR kodu tarayın</p>
+                              <p>Yukarıdaki anahtarı açın ve QR kodu tarayın</p>
                             </div>
                             <div className="flex gap-2">
                               <span className="font-bold text-purple-500">3.</span>
@@ -1423,9 +1811,9 @@ const handleForceCleanFactors = async () => {
 
                   <div className="h-px bg-border" />
                   {/* Active Sessions */}
-                  <div>
+                  <div className="rounded-[24px] border border-white/10 bg-white/5 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] md:p-6">
                     <div className="flex items-center justify-between mb-4">
-                      <h2 className="text-lg font-bold">🔗 Aktif Oturumlar</h2>
+                      <h2 className="text-lg font-bold">Aktif Oturumlar</h2>
                       <Button
                         variant="outline"
                         size="sm"
@@ -1433,7 +1821,7 @@ const handleForceCleanFactors = async () => {
                           const nonCurrentSessions = sessions.filter((s) => !s.is_current);
                           
                           if (nonCurrentSessions.length === 0) {
-                            toast.info('Kapatılacak başka oturum yok');
+                            toast.info("Kapatılacak başka oturum yok");
                             return;
                           }
 
@@ -1454,7 +1842,7 @@ const handleForceCleanFactors = async () => {
                           setSessions((prev) => prev.filter((s) => s.is_current));
 
                           toast.success(
-                            `✅ ${successCount} oturum kapatıldı`,
+                            `${successCount} oturum kapatıldı`,
                             {
                               description: `${nonCurrentSessions.length - successCount} oturum kapatılamadı`,
                             }
@@ -1464,7 +1852,7 @@ const handleForceCleanFactors = async () => {
                           fetchSettingsData(); // Refresh
                         }}
                         disabled={saving || sessions.filter((s) => !s.is_current).length === 0}
-                        className="text-destructive"
+                        className={`text-destructive ${premiumOutlineButtonClassName}`}
                       >
                         <LogOut className="h-4 w-4 mr-2" />
                         Diğerlerini Kapat ({sessions.filter((s) => !s.is_current).length})
@@ -1478,7 +1866,7 @@ const handleForceCleanFactors = async () => {
                         </p>
                       ) : (
                         sessions.map((session) => (
-                          <Card key={session.id}>
+                          <Card key={session.id} className="border-white/10 bg-slate-950/50">
                             <CardContent className="p-4 flex items-center justify-between">
                               <div className="flex items-center gap-3">
                                 {getDeviceIcon(session.device_type)}
@@ -1488,7 +1876,7 @@ const handleForceCleanFactors = async () => {
                                       {session.device_name}
                                     </p>
                                     {session.is_current && (
-                                      <Badge variant="secondary">Bu Cihaz</Badge>
+                                      <Badge variant="secondary" className="rounded-full bg-cyan-400/15 text-cyan-100">Bu cihaz</Badge>
                                     )}
                                   </div>
                                   <p className="text-xs text-muted-foreground">
@@ -1502,7 +1890,7 @@ const handleForceCleanFactors = async () => {
                                   variant="ghost"
                                   size="sm"
                                   onClick={() => handleTerminateSession(session.id)}
-                                  className="text-destructive"
+                                  className="border border-destructive/20 bg-destructive/5 text-destructive hover:bg-destructive/10"
                                 >
                                   <LogOut className="h-4 w-4" />
                                 </Button>
@@ -1519,8 +1907,134 @@ const handleForceCleanFactors = async () => {
               {/* BILLING TAB */}
               {currentTab === "billing" && (
                 <div className="space-y-6">
+                  <div className="grid gap-4 md:grid-cols-2">
+                    <div className="rounded-[24px] border border-fuchsia-400/15 bg-fuchsia-400/10 p-5">
+                      <p className={microCardEyebrowClassName}>Plan özeti</p>
+                      <p className={microCardTitleClassName}>{plan === "expert" ? "Uzman paketi aktif" : "Temel kullanım"}</p>
+                      <p className={microCardBodyClassName}>{status === "trial" ? `${daysLeftInTrial} gün daha premium deneyim aktif.` : status === "premium" ? "Tüm premium araçlar hesabınızda kullanılabilir durumda." : "Yalnızca temel özellikler açık."}</p>
+                    </div>
+                    <div className="rounded-[24px] border border-white/10 bg-white/5 p-5">
+                      <p className={microCardEyebrowClassName}>Fatura görünümü</p>
+                      <p className={microCardTitleClassName}>{billingHistory.length} kayıt</p>
+                      <p className={microCardBodyClassName}>Geçmiş ödeme ve fatura hareketlerini tek merkezden takip edin.</p>
+                    </div>
+                  </div>
+                  <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
+                    <div className="rounded-[24px] border border-white/10 bg-white/5 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] md:p-6">
+                      <div className="mb-5">
+                        <p className={microCardEyebrowClassName}>Plan karşılaştırma</p>
+                        <h2 className="mt-2 text-lg font-semibold text-white">Temel ve Uzman plan farkı</h2>
+                        <p className="mt-1 text-sm text-slate-400">Ekibiniz büyüdükçe güvenlik, çıktı ve otomasyon tarafında hangi kazanımları elde ettiğinizi görün.</p>
+                      </div>
+                      <div className="grid gap-3 md:grid-cols-2">
+                        <div className="rounded-2xl border border-white/10 bg-slate-950/50 p-4">
+                          <p className="text-sm font-semibold text-white">Temel Plan</p>
+                          <ul className="mt-3 space-y-2 text-sm text-slate-300">
+                            <li>Standart kullanıcı ayarları</li>
+                            <li>Temel profil ve şirket bilgileri</li>
+                            <li>Sınırlı premium çıktı araçları</li>
+                          </ul>
+                        </div>
+                        <div className="rounded-2xl border border-fuchsia-400/20 bg-fuchsia-500/10 p-4 shadow-[0_14px_30px_rgba(168,85,247,0.1)]">
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="text-sm font-semibold text-white">Uzman Plan</p>
+                            <Badge className="rounded-full bg-gradient-to-r from-fuchsia-600 to-cyan-500 px-3 py-1 text-white">Önerilen</Badge>
+                          </div>
+                          <ul className="mt-3 space-y-2 text-sm text-slate-200">
+                            <li>Gelişmiş güvenlik ve 2FA akışları</li>
+                            <li>Premium çıktı, rapor ve belge araçları</li>
+                            <li>Kurumsal operasyon ve ekip kullanım desteği</li>
+                          </ul>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="rounded-[24px] border border-white/10 bg-white/5 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] md:p-6">
+                      <div className="mb-5">
+                        <p className={microCardEyebrowClassName}>Kullanım özeti</p>
+                        <h2 className="mt-2 text-lg font-semibold text-white">Hesabınız şu anda ne kullanıyor?</h2>
+                      </div>
+                      <div className="space-y-3">
+                        {usageSummary.map((item) => (
+                          <div key={item.label} className="rounded-2xl border border-white/10 bg-slate-950/50 p-4">
+                            <div className="flex items-center justify-between gap-4">
+                              <div>
+                                <p className="text-sm font-medium text-slate-200">{item.label}</p>
+                                <p className="mt-1 text-xs leading-5 text-slate-400">{item.detail}</p>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-lg font-semibold text-white">{item.value}</p>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="grid gap-4 lg:grid-cols-[1.05fr_0.95fr]">
+                    <div className="rounded-[24px] border border-white/10 bg-white/5 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] md:p-6">
+                      <div className="mb-5">
+                        <p className={microCardEyebrowClassName}>Aylık / yıllık kıyas</p>
+                        <h2 className="mt-2 text-lg font-semibold text-white">Ödeme ritmine göre plan görünümü</h2>
+                      </div>
+                      <div className="grid gap-3 md:grid-cols-2">
+                        <div className="rounded-2xl border border-white/10 bg-slate-950/50 p-4">
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="text-sm font-semibold text-white">Aylık plan</p>
+                            <Badge className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-slate-200">Esnek</Badge>
+                          </div>
+                          <p className="mt-3 text-2xl font-semibold text-white">₺499,99</p>
+                          <p className="mt-1 text-xs uppercase tracking-[0.2em] text-slate-400">aylık faturalama</p>
+                          <ul className="mt-4 space-y-2 text-sm text-slate-300">
+                            <li>Esnek yükseltme ve plan yönetimi</li>
+                            <li>Kısa vadeli ekip büyümesine uygun</li>
+                          </ul>
+                        </div>
+                        <div className="rounded-2xl border border-cyan-400/20 bg-cyan-500/10 p-4 shadow-[0_14px_30px_rgba(34,211,238,0.1)]">
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="text-sm font-semibold text-white">Yıllık plan</p>
+                            <div className="flex items-center gap-2">
+                              <Badge className="rounded-full bg-gradient-to-r from-cyan-500 to-fuchsia-500 px-3 py-1 text-white">En avantajlı</Badge>
+                              <Badge className="rounded-full border border-emerald-400/25 bg-emerald-400/10 px-3 py-1 text-emerald-100">
+                                %{yearlySavingsPercent} tasarruf
+                              </Badge>
+                            </div>
+                          </div>
+                          <p className="mt-3 text-2xl font-semibold text-white">₺4.999</p>
+                          <p className="mt-1 text-xs uppercase tracking-[0.2em] text-slate-400">yıllık tahmini paket</p>
+                          <ul className="mt-4 space-y-2 text-sm text-slate-200">
+                            <li>Daha öngörülebilir bütçe planlaması</li>
+                            <li>Kurumsal operasyonlar için daha güçlü süreklilik</li>
+                          </ul>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="rounded-[24px] border border-white/10 bg-white/5 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] md:p-6">
+                      <div className="mb-5">
+                        <p className={microCardEyebrowClassName}>Yükseltme notu</p>
+                        <h2 className="mt-2 text-lg font-semibold text-white">Plan önerisi</h2>
+                      </div>
+                      <div className="rounded-2xl border border-fuchsia-400/15 bg-fuchsia-500/10 p-4">
+                        <p className="text-sm font-semibold text-white">
+                          {plan === "expert" ? "Uzman plan kullanıyorsunuz" : "Uzman plan önerilir"}
+                        </p>
+                        <p className="mt-2 text-sm leading-6 text-slate-300">
+                          {plan === "expert"
+                            ? "Ekibiniz için güvenlik, çıktı ve operasyon araçlarının tamamı açık durumda."
+                            : "Gelişmiş çıktı, güvenlik ve ekip ölçekleme ihtiyaçları için Uzman plan daha dengeli bir kullanım sunar."}
+                        </p>
+                        <div className="mt-4 flex flex-wrap gap-2">
+                          <Badge className="rounded-full border border-white/10 bg-slate-950/50 px-3 py-1 text-slate-200">
+                            {enabledFeatureCount}+ aktif avantaj
+                          </Badge>
+                          <Badge className="rounded-full border border-white/10 bg-slate-950/50 px-3 py-1 text-slate-200">
+                            {billingHistory.length} fatura kaydı
+                          </Badge>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                   {/* Current Plan */}
-                  <Card className="border-l-4 border-l-blue-500">
+                  <Card className="border border-cyan-400/15 bg-[linear-gradient(180deg,rgba(34,211,238,0.12),rgba(15,23,42,0.18))] shadow-[0_20px_60px_rgba(34,211,238,0.08)]">
                     <CardContent className="p-6">
                       <div className="flex items-center justify-between">
                         <div>
@@ -1535,12 +2049,12 @@ const handleForceCleanFactors = async () => {
                               : 'Temel özellikler'}
                           </p>
                           {plan === 'expert' && (
-                            <p className="text-2xl font-bold mt-2">₺499.99/ay</p>
+                            <p className="text-2xl font-bold mt-2">₺499,99/ay</p>
                           )}
                         </div>
                         <Button
                           onClick={() => setShowUpgradeModal(true)}
-                          className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
+                          className={premiumPrimaryButtonClassName}
                         >
                           <Crown className="h-4 w-4 mr-2" />
                           {plan === 'expert' ? 'Planı Yönet' : 'Yükselt'}
@@ -1550,11 +2064,14 @@ const handleForceCleanFactors = async () => {
                   </Card>
 
                   {/* Billing History */}
-                  <div>
-                    <h2 className="text-lg font-bold mb-4">📋 Fatura Geçmişi</h2>
+                  <div className="rounded-[24px] border border-white/10 bg-white/5 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] md:p-6">
+                    <div className="mb-5">
+                      <p className="text-xs font-medium uppercase tracking-[0.22em] text-cyan-300/80">Finans geçmişi</p>
+                      <h2 className="mt-2 text-lg font-semibold text-white">Fatura Geçmişi</h2>
+                    </div>
                     <div className="space-y-3">
                       {billingHistory.length === 0 ? (
-                        <Card>
+                        <Card className="border-white/10 bg-slate-950/50">
                           <CardContent className="p-8 text-center">
                             <CreditCard className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
                             <p className="text-sm text-muted-foreground">
@@ -1564,7 +2081,7 @@ const handleForceCleanFactors = async () => {
                         </Card>
                       ) : (
                         billingHistory.map((bill) => (
-                          <Card key={bill.id}>
+                          <Card key={bill.id} className="border-white/10 bg-slate-950/50">
                             <CardContent className="p-4 flex items-center justify-between">
                               <div>
                                 <p className="font-semibold">{bill.plan_name}</p>
@@ -1582,7 +2099,7 @@ const handleForceCleanFactors = async () => {
                                   {bill.status === "paid" ? "Ödendi" : "Bekliyor"}
                                 </Badge>
                                 {bill.invoice_url && (
-                                  <Button variant="ghost" size="sm">
+                                  <Button variant="ghost" size="sm" className="text-slate-200 hover:bg-white/10 hover:text-white">
                                     <Download className="h-4 w-4" />
                                   </Button>
                                 )}
@@ -1598,18 +2115,21 @@ const handleForceCleanFactors = async () => {
 
               {/* NOTIFICATIONS TAB */}
               {currentTab === "notifications" && (
-                <div className="space-y-4">
-                  <h2 className="text-lg font-bold mb-4">🔔 Bildirim Tercihleri</h2>
+                <div className="space-y-4 rounded-[24px] border border-white/10 bg-white/5 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)] md:p-6">
+                  <div className="mb-1">
+                    <p className="text-xs font-medium uppercase tracking-[0.22em] text-cyan-300/80">Bildirim akışı</p>
+                    <h2 className="mt-2 text-lg font-semibold text-white">Bildirim Tercihleri</h2>
+                  </div>
                   {Object.entries(notifications).map(([key, value]) => (
-                    <Card key={key}>
+                    <Card key={key} className="border-white/10 bg-slate-950/50">
                       <CardContent className="p-4 flex items-center justify-between">
                         <div>
                           <p className="font-semibold">
-                            {key === "emailNotifications" && "📧 E-posta Bildirimleri"}
-                            {key === "capaAlerts" && "⚠️ CAPA Uyarıları"}
-                            {key === "riskAlerts" && "🔴 Risk Uyarıları"}
-                            {key === "weeklyReport" && "📊 Haftalık Rapor"}
-                            {key === "systemUpdates" && "🔄 Sistem Güncellemeleri"}
+                            {key === "emailNotifications" && "E-posta Bildirimleri"}
+                            {key === "capaAlerts" && "CAPA Uyarıları"}
+                            {key === "riskAlerts" && "Risk Uyarıları"}
+                            {key === "weeklyReport" && "Haftalık Rapor"}
+                            {key === "systemUpdates" && "Sistem Güncellemeleri"}
                           </p>
                           <p className="text-xs text-muted-foreground">
                             {key === "emailNotifications" &&
@@ -1634,7 +2154,7 @@ const handleForceCleanFactors = async () => {
                   ))}
                   <Button
                     onClick={handleSaveNotifications}
-                    className="bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
+                    className={premiumPrimaryButtonClassName}
                   >
                     <Save className="h-4 w-4 mr-2" />
                     Bildirimleri Kaydet
@@ -1645,17 +2165,17 @@ const handleForceCleanFactors = async () => {
           </CardContent>
         </Card>
 
-        {/* ✅ DANGER ZONE */}
-        <Card className="border-l-4 border-l-destructive">
+        {/* Tehlikeli işlemler */}
+        <Card className="border border-rose-400/20 bg-rose-500/5 shadow-[0_18px_40px_rgba(244,63,94,0.08)]">
           <CardHeader>
-            <CardTitle className="text-destructive">⚠️ Tehlikeli İşlemler</CardTitle>
+            <CardTitle className="text-destructive">Tehlikeli İşlemler</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Button
                 onClick={handleDownloadData}
                 variant="outline"
-                className="justify-start"
+                className={`justify-start ${premiumOutlineButtonClassName}`}
               >
                 <Download className="h-4 w-4 mr-2" />
                 Verilerinizi İndir
@@ -1663,7 +2183,7 @@ const handleForceCleanFactors = async () => {
               <Button
                 onClick={handleDeleteAccount}
                 variant="outline"
-                className="justify-start text-destructive border-destructive hover:bg-destructive/10"
+                className="justify-start border-destructive/40 bg-destructive/5 text-destructive hover:bg-destructive/10"
               >
                 <Trash2 className="h-4 w-4 mr-2" />
                 Hesabı Sil
@@ -1674,13 +2194,13 @@ const handleForceCleanFactors = async () => {
 
         {/* Footer */}
         <div className="flex justify-end gap-3">
-          <Button variant="outline" onClick={() => navigate("/profile")}>
+          <Button variant="outline" onClick={() => navigate("/profile")} className={premiumOutlineButtonClassName}>
             Geri Dön
           </Button>
           <Button
             variant="ghost"
             onClick={handleLogout}
-            className="text-destructive hover:bg-destructive/10"
+            className="border border-destructive/20 bg-destructive/5 text-destructive hover:bg-destructive/10"
           >
             <LogOut className="h-4 w-4 mr-2" />
             Çıkış Yap
@@ -1688,26 +2208,25 @@ const handleForceCleanFactors = async () => {
         </div>
       </div>
 
-      {/* ✅ UPGRADE MODAL */}
-        {/* ✅ UPGRADE MODAL */}
+      {/* Upgrade modalı */}
     <UpgradeModal
       open={showUpgradeModal}
       onOpenChange={setShowUpgradeModal}
       triggeredBy="manual"
     />
-   {/* ✅ 2FA SETUP MODAL */}
+   {/* 2FA kurulum modalı */}
     {qrCodeData && show2FASetupModal && currentFactorId && (
       <TwoFactorSetupModal
         open={show2FASetupModal}
         onOpenChange={setShow2FASetupModal}
-        factorId={currentFactorId} // ✅ YENİ PROP
+        factorId={currentFactorId} // ? YENI PROP
         qrCodeUri={qrCodeData.uri}
         secret={qrCodeData.secret}
         onSuccess={() => {
-          console.log('✅ 2FA verification successful');
+          console.log("2FA verification successful");
           setTwoFactorEnabled(true);
           setQRCodeData(null);
-          setCurrentFactorId(null); // ✅ Temizle
+          setCurrentFactorId(null); // ? Temizle
           fetchSettingsData();
         }}
       />
@@ -1715,4 +2234,6 @@ const handleForceCleanFactors = async () => {
     </>
   );
 }
+
+
 

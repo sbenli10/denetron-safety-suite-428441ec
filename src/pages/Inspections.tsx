@@ -67,6 +67,15 @@ interface StatCard {
   trend?: string;
 }
 
+interface InspectionReportEvent {
+  id: string;
+  title: string;
+  created_at: string;
+  export_format?: string | null;
+  file_url?: string | null;
+  report_kind?: "dof" | "inspection";
+}
+
 const statusFilters = ["all", "completed", "in_progress", "draft", "cancelled"] as const;
 const PAGE_SIZE = 24;
 const INSPECTIONS_CACHE_TTL = 5 * 60 * 1000;
@@ -109,7 +118,9 @@ export default function Inspections() {
   const [currentReportUrl, setCurrentReportUrl] = useState("");
   const [currentReportFilename, setCurrentReportFilename] = useState("");
   const [linkedReport, setLinkedReport] = useState<{ url: string; filename: string; kind: "dof" | "inspection" } | null>(null);
+  const [reportEvents, setReportEvents] = useState<InspectionReportEvent[]>([]);
   const [loadingLinkedReport, setLoadingLinkedReport] = useState(false);
+  const [highlightedInspectionId, setHighlightedInspectionId] = useState<string | null>(null);
 
   const [locationName, setLocationName] = useState("");
   const [equipmentCategory, setEquipmentCategory] = useState("");
@@ -119,6 +130,7 @@ export default function Inspections() {
   const [exporting, setExporting] = useState(false);
   const [aiAnalyzing, setAiAnalyzing] = useState(false);
   const location = useLocation();
+  const [focusInspectionHandled, setFocusInspectionHandled] = useState<string | null>(null);
   const listCacheKey = activeUserId
     ? `inspections:list:${activeUserId}:${activeFilter}:${debouncedSearch}:${page}`
     : null;
@@ -130,6 +142,26 @@ export default function Inspections() {
       setNotes(location.state.prefilledNotes);
     }
   }, [location.state]);
+
+  useEffect(() => {
+    const focusInspectionId = location.state?.focusInspectionId as string | undefined;
+    if (!focusInspectionId || loading || focusInspectionHandled === focusInspectionId || inspections.length === 0) {
+      return;
+    }
+
+    const matchedInspection = inspections.find((inspection) => inspection.id === focusInspectionId);
+    if (!matchedInspection) return;
+
+    setFocusInspectionHandled(focusInspectionId);
+    setHighlightedInspectionId(focusInspectionId);
+    void openInspectionDetails(matchedInspection);
+  }, [focusInspectionHandled, inspections, loading, location.state]);
+
+  useEffect(() => {
+    if (!highlightedInspectionId) return;
+    const timer = window.setTimeout(() => setHighlightedInspectionId(null), 5000);
+    return () => window.clearTimeout(timer);
+  }, [highlightedInspectionId]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -340,31 +372,42 @@ export default function Inspections() {
 
     setLoadingLinkedReport(true);
     setLinkedReport(null);
+    setReportEvents([]);
     try {
       const { data, error } = await supabase
         .from("reports")
-        .select("file_url, title, export_format, content")
+        .select("id, file_url, title, export_format, content, created_at")
         .eq("user_id", user.id)
         .contains("content", { inspection_id: inspectionId })
         .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        .limit(5);
 
       if (error) throw error;
-      if (!data?.file_url) return;
+      const rows = (data as any[]) ?? [];
+      if (!rows.length) return;
 
-      const reportKind =
-        (data as any)?.content?.report_kind === "dof" || data.export_format === "docx"
-          ? "dof"
-          : "inspection";
-      const fallbackExt = data.export_format === "docx" ? "docx" : "pdf";
-      const baseTitle = data.title || "Rapor";
-      const title = baseTitle.includes(".") ? baseTitle : `${baseTitle}.${fallbackExt}`;
+      const events = rows.map((row) => ({
+        id: row.id,
+        title: row.title || "Rapor",
+        created_at: row.created_at,
+        export_format: row.export_format,
+        file_url: row.file_url,
+        report_kind:
+          row?.content?.report_kind === "dof" || row.export_format === "docx"
+            ? "dof"
+            : "inspection",
+      })) as InspectionReportEvent[];
+      setReportEvents(events);
+
+      const latest = events[0];
+      if (!latest?.file_url) return;
+      const fallbackExt = latest.export_format === "docx" ? "docx" : "pdf";
+      const title = latest.title.includes(".") ? latest.title : `${latest.title}.${fallbackExt}`;
 
       setLinkedReport({
-        url: data.file_url,
+        url: latest.file_url,
         filename: title,
-        kind: reportKind,
+        kind: latest.report_kind || "inspection",
       });
     } catch (error) {
       console.error("Linked report load error:", error);
@@ -536,237 +579,429 @@ export default function Inspections() {
       value: summary?.criticalOrHighCount ?? 0,
       icon: <AlertTriangle className="h-5 w-5" />,
       color: "from-red-500 to-red-600",
-      trend: summaryLoading ? "Yukleniyor..." : summary && summary.criticalOrHighCount > 0
-        ? "⚠️ Acil Dikkat!"
-        : "✅ Guvenli",
+      trend: summaryLoading ? "Yükleniyor..." : summary && summary.criticalOrHighCount > 0
+        ? "Öncelikli aksiyon gerekiyor"
+        : "Risk görünümü dengeli",
     },
     {
       title: "Devam Eden",
       value: summary?.openCount ?? 0,
       icon: <Clock className="h-5 w-5" />,
       color: "from-orange-500 to-orange-600",
-      trend: summaryLoading ? "Yukleniyor..." : summary && summary.openCount > 0
-        ? "🔔 Tamamla!"
-        : "✅ Yok",
+      trend: summaryLoading ? "Yükleniyor..." : summary && summary.openCount > 0
+        ? "Takip bekleyen kayıt var"
+        : "Açık kayıt görünmüyor",
     },
   ];
 
+  const riskAttentionRate = summary?.totalCount
+    ? Math.round(((summary?.criticalOrHighCount ?? 0) / summary.totalCount) * 100)
+    : 0;
+  const operationalHighlights = [
+    {
+      label: "Bugün odak",
+      value:
+        summaryLoading
+          ? "Analiz hazırlanıyor"
+          : (summary?.criticalOrHighCount ?? 0) > 0
+            ? `${summary?.criticalOrHighCount ?? 0} kayıt öncelikli`
+            : "Kritik kayıt görünmüyor",
+    },
+    {
+      label: "Sistem görünümü",
+      value:
+        summaryLoading
+          ? "Senkronize ediliyor"
+          : `${summary?.openCount ?? 0} açık denetim izleniyor`,
+    },
+    {
+      label: "Arama bağlamı",
+      value: debouncedSearch ? `"${debouncedSearch}" için sonuçlar` : "Tüm denetimler görüntüleniyor",
+    },
+  ];
+  const getNextActionLabel = (inspection: InspectionListItem) => {
+    if (inspection.status === "draft") return "Kaydı tamamla ve rapor akışını başlat";
+    if (inspection.status === "in_progress") return "Saha notlarını netleştir ve raporu gözden geçir";
+    if (inspection.status === "completed") return "Raporu paylaş veya arşiv bağlantısını aç";
+    if (inspection.status === "cancelled") return "İptal gerekçesini kontrol et";
+    return "Detayı aç ve sonraki aksiyonu netleştir";
+  };
+  const getNextActionButtonLabel = (inspection: InspectionListItem) => {
+    if (inspection.status === "draft") return "Taslağı Tamamla";
+    if (inspection.status === "in_progress") return "Detayı Aç ve Tamamla";
+    if (inspection.status === "completed") return "Raporu İncele";
+    if (inspection.status === "cancelled") return "Kayıt Gerekçesini İncele";
+    return "Detayı Aç";
+  };
+  const getDetailSuggestedAction = () => {
+    if (!activeInspection) {
+      return {
+        title: "Detayı açarak sonraki adımı belirleyin",
+        description: "Bu panel, aktif denetim için önerilen sonraki operasyon adımını gösterir.",
+        buttonLabel: "Detayı Gör",
+        onClick: undefined as (() => void) | undefined,
+        disabled: true,
+      };
+    }
+
+    if (activeInspection.status === "draft") {
+      return {
+        title: "Taslak kaydı tamamlayın",
+        description: "Notları ve risk seviyesini netleştirip bu denetimi operasyon akışına alın.",
+        buttonLabel: "Saha Notlarını Gözden Geçir",
+        onClick: undefined,
+        disabled: true,
+      };
+    }
+
+    if (linkedReport?.url) {
+      return {
+        title: "Rapor hazır, paylaşım aşamasına geçin",
+        description: "Kayıt için oluşturulan raporu açabilir, indirebilir veya e-posta ile iletebilirsiniz.",
+        buttonLabel: "Raporu Aç",
+        onClick: openLinkedReport,
+        disabled: false,
+      };
+    }
+
+    return {
+      title: "Rapor akışını başlatın",
+      description: "Bu kaydı paylaşılabilir hale getirmek için rapor bağlantısını hazırlayın veya e-posta akışını tetikleyin.",
+      buttonLabel: sharePreparing ? "Hazırlanıyor..." : "E-posta Akışını Başlat",
+      onClick: () => {
+        void handleOpenShareModal();
+      },
+      disabled: sharePreparing,
+    };
+  };
+  const topCompanyEntries = inspections.reduce<Record<string, number>>((acc, inspection) => {
+    const key = inspection.location_name?.trim() || "Bilinmeyen konum";
+    acc[key] = (acc[key] || 0) + 1;
+    return acc;
+  }, {});
+  const topCompanyTrend = Object.entries(topCompanyEntries).sort((a, b) => b[1] - a[1])[0];
+  const topRiskLabel = summaryLoading
+    ? "Trend hazırlanıyor"
+    : topCompanyTrend
+      ? `${topCompanyTrend[0]} • ${topCompanyTrend[1]} kayıt`
+      : "Henüz trend oluşmadı";
+  const detailMetrics = activeInspection
+    ? [
+        {
+          label: "Risk skoru",
+          value: riskConfig[activeInspection.risk_level].label,
+          tone: activeInspection.risk_level === "critical" || activeInspection.risk_level === "high"
+            ? "text-rose-300"
+            : "text-emerald-300",
+        },
+        {
+          label: "Kayıt tipi",
+          value: activeInspection.notes ? "Notlu saha kaydı" : "Standart denetim",
+          tone: "text-slate-100",
+        },
+        {
+          label: "Rapor bağlantısı",
+          value: linkedReport?.filename ? "Hazır" : "Bekliyor",
+          tone: linkedReport?.filename ? "text-cyan-300" : "text-slate-400",
+        },
+      ]
+    : [];
+  const activityFeed = activeInspection
+    ? [
+        {
+          id: "created",
+          title: "Kayıt oluşturuldu",
+          detail: `${new Date(activeInspection.created_at).toLocaleDateString("tr-TR")} tarihinde sisteme alındı`,
+          tone: "border-cyan-400/20 bg-cyan-500/10 text-cyan-100",
+        },
+        ...(activeInspection.media_urls && activeInspection.media_urls.length > 0
+          ? [
+              {
+                id: "media",
+                title: "Medya kanıtı eklendi",
+                detail: `${activeInspection.media_urls.length} fotoğraf kayıtla ilişkilendirildi`,
+                tone: "border-violet-400/20 bg-violet-500/10 text-violet-100",
+              },
+            ]
+          : []),
+        {
+          id: "risk",
+          title: "Risk değerlendirmesi hazır",
+          detail: `${riskConfig[activeInspection.risk_level].label} seviyesinde işlem önceliği belirlendi`,
+          tone:
+            activeInspection.risk_level === "critical" || activeInspection.risk_level === "high"
+              ? "border-rose-400/20 bg-rose-500/10 text-rose-100"
+              : "border-emerald-400/20 bg-emerald-500/10 text-emerald-100",
+        },
+        ...(activeInspection.completed_at
+          ? [
+              {
+                id: "completed",
+                title: "Denetim tamamlandı",
+                detail: `${new Date(activeInspection.completed_at).toLocaleDateString("tr-TR")} tarihinde tamamlandı olarak işaretlendi`,
+                tone: "border-emerald-400/20 bg-emerald-500/10 text-emerald-100",
+              },
+            ]
+          : []),
+        ...reportEvents.map((event, index) => ({
+          id: `report-${event.id}-${index}`,
+          title: `${event.report_kind === "dof" ? "DÖF" : "Denetim"} raporu üretildi`,
+          detail: `${new Date(event.created_at).toLocaleDateString("tr-TR")} tarihinde ${event.title || "rapor"} oluşturuldu`,
+          tone: "border-white/10 bg-white/[0.04] text-slate-100",
+        })),
+        ...(!reportEvents.length
+          ? [
+              {
+                id: "report-pending",
+                title: linkedReport?.url ? "Rapor bağlantısı mevcut" : "Rapor bağlantısı bekleniyor",
+                detail: linkedReport?.url
+                  ? "Rapor açılabilir, indirilebilir veya e-posta ile paylaşılabilir"
+                  : "Detay panelinden paylaşım akışı tetiklenebilir",
+                tone: "border-white/10 bg-white/[0.04] text-slate-100",
+              },
+            ]
+          : []),
+      ]
+    : [];
+
   return (
     <div className="space-y-8">
-      {/* HEADER */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-bold text-foreground flex items-center gap-2">
-            📋 Denetimler
-          </h1>
-          <p className="text-sm text-muted-foreground mt-2">
-            {loading
-              ? "Yükleniyor..."
-              : `${summary?.totalCount ?? inspections.length} toplam denetim • sayfa ${currentPageLabel} • ${visibleCount} kayıt`}
-          </p>
-        </div>
-        <div className="flex gap-2 flex-wrap">
-          <Button
-            variant="outline"
-            size="sm"
-            className="gap-2"
-            onClick={handleExport}
-            disabled={exporting || loading || inspections.length === 0}
-          >
-            {exporting ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Download className="h-4 w-4" />
-            )}
-            PDF İndir
-          </Button>
-          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-            <DialogTrigger asChild>
+      <section className="relative overflow-hidden rounded-[28px] border border-cyan-500/20 bg-[radial-gradient(circle_at_top_left,_rgba(34,211,238,0.18),_transparent_30%),radial-gradient(circle_at_top_right,_rgba(168,85,247,0.16),_transparent_32%),linear-gradient(180deg,rgba(9,16,32,0.98),rgba(7,12,24,0.96))] p-6 shadow-[0_24px_80px_rgba(2,8,23,0.45)] md:p-8">
+        <div className="absolute inset-0 bg-[linear-gradient(rgba(148,163,184,0.08)_1px,transparent_1px),linear-gradient(90deg,rgba(148,163,184,0.08)_1px,transparent_1px)] bg-[size:40px_40px] opacity-[0.08]" />
+        <div className="relative grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_360px]">
+          <div className="space-y-6">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center rounded-full border border-cyan-400/25 bg-cyan-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-cyan-200">
+                Denetim Operasyon Merkezi
+              </span>
+              <span className="inline-flex items-center rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs font-medium text-slate-200">
+                Premium görünüm • Hızlı karar akışı
+              </span>
+            </div>
+
+            <div className="max-w-3xl space-y-3">
+              <h1 className="text-3xl font-semibold tracking-tight text-white md:text-5xl">
+                Denetimleri izleyin, öncelikleri görün ve saha durumunu tek bakışta yönetin.
+              </h1>
+              <p className="max-w-2xl text-sm leading-7 text-slate-300 md:text-base">
+                İSGVİZYON denetim merkezi; açık kayıtları, kritik riskleri, rapor bağlantılarını ve saha notlarını
+                tek ekranda toplar. Amaç sadece liste göstermek değil, hangi kaydın aksiyon beklediğini netleştirmektir.
+              </p>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-3">
+              {operationalHighlights.map((item) => (
+                <div key={item.label} className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 backdrop-blur-sm">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400">{item.label}</p>
+                  <p className="mt-2 text-sm font-medium text-slate-100">{item.value}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex flex-wrap gap-3">
               <Button
-                size="sm"
-                className="gap-2 gradient-primary border-0 text-foreground"
+                size="lg"
+                className="gap-2 rounded-2xl border-0 bg-gradient-to-r from-cyan-400 via-sky-400 to-violet-400 px-6 text-slate-950 shadow-[0_12px_30px_rgba(34,211,238,0.25)] hover:opacity-95"
+                onClick={() => setDialogOpen(true)}
               >
-                <Plus className="h-4 w-4" /> Yeni Denetim
+                <Plus className="h-4 w-4" />
+                Yeni Denetim
               </Button>
-            </DialogTrigger>
-            <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle className="text-lg">📝 Yeni Denetim Oluştur</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4 pt-2">
-                <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-3 flex gap-3">
-                  <AlertCircle className="h-5 w-5 text-blue-600 shrink-0" />
-                  <p className="text-sm text-blue-700">
-                    💡 <strong>İpucu:</strong> Notları yazıp "AI Analiz Et" butonuna tıklayarak otomatik risk değerlendirmesi yapabilirsiniz.
-                  </p>
-                </div>
+              <Button
+                variant="outline"
+                size="lg"
+                className="gap-2 rounded-2xl border-white/15 bg-white/[0.04] px-6 text-slate-100 hover:bg-white/[0.08]"
+                onClick={handleExport}
+                disabled={exporting || loading || inspections.length === 0}
+              >
+                {exporting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Download className="h-4 w-4" />
+                )}
+                PDF İndir
+              </Button>
+            </div>
+          </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="locationName">📍 Konum Adı *</Label>
-                    <Input
-                      id="locationName"
-                      placeholder="ör: İnşaat Sahası Gamma"
-                      value={locationName}
-                      onChange={(e) => setLocationName(e.target.value)}
-                      className="bg-secondary/50 h-11"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="equipmentCategory">🔧 Ekipman Kategorisi</Label>
-                    <Input
-                      id="equipmentCategory"
-                      placeholder="ör: Vinç, Asansör"
-                      value={equipmentCategory}
-                      onChange={(e) => setEquipmentCategory(e.target.value)}
-                      className="bg-secondary/50 h-11"
-                    />
-                  </div>
-                  <div className="space-y-2 md:col-span-2">
-                    <Label htmlFor="riskLevel">⚠️ Risk Seviyesi</Label>
-                    <Select value={riskLevel} onValueChange={(value) => setRiskLevel(value as RiskLevel)}>
-                      <SelectTrigger className="bg-secondary/50 h-11">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="low">🟢 Düşük</SelectItem>
-                        <SelectItem value="medium">🟡 Orta</SelectItem>
-                        <SelectItem value="high">🔶 Yüksek</SelectItem>
-                        <SelectItem value="critical">🔴 Kritik</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
+          <div className="space-y-4 rounded-[24px] border border-white/10 bg-slate-950/55 p-4 backdrop-blur-md">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400">Operasyon Özeti</p>
+                <h2 className="mt-2 text-lg font-semibold text-white">Canlı denetim görünümü</h2>
+              </div>
+              <span className="inline-flex rounded-full border border-emerald-400/20 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-300">
+                {loading ? "Yükleniyor" : "Aktif"}
+              </span>
+            </div>
 
-                <div className="space-y-2">
+            <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-1">
+              {stats.map((stat, idx) => (
+                <div key={idx} className="rounded-2xl border border-white/10 bg-white/[0.04] p-4 transition-transform duration-200 hover:-translate-y-0.5">
                   <div className="flex items-center justify-between">
-                    <Label htmlFor="notes">📝 Notlar</Label>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="gap-1.5 h-7 text-xs"
-                      onClick={handleAIAnalysis}
-                      disabled={aiAnalyzing || !notes.trim()}
-                    >
-                      {aiAnalyzing ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      ) : (
-                        <Zap className="h-3.5 w-3.5" />
-                      )}
-                      🤖 AI Analiz
-                    </Button>
+                    <span className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">{stat.title}</span>
+                    <div className={`rounded-xl bg-gradient-to-br ${stat.color} p-2 text-white shadow-lg`}>
+                      {stat.icon}
+                    </div>
                   </div>
-                  <Textarea
-                    id="notes"
-                    placeholder="Denetim sırasında yapılan gözlemleri buraya yazın... (AI analiz edebilir)"
-                    value={notes}
-                    onChange={(e) => setNotes(e.target.value)}
-                    rows={4}
-                    className="bg-secondary/50 resize-none"
-                  />
-                  {notes.length > 0 && (
-                    <p className="text-xs text-muted-foreground">
-                      ✏️ {notes.length} karakter • AI analizi risk seviyesini otomatik güncelleyecek
-                    </p>
-                  )}
+                  <p className="mt-4 text-3xl font-semibold text-white">{stat.value}</p>
+                  <p className="mt-1 text-xs text-slate-300">{stat.trend}</p>
                 </div>
+              ))}
+            </div>
 
-                <div className="space-y-2">
-                  <Label>📷 Fotoğraf</Label>
-                  <ImageUpload
-                    onImageSelected={(file) => setSelectedFile(file)}
-                    onRemoveImage={() => setSelectedFile(null)}
-                    disabled={submitting}
-                  />
-                </div>
-
-                <Button
-                  onClick={handleSubmit}
-                  disabled={submitting}
-                  className="w-full gap-2 gradient-primary border-0 text-foreground"
-                >
-                  {submitting ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Kaydediliyor...
-                    </>
-                  ) : (
-                    <>
-                      <Plus className="h-4 w-4" />
-                      Denetim Oluştur
-                    </>
-                  )}
-                </Button>
-              </div>
-            </DialogContent>
-          </Dialog>
-        </div>
-      </div>
-
-      {/* STATISTICS */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {stats.map((stat, idx) => (
-          <div
-            key={idx}
-            className={`glass-card p-5 rounded-lg border border-border/50 overflow-hidden relative group hover:border-primary/50 transition-all`}
-          >
-            <div
-              className={`absolute inset-0 bg-gradient-to-br ${stat.color} opacity-5 group-hover:opacity-10 transition-opacity`}
-            />
-            <div className="relative z-10 space-y-3">
+            <div className="rounded-2xl border border-cyan-400/20 bg-cyan-500/8 p-4">
               <div className="flex items-center justify-between">
-                <h3 className="text-sm font-medium text-muted-foreground">
-                  {stat.title}
-                </h3>
-                <div
-                  className={`p-2.5 rounded-lg bg-gradient-to-br ${stat.color} text-white`}
-                >
-                  {stat.icon}
-                </div>
+                <span className="text-[11px] font-semibold uppercase tracking-[0.2em] text-cyan-200">Risk yoğunluğu</span>
+                <span className="text-sm font-semibold text-cyan-100">%{riskAttentionRate}</span>
               </div>
-              <div className="space-y-1">
-                <p className="text-3xl font-bold text-foreground">{stat.value}</p>
-                <p
-                  className={`text-xs font-medium ${
-                    stat.trend?.includes("✅")
-                      ? "text-success"
-                      : stat.trend?.includes("⚠️")
-                      ? "text-destructive"
-                      : "text-muted-foreground"
-                  }`}
-                >
-                  {stat.trend}
+              <div className="mt-3 h-2 overflow-hidden rounded-full bg-white/10">
+                <div className="h-full rounded-full bg-gradient-to-r from-cyan-300 via-sky-400 to-violet-400" style={{ width: `${Math.min(Math.max(riskAttentionRate, 6), 100)}%` }} />
+              </div>
+              <p className="mt-3 text-xs leading-6 text-slate-300">
+                Kritik ve yüksek riskli kayıt oranı, açık denetim akışındaki öncelik yoğunluğunu gösterir.
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-400">Firma / konum trendi</span>
+                <span className="text-[11px] font-medium text-slate-500">Aktif görünüm</span>
+              </div>
+              <p className="mt-3 text-sm font-semibold text-slate-100">{topRiskLabel}</p>
+              <p className="mt-2 text-xs leading-6 text-slate-400">
+                Görünen sayfada en çok kayıt bulunan firma / konum bu alanda öne çıkarılır. Operasyon ekipleri böylece yoğunlaşan alanı hızlıca görür.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogTrigger asChild>
+          <span className="hidden" />
+        </DialogTrigger>
+        <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto border border-cyan-500/20 bg-[linear-gradient(180deg,rgba(11,18,32,0.98),rgba(15,23,42,0.96))] p-0 shadow-[0_32px_90px_rgba(2,8,23,0.65)]">
+          <DialogHeader className="border-b border-white/10 bg-gradient-to-r from-cyan-500/15 via-sky-500/10 to-violet-500/15 px-6 py-5">
+            <DialogTitle className="text-lg font-semibold text-white">Yeni Denetim Oluştur</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 p-6 pt-5">
+            <div className="rounded-2xl border border-cyan-400/20 bg-cyan-500/10 p-4 text-sm text-cyan-50">
+              <div className="flex gap-3">
+                <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-cyan-200" />
+                <p>
+                  <strong>İpucu:</strong> Notları yazıp <span className="font-semibold">AI Analiz</span> ile risk seviyesini hızlıca netleştirebilir, denetimi daha tutarlı bir kayıtla başlatabilirsiniz.
                 </p>
               </div>
             </div>
+
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="locationName">📍 Konum Adı *</Label>
+                <Input id="locationName" placeholder="Örn: İnşaat Sahası Gamma" value={locationName} onChange={(e) => setLocationName(e.target.value)} className="h-11 border-white/10 bg-slate-900/70 text-slate-50" />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="equipmentCategory">🔧 Ekipman Kategorisi</Label>
+                <Input id="equipmentCategory" placeholder="Örn: Vinç, Asansör" value={equipmentCategory} onChange={(e) => setEquipmentCategory(e.target.value)} className="h-11 border-white/10 bg-slate-900/70 text-slate-50" />
+              </div>
+              <div className="space-y-2 md:col-span-2">
+                <Label htmlFor="riskLevel">⚠️ Risk Seviyesi</Label>
+                <Select value={riskLevel} onValueChange={(value) => setRiskLevel(value as RiskLevel)}>
+                  <SelectTrigger className="h-11 border-white/10 bg-slate-900/70 text-slate-50">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="low">🟢 Düşük</SelectItem>
+                    <SelectItem value="medium">🟡 Orta</SelectItem>
+                    <SelectItem value="high">🔶 Yüksek</SelectItem>
+                    <SelectItem value="critical">🔴 Kritik</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Label htmlFor="notes">📝 Notlar</Label>
+                <Button size="sm" variant="outline" className="h-8 gap-1.5 border-cyan-400/20 bg-cyan-500/10 text-cyan-100 hover:bg-cyan-500/20" onClick={handleAIAnalysis} disabled={aiAnalyzing || !notes.trim()}>
+                  {aiAnalyzing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
+                  AI Analiz
+                </Button>
+              </div>
+              <Textarea id="notes" placeholder="Denetim sırasında yapılan gözlemleri buraya yazın... (AI analiz edebilir)" value={notes} onChange={(e) => setNotes(e.target.value)} rows={4} className="resize-none border-white/10 bg-slate-900/70 text-slate-50 placeholder:text-slate-400" />
+              {notes.length > 0 && <p className="text-xs text-slate-400">{notes.length} karakter • AI analizi risk seviyesini otomatik güncelleyebilir.</p>}
+            </div>
+
+            <div className="space-y-2">
+              <Label>📷 Fotoğraf</Label>
+              <ImageUpload onImageSelected={(file) => setSelectedFile(file)} onRemoveImage={() => setSelectedFile(null)} disabled={submitting} />
+            </div>
+
+            <Button onClick={handleSubmit} disabled={submitting} className="w-full gap-2 rounded-2xl border-0 bg-gradient-to-r from-cyan-400 via-sky-400 to-violet-400 text-slate-950 shadow-[0_16px_40px_rgba(56,189,248,0.22)]">
+              {submitting ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Kaydediliyor...
+                </>
+              ) : (
+                <>
+                  <Plus className="h-4 w-4" />
+                  Denetim Oluştur
+                </>
+              )}
+            </Button>
           </div>
-        ))}
-      </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Fine-Kinney Wizard */}
       <FineKinneyWizard />
 
       {/* FILTERS */}
-      <div className="glass-card p-4 border border-border/50 space-y-4">
-        <div className="flex flex-col sm:flex-row gap-3">
-          <div className="relative flex-1 max-w-sm">
+      <section className="rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(14,23,39,0.96),rgba(12,20,34,0.96))] p-5 shadow-[0_18px_60px_rgba(2,8,23,0.28)]">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div className="space-y-2">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-slate-400">Filtre ve görünüm</p>
+            <h2 className="text-xl font-semibold text-white">Denetim kayıtlarını hızla daraltın</h2>
+            <p className="max-w-2xl text-sm text-slate-300">
+              Duruma göre filtreleyin, arama yapın ve önce hangi denetimi açmanız gerektiğini daha hızlı görün.
+            </p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+              <p className="text-[11px] uppercase tracking-[0.2em] text-slate-500">Sayfa</p>
+              <p className="mt-2 text-lg font-semibold text-slate-100">{currentPageLabel}</p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+              <p className="text-[11px] uppercase tracking-[0.2em] text-slate-500">Görünen kayıt</p>
+              <p className="mt-2 text-lg font-semibold text-slate-100">{visibleCount}</p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+              <p className="text-[11px] uppercase tracking-[0.2em] text-slate-500">Açık kayıt</p>
+              <p className="mt-2 text-lg font-semibold text-slate-100">{summary?.openCount ?? 0}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-5 flex flex-col gap-3 lg:flex-row">
+          <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input
-              placeholder="🔍 Denetimlerde ara..."
+              placeholder="Konum, ekipman veya not içinde arayın..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="pl-9 bg-card border-border h-11"
+              className="h-12 rounded-2xl border-white/10 bg-slate-950/55 pl-9 text-slate-100 placeholder:text-slate-400"
             />
           </div>
-          <div className="flex gap-1.5 flex-wrap">
+          <div className="flex flex-wrap gap-2">
             {statusFilters.map((f) => (
               <button
                 key={f}
                 onClick={() => setActiveFilter(f)}
-                className={`px-3 py-2 rounded-lg text-xs font-semibold capitalize transition-all ${
+                className={`rounded-2xl px-4 py-2.5 text-xs font-semibold capitalize transition-all ${
                   activeFilter === f
-                    ? "bg-gradient-to-r from-primary to-primary/80 text-primary-foreground shadow-lg"
-                    : "bg-secondary hover:bg-secondary/80 text-muted-foreground hover:text-foreground"
+                    ? "bg-gradient-to-r from-cyan-400 via-sky-400 to-violet-400 text-slate-950 shadow-[0_10px_24px_rgba(56,189,248,0.22)]"
+                    : "border border-white/10 bg-white/[0.03] text-slate-300 hover:bg-white/[0.07] hover:text-white"
                 }`}
               >
                 {f === "all"
@@ -782,61 +1017,153 @@ export default function Inspections() {
             ))}
           </div>
         </div>
-      </div>
+      </section>
 
       {/* LIST */}
       {loading ? (
-        <div className="py-12 text-center">
-          <Loader2 className="h-8 w-8 animate-spin text-primary mx-auto mb-3" />
-          <p className="text-sm text-muted-foreground">Denetimler yükleniyor...</p>
+        <div className="rounded-[24px] border border-white/10 bg-slate-950/45 py-14 text-center">
+          <Loader2 className="mx-auto mb-3 h-8 w-8 animate-spin text-cyan-300" />
+          <p className="text-sm text-slate-300">Denetimler yükleniyor...</p>
         </div>
       ) : inspections.length > 0 ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
           {inspections.map((inspection) => (
             <div
               key={inspection.id}
               onClick={() => {
                 void openInspectionDetails(inspection);
               }}
-              className="glass-card p-5 border border-border/50 hover:border-primary/50 cursor-pointer transition-all group hover:shadow-lg"
+              className={`group relative overflow-hidden rounded-[24px] border bg-[linear-gradient(180deg,rgba(15,23,42,0.98),rgba(12,19,32,0.95))] p-5 shadow-[0_18px_50px_rgba(2,8,23,0.28)] transition-all hover:-translate-y-1 hover:shadow-[0_24px_60px_rgba(2,8,23,0.42)] ${
+                highlightedInspectionId === inspection.id
+                  ? "border-emerald-400/70 shadow-[0_0_0_1px_rgba(52,211,153,0.35),0_22px_50px_rgba(16,185,129,0.18)]"
+                  : "border-white/10 hover:border-cyan-400/30"
+              }`}
             >
-              <div className="space-y-4">
-                {/* HEADER */}
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(34,211,238,0.12),transparent_28%),radial-gradient(circle_at_bottom_left,rgba(168,85,247,0.12),transparent_26%)] opacity-70" />
+              <div className="relative space-y-4">
                 <div className="flex items-start justify-between gap-3">
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-bold text-foreground truncate group-hover:text-primary transition-colors">
-                      📍 {inspection.location_name}
+                  <div className="min-w-0 flex-1">
+                    <div className="mb-2 flex flex-wrap items-center gap-2">
+                      <span className="inline-flex rounded-full border border-white/10 bg-white/[0.06] px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-300">
+                        Denetim
+                      </span>
+                      <span className="inline-flex rounded-full border border-white/10 bg-white/[0.03] px-2.5 py-1 text-[11px] font-medium text-slate-400">
+                        {new Date(inspection.created_at).toLocaleDateString("tr-TR")}
+                      </span>
+                    </div>
+                    <h3 className="truncate text-lg font-semibold text-white transition-colors group-hover:text-cyan-200">
+                      {inspection.location_name}
                     </h3>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      📅 {new Date(inspection.created_at).toLocaleDateString("tr-TR")}
+                    <p className="mt-1 text-sm text-slate-400">
+                      {inspection.equipment_category || "Ekipman / kategori bilgisi eklenmemiş"}
                     </p>
+                    {highlightedInspectionId === inspection.id ? (
+                      <span className="mt-3 inline-flex rounded-full bg-emerald-500/15 px-2.5 py-1 text-[11px] font-semibold text-emerald-300">
+                        Tekli DÖF’ten geldi
+                      </span>
+                    ) : null}
                   </div>
-                  <ChevronRight className="h-5 w-5 text-muted-foreground group-hover:text-primary transition-colors" />
+                  <div className="rounded-2xl border border-white/10 bg-white/[0.05] p-2 text-slate-300 transition-colors group-hover:border-cyan-400/30 group-hover:text-cyan-200">
+                    <ChevronRight className="h-5 w-5" />
+                  </div>
                 </div>
 
-                {/* TAGS */}
                 <div className="flex flex-wrap gap-2">
-                  <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full border ${statusConfig[inspection.status].color}`}>
+                  <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold ${statusConfig[inspection.status].color}`}>
                     {statusConfig[inspection.status].icon} {statusConfig[inspection.status].label}
                   </span>
-                  <span className={`inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-full border ${riskConfig[inspection.risk_level].color}`}>
+                  <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold ${riskConfig[inspection.risk_level].color}`}>
                     {riskConfig[inspection.risk_level].icon} {riskConfig[inspection.risk_level].label}
                   </span>
                 </div>
 
-                {/* INFO */}
-                <div className="space-y-2 text-xs text-muted-foreground">
-                  {inspection.equipment_category && (
-                    <div className="flex items-center gap-2">
-                      <span>🔧</span>
-                      <span>{inspection.equipment_category}</span>
-                    </div>
-                  )}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="rounded-2xl border border-white/8 bg-white/[0.04] p-3">
+                    <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Kayıt tipi</p>
+                    <p className="mt-2 text-sm font-semibold text-slate-100">{inspection.notes ? "Notlu kayıt" : "Standart kayıt"}</p>
+                  </div>
+                  <div className="rounded-2xl border border-white/8 bg-white/[0.04] p-3">
+                    <p className="text-[11px] uppercase tracking-[0.18em] text-slate-500">Fotoğraf</p>
+                    <p className="mt-2 text-sm font-semibold text-slate-100">{inspection.media_urls?.length || 0} adet</p>
+                  </div>
                 </div>
 
-                {/* ACTION BUTTON */}
+                <div className="grid grid-cols-3 gap-2">
+                  <div className="rounded-xl border border-white/8 bg-white/[0.03] p-3">
+                    <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Aksiyon</p>
+                    <p className="mt-2 text-sm font-semibold text-slate-100">
+                      {inspection.status === "completed" ? "Arşiv" : "İzleme"}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-white/8 bg-white/[0.03] p-3">
+                    <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Öncelik</p>
+                    <p className="mt-2 text-sm font-semibold text-slate-100">
+                      {inspection.risk_level === "critical" || inspection.risk_level === "high" ? "Yüksek" : "Normal"}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-white/8 bg-white/[0.03] p-3">
+                    <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Rapor</p>
+                    <p className="mt-2 text-sm font-semibold text-slate-100">
+                      {inspection.notes ? "Hazır veri" : "Temel kayıt"}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-white/8 bg-white/[0.03] p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2 text-sm font-semibold text-slate-200">
+                      <FileText className="h-4 w-4 text-cyan-200" />
+                      Denetim özeti
+                    </div>
+                    <span className="text-[11px] font-medium text-slate-500">Kart görünümü</span>
+                  </div>
+                  <p className="mt-3 line-clamp-3 text-sm leading-6 text-slate-400">
+                    {inspection.notes?.trim() || "Bu kayıtta henüz paylaşılmış saha notu bulunmuyor. Detay görünümünde tam kayıt akışını inceleyebilirsiniz."}
+                  </p>
+                </div>
+
+                <div className="rounded-2xl border border-cyan-400/15 bg-cyan-500/[0.05] p-4">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-cyan-200">Sonraki önerilen aksiyon</p>
+                  <p className="mt-3 text-sm leading-6 text-slate-200">
+                    {getNextActionLabel(inspection)}
+                  </p>
+                  <Button
+                    className="mt-4 h-9 w-full rounded-xl border-0 bg-gradient-to-r from-cyan-400 via-sky-400 to-violet-400 text-slate-950"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void openInspectionDetails(inspection);
+                    }}
+                  >
+                    {getNextActionButtonLabel(inspection)}
+                  </Button>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Button
+                    className="h-10 flex-1 gap-2 rounded-2xl border-0 bg-gradient-to-r from-cyan-400 via-sky-400 to-violet-400 text-slate-950"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void openInspectionDetails(inspection);
+                    }}
+                  >
+                    {getNextActionButtonLabel(inspection)}
+                  </Button>
+                  {inspection.status === "completed" ? (
+                    <Button
+                      variant="outline"
+                      className="h-10 rounded-2xl border-white/10 bg-white/[0.04] px-4 text-slate-100 hover:bg-white/[0.08]"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void openInspectionDetails(inspection);
+                      }}
+                    >
+                      Rapor
+                    </Button>
+                  ) : null}
+                </div>
+
                 <Button
-                  className="w-full gap-2 h-9"
+                  className="h-10 w-full gap-2 rounded-2xl border-0 bg-white/[0.06] text-slate-100 hover:bg-white/[0.12]"
                   onClick={(e) => {
                     e.stopPropagation();
                     void openInspectionDetails(inspection);
@@ -850,35 +1177,25 @@ export default function Inspections() {
           ))}
         </div>
       ) : (
-        <div className="glass-card p-12 border border-border/50 text-center space-y-4">
-          <FileText className="h-12 w-12 text-muted-foreground mx-auto opacity-50" />
+        <div className="rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.96),rgba(10,17,30,0.96))] p-12 text-center shadow-[0_18px_60px_rgba(2,8,23,0.24)]">
+          <FileText className="mx-auto h-12 w-12 text-slate-500 opacity-70" />
           <div>
-            <p className="text-foreground font-semibold">Denetim Bulunamadı</p>
-            <p className="text-sm text-muted-foreground mt-1">Kriterlere uygun denetim yok. Yeni bir denetim oluşturabilirsiniz.</p>
+            <p className="text-lg font-semibold text-white">Denetim Bulunamadı</p>
+            <p className="mt-2 text-sm text-slate-400">Seçili kriterlere uygun kayıt görünmüyor. Yeni bir denetim oluşturarak akışı başlatabilirsiniz.</p>
           </div>
         </div>
       )}
 
       {!loading && (
-        <div className="flex flex-col gap-3 rounded-xl border border-border/50 bg-card/40 p-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="text-sm text-muted-foreground">
-            Sayfa {currentPageLabel} • {visibleCount} kayit
+        <div className="flex flex-col gap-3 rounded-[24px] border border-white/10 bg-slate-950/40 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="text-sm text-slate-300">
+            Sayfa {currentPageLabel} • {visibleCount} kayıt
           </div>
           <div className="flex gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page === 0}
-              onClick={() => setPage((current) => Math.max(0, current - 1))}
-            >
-              Onceki Sayfa
+            <Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPage((current) => Math.max(0, current - 1))} className="rounded-xl border-white/10 bg-white/[0.03] text-slate-100 hover:bg-white/[0.08]">
+              Önceki Sayfa
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={!hasNextPage}
-              onClick={() => setPage((current) => current + 1)}
-            >
+            <Button variant="outline" size="sm" disabled={!hasNextPage} onClick={() => setPage((current) => current + 1)} className="rounded-xl border-white/10 bg-white/[0.03] text-slate-100 hover:bg-white/[0.08]">
               Sonraki Sayfa
             </Button>
           </div>
@@ -890,179 +1207,235 @@ export default function Inspections() {
         <div className={`fixed inset-0 z-50 flex items-center justify-center p-4 transition-all ${
           detailsOpen ? "bg-black/50 backdrop-blur-sm" : "bg-black/0 pointer-events-none"
         }`}>
-          <div className={`glass-card rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-y-auto border border-primary/30 shadow-2xl bg-gradient-to-b from-card to-card/90 transition-all ${
+          <div className={`w-full max-w-5xl max-h-[90vh] overflow-y-auto rounded-[28px] border border-cyan-500/20 bg-[linear-gradient(180deg,rgba(9,16,32,0.98),rgba(10,17,30,0.96))] shadow-[0_35px_90px_rgba(2,8,23,0.6)] transition-all ${
             detailsOpen ? "scale-100 opacity-100" : "scale-95 opacity-0"
           }`}>
-            {/* HEADER */}
-            <div className="sticky top-0 bg-gradient-to-r from-primary/90 via-primary to-primary/80 p-6 md:p-7 flex items-center justify-between z-10 border-b border-primary-foreground/10">
-              <div>
-                <h2 className="text-xl font-bold text-primary-foreground flex items-center gap-2">
-                  📋 Denetim Detayları
-                </h2>
-                <p className="text-sm text-primary-foreground/80 mt-1">
-                  {selectedInspection.location_name}
-                </p>
+            <div className="sticky top-0 z-10 border-b border-white/10 bg-[radial-gradient(circle_at_top_left,_rgba(34,211,238,0.22),_transparent_28%),linear-gradient(90deg,rgba(8,15,29,0.98),rgba(12,22,36,0.96),rgba(18,24,41,0.95))] p-6 md:p-7">
+              <div className="flex items-start justify-between gap-4">
+                <div className="space-y-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="inline-flex rounded-full border border-cyan-400/20 bg-cyan-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-cyan-200">
+                      Denetim rapor paneli
+                    </span>
+                    <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold ${statusConfig[selectedInspection.status].color}`}>
+                      {statusConfig[selectedInspection.status].icon} {statusConfig[selectedInspection.status].label}
+                    </span>
+                    <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-semibold ${riskConfig[selectedInspection.risk_level].color}`}>
+                      {riskConfig[selectedInspection.risk_level].icon} {riskConfig[selectedInspection.risk_level].label}
+                    </span>
+                  </div>
+                  <div>
+                    <h2 className="text-2xl font-semibold text-white md:text-[30px]">
+                      {selectedInspection.location_name}
+                    </h2>
+                    <p className="mt-1 text-sm text-slate-300">
+                      {new Date(selectedInspection.created_at).toLocaleDateString("tr-TR")} • saha kaydı, rapor bağlantısı ve medya görünümü
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setDetailsOpen(false)}
+                  className="rounded-2xl border border-white/10 bg-white/[0.05] p-2 text-slate-200 transition-colors hover:bg-white/[0.12]"
+                >
+                  <X className="h-5 w-5" />
+                </button>
               </div>
-              <button
-                onClick={() => setDetailsOpen(false)}
-                className="p-2 hover:bg-primary-foreground/20 rounded-lg transition-colors"
-              >
-                <X className="h-5 w-5 text-primary-foreground" />
-              </button>
+
+              <div className="mt-5 grid gap-3 md:grid-cols-3">
+                {detailMetrics.map((metric) => (
+                  <div key={metric.label} className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">{metric.label}</p>
+                    <p className={`mt-2 text-sm font-semibold ${metric.tone}`}>{metric.value}</p>
+                  </div>
+                ))}
+              </div>
             </div>
 
-            <div className="p-6 md:p-8 space-y-6">
-              {/* STATUS & RISK */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className={`p-4 rounded-lg border ${statusConfig[selectedInspection.status].color}`}>
-                  <p className="text-xs text-muted-foreground mb-1">Durum</p>
-                  <p className="font-bold">{statusConfig[selectedInspection.status].label}</p>
-                </div>
-                <div className={`p-4 rounded-lg border ${riskConfig[selectedInspection.risk_level].color}`}>
-                  <p className="text-xs text-muted-foreground mb-1">Risk Seviyesi</p>
-                  <p className="font-bold">{riskConfig[selectedInspection.risk_level].label}</p>
-                </div>
-              </div>
-
-              {/* INFO GRID */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="glass-card p-4 border border-border/50 space-y-1">
-                  <p className="text-xs text-muted-foreground flex items-center gap-2">
-                    <MapPin className="h-4 w-4" /> Konum
-                  </p>
-                  <p className="font-semibold">{selectedInspection.location_name}</p>
-                </div>
-                <div className="glass-card p-4 border border-border/50 space-y-1">
-                  <p className="text-xs text-muted-foreground flex items-center gap-2">
-                    <Calendar className="h-4 w-4" /> Tarih
-                  </p>
-                  <p className="font-semibold">
-                    {new Date(selectedInspection.created_at).toLocaleDateString("tr-TR")}
-                  </p>
-                </div>
-                {selectedInspection.equipment_category && (
-                  <div className="glass-card p-4 border border-border/50 space-y-1">
-                    <p className="text-xs text-muted-foreground flex items-center gap-2">
-                      🔧 Ekipman
-                    </p>
-                    <p className="font-semibold">{selectedInspection.equipment_category}</p>
+            <div className="space-y-6 p-6 md:p-8">
+              <div className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_320px]">
+                <div className="space-y-6">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+                      <p className="flex items-center gap-2 text-xs text-slate-400">
+                        <MapPin className="h-4 w-4" /> Konum
+                      </p>
+                      <p className="mt-2 font-semibold text-white">{selectedInspection.location_name}</p>
+                    </div>
+                    <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+                      <p className="flex items-center gap-2 text-xs text-slate-400">
+                        <Calendar className="h-4 w-4" /> Tarih
+                      </p>
+                      <p className="mt-2 font-semibold text-white">
+                        {new Date(selectedInspection.created_at).toLocaleDateString("tr-TR")}
+                      </p>
+                    </div>
+                    {selectedInspection.equipment_category && (
+                      <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+                        <p className="text-xs text-slate-400">🔧 Ekipman</p>
+                        <p className="mt-2 font-semibold text-white">{selectedInspection.equipment_category}</p>
+                      </div>
+                    )}
+                    <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+                      <p className="text-xs text-slate-400">📷 Fotoğraf</p>
+                      <p className="mt-2 font-semibold text-white">
+                        {detailsLoading ? "Hesaplanıyor..." : `${inspectionDetail?.media_urls?.length || 0} adet`}
+                      </p>
+                    </div>
                   </div>
-                )}
-                <div className="glass-card p-4 border border-border/50 space-y-1">
-                  <p className="text-xs text-muted-foreground flex items-center gap-2">
-                    📷 Fotoğraf
-                  </p>
-                  <p className="font-semibold">
-                    {detailsLoading ? "Hesaplaniyor..." : `${inspectionDetail?.media_urls?.length || 0} adet`}
-                  </p>
-                </div>
-              </div>
 
-              {/* NOTES */}
-              {detailsLoading ? (
-                <div className="glass-card p-4 border border-border/50 space-y-3">
-                  <div className="h-4 w-24 animate-pulse rounded bg-slate-800" />
-                  <div className="h-3 w-full animate-pulse rounded bg-slate-900" />
-                  <div className="h-3 w-4/5 animate-pulse rounded bg-slate-900" />
-                </div>
-              ) : inspectionDetail?.notes ? (
-                <div className="glass-card p-4 border border-border/50 space-y-2">
-                  <p className="text-sm font-semibold flex items-center gap-2">
-                    <FileText className="h-4 w-4" /> Notlar
-                  </p>
-                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">
-                    {inspectionDetail.notes}
-                  </p>
-                </div>
-              ) : null}
+                  {detailsLoading ? (
+                    <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-5 space-y-3">
+                      <div className="h-4 w-24 animate-pulse rounded bg-slate-800" />
+                      <div className="h-3 w-full animate-pulse rounded bg-slate-900" />
+                      <div className="h-3 w-4/5 animate-pulse rounded bg-slate-900" />
+                    </div>
+                  ) : inspectionDetail?.notes ? (
+                    <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-5">
+                      <div className="flex items-center justify-between">
+                        <p className="flex items-center gap-2 text-sm font-semibold text-slate-100">
+                          <FileText className="h-4 w-4 text-cyan-200" /> Saha notları
+                        </p>
+                        <span className="text-[11px] font-medium text-slate-500">Detay görünümü</span>
+                      </div>
+                      <p className="mt-4 whitespace-pre-wrap text-sm leading-7 text-slate-300">
+                        {inspectionDetail.notes}
+                      </p>
+                    </div>
+                  ) : null}
 
+                  {!detailsLoading && inspectionDetail?.media_urls && inspectionDetail.media_urls.length > 0 && (
+                    <div className="space-y-3">
+                      <p className="flex items-center gap-2 text-sm font-semibold text-slate-100">
+                        <Eye className="h-4 w-4 text-cyan-200" /> Fotoğraflar
+                      </p>
+                      <div className="grid grid-cols-2 gap-3">
+                        {inspectionDetail.media_urls.map((url, idx) => (
+                          <div key={idx} className="overflow-hidden rounded-2xl border border-white/10 aspect-video bg-slate-950/40">
+                            <img
+                              src={url}
+                              alt={`Fotoğraf ${idx + 1}`}
+                              className="h-full w-full object-cover"
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
-              {/* LINKED REPORT */}
-              <div className="glass-card p-4 border border-border/50 space-y-3 bg-card/60 rounded-xl">
-                <p className="text-sm font-semibold flex items-center gap-2">
-                  <FileText className="h-4 w-4" /> Oluşturulan Rapor
-                </p>
-                {loadingLinkedReport ? (
-                  <p className="text-sm text-muted-foreground">Rapor bağlantısı kontrol ediliyor...</p>
-                ) : linkedReport?.url ? (
-                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                    <p className="text-sm text-muted-foreground truncate">{linkedReport.filename}</p>
-                    <div className="flex gap-2">
-                      <Button size="sm" variant="outline" onClick={openLinkedReport}>
+                  <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-5">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-semibold text-slate-100">Zaman çizelgesi</p>
+                      <span className="text-[11px] font-medium text-slate-500">Activity feed</span>
+                    </div>
+                    <div className="mt-4 space-y-3">
+                      {activityFeed.map((item, index) => (
+                        <div key={`${item.title}-${index}`} className="flex gap-3">
+                          <div className="flex flex-col items-center">
+                            <div className={`mt-1 h-3 w-3 rounded-full border ${item.tone}`} />
+                            {index < activityFeed.length - 1 ? (
+                              <div className="mt-2 h-full min-h-[36px] w-px bg-white/10" />
+                            ) : null}
+                          </div>
+                          <div className={`flex-1 rounded-2xl border p-4 ${item.tone}`}>
+                            <p className="text-sm font-semibold">{item.title}</p>
+                            <p className="mt-2 text-xs leading-6 text-slate-300">{item.detail}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="rounded-2xl border border-violet-400/20 bg-violet-500/10 p-4">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-violet-200">Önerilen sonraki adım</p>
+                    <p className="mt-3 text-sm font-semibold text-slate-100">{getDetailSuggestedAction().title}</p>
+                    <p className="mt-2 text-xs leading-6 text-slate-300">
+                      {getDetailSuggestedAction().description}
+                    </p>
+                    <Button
+                      className="mt-4 h-9 w-full rounded-xl border-0 bg-gradient-to-r from-cyan-400 via-sky-400 to-violet-400 text-slate-950"
+                      onClick={getDetailSuggestedAction().onClick}
+                      disabled={getDetailSuggestedAction().disabled}
+                    >
+                      {getDetailSuggestedAction().buttonLabel}
+                    </Button>
+                  </div>
+
+                  <div className="rounded-2xl border border-cyan-400/20 bg-cyan-500/10 p-4">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-cyan-200">Rapor durumu</p>
+                    {loadingLinkedReport ? (
+                      <p className="mt-3 text-sm text-slate-300">Rapor bağlantısı kontrol ediliyor...</p>
+                    ) : linkedReport?.url ? (
+                      <>
+                        <p className="mt-3 text-sm font-semibold text-white">{linkedReport.filename}</p>
+                        <p className="mt-2 text-xs leading-6 text-slate-300">
+                          Bu kayıt için daha önce oluşturulmuş rapor bulundu. Buradan açabilir, indirebilir veya paylaşabilirsiniz.
+                        </p>
+                        <div className="mt-4 grid gap-2">
+                          <Button size="sm" variant="outline" onClick={openLinkedReport} className="justify-start rounded-xl border-white/10 bg-white/[0.04] text-slate-100 hover:bg-white/[0.08]">
+                            Raporu Aç
+                          </Button>
+                          <Button size="sm" onClick={downloadLinkedReport} className="justify-start rounded-xl border-0 bg-gradient-to-r from-cyan-400 via-sky-400 to-violet-400 text-slate-950">
+                            <Download className="mr-1 h-4 w-4" /> Raporu İndir
+                          </Button>
+                        </div>
+                      </>
+                    ) : (
+                      <p className="mt-3 text-sm leading-6 text-slate-300">
+                        Bu denetime bağlı rapor bulunamadı. E-posta gönderimi için sistem gerektiğinde yeni rapor bağlantısı hazırlayabilir.
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Kurumsal aksiyonlar</p>
+                    <div className="mt-4 grid gap-2">
+                      <Button
+                        variant="outline"
+                        className="justify-start rounded-xl border-white/10 bg-white/[0.03] text-slate-100 hover:bg-white/[0.08]"
+                        onClick={openLinkedReport}
+                        disabled={!linkedReport?.url}
+                      >
+                        <Eye className="mr-2 h-4 w-4" />
                         Raporu Aç
                       </Button>
-                      <Button size="sm" onClick={downloadLinkedReport}>
-                        <Download className="h-4 w-4 mr-1" /> İndir
+                      <Button
+                        variant="outline"
+                        className="justify-start rounded-xl border-white/10 bg-white/[0.03] text-slate-100 hover:bg-white/[0.08]"
+                        onClick={downloadLinkedReport}
+                        disabled={!linkedReport?.url}
+                      >
+                        <Download className="mr-2 h-4 w-4" />
+                        Raporu İndir
+                      </Button>
+                      <Button
+                        variant="outline"
+                        className="justify-start rounded-xl border-white/10 bg-white/[0.03] text-slate-100 hover:bg-white/[0.08]"
+                        onClick={handleOpenShareModal}
+                        disabled={sharePreparing}
+                      >
+                        {sharePreparing ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <Share2 className="mr-2 h-4 w-4" />
+                        )}
+                        E-posta Gönder
                       </Button>
                     </div>
                   </div>
-                ) : (
-                  <p className="text-sm text-muted-foreground">Bu denetime bağlı rapor bulunamadı.</p>
-                )}
-              </div>
-              {/* PHOTOS */}
-              {!detailsLoading && inspectionDetail?.media_urls && inspectionDetail.media_urls.length > 0 && (
-                <div className="space-y-2">
-                  <p className="text-sm font-semibold flex items-center gap-2">
-                    <Eye className="h-4 w-4" /> Fotoğraflar
-                  </p>
-                  <div className="grid grid-cols-2 gap-3">
-                    {inspectionDetail.media_urls.map((url, idx) => (
-                      <div key={idx} className="rounded-lg overflow-hidden border border-border/50 aspect-video">
-                        <img
-                          src={url}
-                          alt={`Fotoğraf ${idx + 1}`}
-                          className="w-full h-full object-cover"
-                        />
+
+                  <div className="rounded-2xl border border-blue-400/20 bg-blue-500/10 p-4">
+                    <div className="flex gap-3">
+                      <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-blue-200" />
+                      <div className="text-sm text-slate-200">
+                        <p className="font-semibold">Operasyon notu</p>
+                        <p className="mt-2 leading-6 text-slate-300">
+                          Denetim detaylarını düzenlemek veya DÖF akışına taşımak için ilgili rapor bağlantısını açabilir, mevcut medya ve notlarla kayıt bütünlüğünü koruyabilirsiniz.
+                        </p>
                       </div>
-                    ))}
+                    </div>
                   </div>
-                </div>
-              )}
-
-              {/* ACTIONS */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-4 border-t border-border/60">
-                <Button
-                  variant="outline"
-                  className="gap-2"
-                  onClick={openLinkedReport}
-                  disabled={!linkedReport?.url}
-                >
-                  <Eye className="h-4 w-4" />
-                  Raporu Aç
-                </Button>
-
-                <Button
-                  variant="outline"
-                  className="gap-2"
-                  onClick={downloadLinkedReport}
-                  disabled={!linkedReport?.url}
-                >
-                  <Download className="h-4 w-4" />
-                  Raporu İndir
-                </Button>
-
-                <Button
-                  variant="outline"
-                  className="gap-2"
-                  onClick={handleOpenShareModal}
-                  disabled={sharePreparing}
-                >
-                  {sharePreparing ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Share2 className="h-4 w-4" />
-                  )}
-                  E-posta Gönder
-                </Button>
-              </div>
-
-              {/* INFO BOX */}
-              <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-4 flex gap-3">
-                <AlertCircle className="h-5 w-5 text-blue-600 shrink-0" />
-                <div className="text-sm text-blue-700">
-                  <p className="font-semibold mb-1">💡 İpucu</p>
-                  <p>Denetim detaylarını düzenlemek ve formu tamamlamak için "DÖF Raporları" bölümünü ziyaret edin.</p>
                 </div>
               </div>
             </div>
@@ -1080,3 +1453,5 @@ export default function Inspections() {
     </div>
   );
 }
+
+

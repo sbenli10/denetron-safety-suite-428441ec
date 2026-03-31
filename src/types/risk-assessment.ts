@@ -102,7 +102,35 @@ export const SECTORS = [
   "DOKUM",
   "METAL",
   "KAYNAK",
-  "İNŞAAT"
+  "İNŞAAT",
+  "OTOMOTİV",
+  "GIDA",
+  "TEKSTİL",
+  "KİMYA",
+  "LOJİSTİK",
+  "SAĞLIK",
+  "EĞİTİM",
+  "OFİS",
+  "TARIM",
+  "TURİZM",
+  "PERAKENDE",
+  "AHŞAP",
+  "PLASTİK",
+  "KAĞIT",
+  "ÇİMENTO",
+  "SERAMİK",
+  "LİMAN",
+  "HAVACILIK",
+  "DENİZCİLİK",
+  "AKARYAKIT",
+  "DEPOCULUK",
+  "İLAÇ",
+  "LABORATUVAR",
+  "BELEDİYE",
+  "ATIK YÖNETİMİ",
+  "GÜVENLİK",
+  "TEMİZLİK",
+  "ÇAĞRI MERKEZİ"
 ] as const;
 
 export const FINE_KINNEY_SCALES = {
@@ -175,7 +203,24 @@ export const RISK_SECTORS = [
   { id: "ofis", name: "Ofis & Hizmet", icon: "💼", keywords: ["büro", "ofis", "yazılım", "danışmanlık"] },
   { id: "tarim", name: "Tarım & Hayvancılık", icon: "🌾", keywords: ["tarım", "çiftlik", "hayvancılık", "sera"] },
   { id: "turizm", name: "Turizm & Otel", icon: "🏨", keywords: ["otel", "tatil", "konaklama", "turizm"] },
-  { id: "perakende", name: "Perakende", icon: "🛒", keywords: ["market", "mağaza", "satış", "perakende"] }
+  { id: "perakende", name: "Perakende", icon: "🛒", keywords: ["market", "mağaza", "satış", "perakende"] },
+  { id: "ahsap", name: "Ahşap & Mobilya", icon: "🪵", keywords: ["ahşap", "mobilya", "marangoz", "kereste"] },
+  { id: "plastik", name: "Plastik & Enjeksiyon", icon: "🧪", keywords: ["plastik", "enjeksiyon", "kalıp", "granül"] },
+  { id: "kagit", name: "Kağıt & Ambalaj", icon: "📄", keywords: ["kağıt", "ambalaj", "koli", "oluklu"] },
+  { id: "cimento", name: "Çimento & Beton", icon: "🧱", keywords: ["çimento", "beton", "hazır beton", "klinker"] },
+  { id: "seramik", name: "Seramik & Cam", icon: "🏺", keywords: ["seramik", "cam", "fırın", "sırlama"] },
+  { id: "liman", name: "Liman & Terminal", icon: "⚓", keywords: ["liman", "terminal", "konteyner", "rıhtım"] },
+  { id: "havacilik", name: "Havacılık", icon: "✈️", keywords: ["havaalanı", "uçak", "hangar", "havacılık"] },
+  { id: "denizcilik", name: "Denizcilik", icon: "🚢", keywords: ["gemi", "deniz", "tersane", "iskele"] },
+  { id: "akaryakit", name: "Akaryakıt & LPG", icon: "⛽", keywords: ["akaryakıt", "lpg", "istasyon", "yakıt"] },
+  { id: "depoculuk", name: "Depoculuk", icon: "🏬", keywords: ["depo", "raf", "istif", "sevkiyat"] },
+  { id: "ilac", name: "İlaç & Medikal", icon: "💊", keywords: ["ilaç", "medikal", "steril", "farmasötik"] },
+  { id: "laboratuvar", name: "Laboratuvar", icon: "🧫", keywords: ["laboratuvar", "numune", "analiz", "biyogüvenlik"] },
+  { id: "belediye", name: "Belediye Hizmetleri", icon: "🏛️", keywords: ["belediye", "saha", "altyapı", "şehir"] },
+  { id: "atik", name: "Atık Yönetimi", icon: "♻️", keywords: ["atık", "geri dönüşüm", "ayrıştırma", "bertaraf"] },
+  { id: "guvenlik", name: "Özel Güvenlik", icon: "🛡️", keywords: ["güvenlik", "devriye", "kontrol noktası", "nöbet"] },
+  { id: "temizlik", name: "Temizlik Hizmetleri", icon: "🧼", keywords: ["temizlik", "dezenfeksiyon", "kat hizmeti", "janitor"] },
+  { id: "cagri_merkezi", name: "Çağrı Merkezi", icon: "🎧", keywords: ["çağrı", "müşteri temsilcisi", "headset", "ofis"] }
 ] as const;
 
 export type SectorId = typeof RISK_SECTORS[number]["id"];

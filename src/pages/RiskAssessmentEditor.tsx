@@ -85,6 +85,108 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 let scrollLock = 0;
 
+const SECTOR_UI_META: Record<string, { accent: string; hint: string }> = {
+  otomotiv: { accent: "from-sky-500/20 to-cyan-500/10", hint: "Montaj, pres ve araç hattı riskleri" },
+  insaat: { accent: "from-amber-500/20 to-orange-500/10", hint: "Yüksekte çalışma ve saha operasyon riskleri" },
+  gida: { accent: "from-emerald-500/20 to-lime-500/10", hint: "Hijyen, sıcak yüzey ve üretim akışı riskleri" },
+  metal: { accent: "from-cyan-500/20 to-blue-500/10", hint: "Kesme, taşlama, kaynak ve pres riskleri" },
+  tekstil: { accent: "from-pink-500/20 to-rose-500/10", hint: "Makine, ergonomi ve lif maruziyeti riskleri" },
+  kimya: { accent: "from-fuchsia-500/20 to-violet-500/10", hint: "Kimyasal maruziyet ve reaksiyon riskleri" },
+  lojistik: { accent: "from-indigo-500/20 to-violet-500/10", hint: "Yükleme, istifleme ve sevkiyat riskleri" },
+  enerji: { accent: "from-yellow-500/20 to-amber-500/10", hint: "Elektrik, saha ve bakım operasyon riskleri" },
+  maden: { accent: "from-stone-500/20 to-zinc-500/10", hint: "Toz, göçük ve ağır ekipman riskleri" },
+  saglik: { accent: "from-red-500/20 to-rose-500/10", hint: "Biyolojik, kesici-delici ve vardiya riskleri" },
+  egitim: { accent: "from-blue-500/20 to-sky-500/10", hint: "Yoğunluk, tahliye ve ergonomi riskleri" },
+  ofis: { accent: "from-slate-400/20 to-slate-500/10", hint: "Ergonomi ve ekranlı araç riskleri" },
+  tarim: { accent: "from-lime-500/20 to-green-500/10", hint: "Makine, ilaçlama ve açık alan riskleri" },
+  turizm: { accent: "from-teal-500/20 to-emerald-500/10", hint: "Konaklama, mutfak ve servis riskleri" },
+  perakende: { accent: "from-orange-500/20 to-amber-500/10", hint: "Raf, müşteri alanı ve kasa operasyon riskleri" },
+  ahsap: { accent: "from-amber-600/20 to-yellow-600/10", hint: "Ahşap tozu, kesici makineler ve mobilya riskleri" },
+  plastik: { accent: "from-violet-500/20 to-fuchsia-500/10", hint: "Enjeksiyon, sıcak yüzey ve kalıp değişim riskleri" },
+  kagit: { accent: "from-slate-300/20 to-slate-500/10", hint: "Oluklu hat, kesme ve toz yükü riskleri" },
+  cimento: { accent: "from-zinc-500/20 to-stone-500/10", hint: "Toz, silo ve hazır beton operasyon riskleri" },
+  seramik: { accent: "from-orange-400/20 to-amber-400/10", hint: "Fırın, kırılma ve toz maruziyeti riskleri" },
+  liman: { accent: "from-sky-600/20 to-blue-600/10", hint: "Konteyner, rıhtım ve vinç operasyon riskleri" },
+  havacilik: { accent: "from-cyan-400/20 to-sky-500/10", hint: "Hangar, apron ve yakıt operasyon riskleri" },
+  denizcilik: { accent: "from-blue-600/20 to-indigo-600/10", hint: "Gemi içi bakım ve iskele operasyon riskleri" },
+  akaryakit: { accent: "from-rose-500/20 to-orange-500/10", hint: "Yanıcı ortam ve dolum operasyon riskleri" },
+  depoculuk: { accent: "from-indigo-400/20 to-violet-400/10", hint: "Raf, forklift ve yüksek istif riskleri" },
+  ilac: { accent: "from-emerald-400/20 to-cyan-400/10", hint: "Steril alan, GMP ve kimyasal maruziyet riskleri" },
+  laboratuvar: { accent: "from-fuchsia-400/20 to-pink-400/10", hint: "Numune, cam ekipman ve biyogüvenlik riskleri" },
+  belediye: { accent: "from-slate-500/20 to-indigo-500/10", hint: "Saha hizmeti, altyapı ve bakım riskleri" },
+  atik: { accent: "from-green-500/20 to-emerald-500/10", hint: "Ayrıştırma, biyolojik ve kesici atık riskleri" },
+  guvenlik: { accent: "from-violet-500/20 to-purple-500/10", hint: "Devriye, gece vardiyası ve müdahale riskleri" },
+  temizlik: { accent: "from-cyan-500/20 to-teal-500/10", hint: "Kimyasal, kaygan zemin ve ekipman riskleri" },
+  cagri_merkezi: { accent: "from-slate-500/20 to-blue-500/10", hint: "Headset, vardiya ve stres yönetimi riskleri" },
+};
+
+const SECTOR_ALIAS_MAP: Record<string, string> = {
+  "metal işleme": "metal",
+  "lojistik & depo": "lojistik",
+  "maden & taş ocağı": "maden",
+  "ofis & hizmet": "ofis",
+  "tarım & hayvancılık": "tarim",
+  "turizm & otel": "turizm",
+  "ahşap & mobilya": "ahsap",
+  "plastik & enjeksiyon": "plastik",
+  "çağrı merkezi": "cagri_merkezi",
+  "özel güvenlik": "guvenlik",
+  "atık yönetimi": "atik",
+  "ilaç & medikal": "ilac",
+  "çimento & beton": "cimento",
+  "seramik & cam": "seramik",
+  "liman & terminal": "liman",
+  "akaryakıt & lpg": "akaryakit",
+  "belediye hizmetleri": "belediye",
+  "sağlık": "saglik",
+  "eğitim": "egitim",
+  "kimya": "kimya",
+  "lojistik": "lojistik",
+  "inşaat": "insaat",
+  "gıda": "gida",
+  "tekstil": "tekstil",
+  "ofis": "ofis",
+  "tarım": "tarim",
+  "havacılık": "havacilik",
+  "denizcilik": "denizcilik",
+  "depoculuk": "depoculuk",
+};
+
+const normalizeSectorKey = (value: string) => {
+  const normalized = value.trim().toLowerCase();
+  return SECTOR_ALIAS_MAP[normalized] || normalized;
+};
+
+const COMMON_TEMPLATE_RISKS = [
+  {
+    hazard: "Acil Durum Hazırlığı",
+    risk: "Acil durum ekiplerinin görev paylaşımı, yönlendirme levhaları ve kaçış akışının güncel olmaması.",
+    category: "Acil Durum",
+    o: 3,
+    f: 3,
+    s: 40,
+    controls: ["Tahliye gecikmesi, panik, yaralanma", "Acil durum planı, tatbikat ve levha kontrolleri düzenli yapılmalı"],
+  },
+  {
+    hazard: "Düzensiz Çalışma Alanı",
+    risk: "Günlük housekeeping disiplininin zayıf olması nedeniyle geçiş yollarının ve çalışma alanlarının dağınık kalması.",
+    category: "Housekeeping",
+    o: 6,
+    f: 6,
+    s: 7,
+    controls: ["Takılma, düşme, ekipman hasarı", "5S denetimi, vardiya sonu kontrol listesi ve alan sorumluluğu tanımlanmalı"],
+  },
+  {
+    hazard: "Yetkisiz Müdahale",
+    risk: "Bakım, elektrik veya proses ekipmanlarına yetkisiz personelin müdahale etmesi.",
+    category: "Yetkilendirme",
+    o: 3,
+    f: 3,
+    s: 40,
+    controls: ["Elektrik çarpması, proses duruşu, yaralanma", "Yetkilendirme matrisi, LOTO ve izinli çalışma sistemi uygulanmalı"],
+  },
+];
+
 export default function RiskAssessmentEditor() {
   const { user } = useAuth();
   const riskPhotoInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
@@ -133,6 +235,21 @@ export default function RiskAssessmentEditor() {
   const [aiCategoryFilter, setAiCategoryFilter] = useState<string>("all");
   const [photoUploadingItemId, setPhotoUploadingItemId] = useState<string | null>(null);
   const [previewPhotoUrl, setPreviewPhotoUrl] = useState<string | null>(null);
+  const normalizedAiSector = useMemo(() => normalizeSectorKey(aiSector), [aiSector]);
+  const selectedSectorOption = useMemo(
+    () => RISK_SECTORS.find((sector) => sector.id === normalizedAiSector || sector.name.toLowerCase() === aiSector.toLowerCase()),
+    [aiSector, normalizedAiSector]
+  );
+  const selectedSectorMeta = useMemo(
+    () =>
+      selectedSectorOption
+        ? SECTOR_UI_META[selectedSectorOption.id] ?? {
+            accent: "from-slate-500/20 to-slate-700/10",
+            hint: "Sektöre özel risk paketi ve önerilen önlemler",
+          }
+        : null,
+    [selectedSectorOption]
+  );
 
 
   interface AIRiskPanelProps {
@@ -439,6 +556,15 @@ useLayoutEffect(() => {
         description: errorDescription,
         duration: 8000
       });
+
+      const fallbackRisks = generateMockRisksForSector(sector);
+      setAiRisks(fallbackRisks);
+      setShowAiDialog(true);
+
+      toast.info("Hazır risk paketi gösterildi", {
+        description: "AI servisi yanıt veremediği için sektör bazlı yerleşik risk seti açıldı.",
+        duration: 5000
+      });
     } finally {
       setAiGenerating(false);
     }
@@ -602,11 +728,267 @@ useLayoutEffect(() => {
           o: 6, f: 10, s: 3,
           controls: ["Gıda zehirlenmesi, hastalık yayılması", "El yıkama, sterilizasyon, HACCP uygulaması"]
         }
+      ],
+      'metal': [
+        {
+          hazard: "Taşlama ve Çapak Sıçraması",
+          risk: "Metal işleme alanında koruyucusuz taşlama yapılması ve sıcak çapakların yayılması.",
+          category: "Mekanik",
+          o: 6, f: 6, s: 15,
+          controls: ["Göz yaralanmaları, yanık, yüz travmaları", "Yüz siperi, gözlük ve kıvılcım perdesi kullanılmalı"]
+        },
+        {
+          hazard: "Kaynak Dumanı",
+          risk: "Kaynak yapılan alanlarda yetersiz havalandırma nedeniyle duman ve gaz maruziyeti oluşması.",
+          category: "Kimyasal/Fiziksel",
+          o: 6, f: 10, s: 7,
+          controls: ["Solunum yolu irritasyonu, kronik maruziyet", "Lokal emiş sistemi, maske ve alan havalandırması"]
+        }
+      ],
+      'tekstil': [
+        {
+          hazard: "Hareketli Makine Aksamı",
+          risk: "Dikiş ve dokuma makinelerinde koruyucusuz kayış, kasnak ve iğne bölgelerine temas.",
+          category: "Makine",
+          o: 6, f: 6, s: 7,
+          controls: ["El-parmak yaralanmaları, sıkışma", "Makine koruyucuları ve LOTO prosedürü uygulanmalı"]
+        },
+        {
+          hazard: "Pamuk ve Elyaf Tozu",
+          risk: "Üretim hattında biriken elyaf tozunun solunması ve havada asılı kalması.",
+          category: "Toz Maruziyeti",
+          o: 10, f: 6, s: 7,
+          controls: ["Solunum yolu irritasyonu, astım", "Toz emiş sistemi ve düzenli temizlik planı uygulanmalı"]
+        }
+      ],
+      'kimya': [
+        {
+          hazard: "Kimyasal Sıçrama",
+          risk: "Transfer ve dolum sırasında kimyasalların çalışan cildine ve gözüne temas etmesi.",
+          category: "Kimyasal",
+          o: 6, f: 6, s: 15,
+          controls: ["Yanık, tahriş, görme kaybı", "Siperlik, kimyasal göz duşu ve uygun eldiven kullanılmalı"]
+        },
+        {
+          hazard: "Reaktif Maddenin Karışması",
+          risk: "Uygunsuz depolama nedeniyle birbirine uyumsuz kimyasalların yan yana bulundurulması.",
+          category: "Proses Güvenliği",
+          o: 3, f: 3, s: 40,
+          controls: ["Yangın, patlama, toksik gaz çıkışı", "Kimyasal uyumluluk matrisi ve ayrı depolama uygulanmalı"]
+        }
+      ],
+      'lojistik': [
+        {
+          hazard: "Yüksek İstif",
+          risk: "Depo raflarında dengesiz veya kapasite üstü istifleme yapılması.",
+          category: "İstifleme",
+          o: 6, f: 6, s: 15,
+          controls: ["Malzeme düşmesi, ezilme", "Raf etiketleri, yük limitleri ve periyodik kontrol uygulanmalı"]
+        },
+        {
+          hazard: "Sevkiyat Alanı Trafiği",
+          risk: "Yaya yolları ile araç yollarının ayrışmaması nedeniyle çarpışma riski oluşması.",
+          category: "Araç Güvenliği",
+          o: 6, f: 10, s: 15,
+          controls: ["Çarpışma, ezilme, ölüm", "Yaya bariyerleri, hız limiti ve saha yönlendirmesi yapılmalı"]
+        }
+      ],
+      'saglik': [
+        {
+          hazard: "Kesici-Delici Alet Yaralanması",
+          risk: "Enjektör ve bistüri gibi aletlerin uygunsuz toplanması nedeniyle yaralanma oluşması.",
+          category: "Biyolojik",
+          o: 6, f: 6, s: 15,
+          controls: ["Enfeksiyon, kan yoluyla bulaş", "Kesici-delici kutuları ve eğitim uygulanmalı"]
+        },
+        {
+          hazard: "Hasta Transferi",
+          risk: "Yetersiz ekipmanla hasta kaldırma ve taşıma yapılması.",
+          category: "Ergonomi",
+          o: 10, f: 6, s: 7,
+          controls: ["Bel-boyun yaralanmaları", "Transfer ekipmanları ve iki kişi kuralı uygulanmalı"]
+        }
+      ],
+      'ofis': [
+        {
+          hazard: "Uzun Süre Ekranlı Çalışma",
+          risk: "Monitör, sandalye ve masa düzeninin ergonomik olmaması.",
+          category: "Ergonomi",
+          o: 10, f: 10, s: 3,
+          controls: ["Boyun-sırt ağrısı, göz yorgunluğu", "Ergonomik ekipman ve mola planı uygulanmalı"]
+        },
+        {
+          hazard: "Elektrik Priz Yüklemesi",
+          risk: "Çoklu prizlere yüksek yük bağlanması ve kablo karmaşası oluşması.",
+          category: "Elektrik",
+          o: 3, f: 3, s: 15,
+          controls: ["Yangın, elektrik çarpması", "Yetkili tesisat kontrolü ve kablo düzeni sağlanmalı"]
+        }
+      ],
+      'tarim': [
+        {
+          hazard: "Tarım Makinesi Kullanımı",
+          risk: "Koruyucusuz PTO ve döner ekipmanlarla çalışılması.",
+          category: "Makine",
+          o: 6, f: 6, s: 40,
+          controls: ["Uzuv kaptırma, ezilme", "Koruyucu muhafaza ve yetkili operatör uygulaması"]
+        },
+        {
+          hazard: "Pestisit Uygulaması",
+          risk: "İlaçlama sırasında uygun maske ve kıyafet olmadan çalışma yapılması.",
+          category: "Kimyasal",
+          o: 6, f: 6, s: 15,
+          controls: ["Zehirlenme, cilt ve solunum maruziyeti", "Kimyasal KKD ve rüzgar yönü kontrolü uygulanmalı"]
+        }
+      ],
+      'turizm': [
+        {
+          hazard: "Mutfak Sıcak Yüzeyleri",
+          risk: "Yoğun mutfak akışında kızgın yağ ve sıcak ekipmana temas edilmesi.",
+          category: "Yanık",
+          o: 6, f: 6, s: 15,
+          controls: ["Yanık ve haşlanma", "Isıya dayanıklı eldiven ve servis akış planı uygulanmalı"]
+        },
+        {
+          hazard: "Islak Zemin",
+          risk: "Otel ve restoran alanlarında hızlı temizlik sonrası zeminin kaygan kalması.",
+          category: "Kayma/Düşme",
+          o: 10, f: 6, s: 7,
+          controls: ["Kayma, düşme ve kırık", "Uyarı levhası ve hızlı kurutma prosedürü uygulanmalı"]
+        }
+      ],
+      'perakende': [
+        {
+          hazard: "Raflardan Ürün Düşmesi",
+          risk: "Aşırı yükleme ve uygunsuz raf düzeni nedeniyle ürünlerin düşmesi.",
+          category: "İstifleme",
+          o: 6, f: 6, s: 7,
+          controls: ["Baş ve omuz yaralanmaları", "Raf limitleri ve güvenli yerleşim uygulanmalı"]
+        },
+        {
+          hazard: "Kasa Alanı Ergonomisi",
+          risk: "Tekrarlı hareket ve ayakta uzun süre çalışma nedeniyle kas-iskelet zorlanması.",
+          category: "Ergonomi",
+          o: 10, f: 10, s: 3,
+          controls: ["Boyun, bilek ve bel ağrıları", "Mola planı ve ergonomik çalışma düzeni oluşturulmalı"]
+        }
+      ],
+      'ahsap': [
+        {
+          hazard: "Ahşap Tozu",
+          risk: "Kesim ve zımpara işlemleri sırasında yoğun ahşap tozuna maruz kalınması.",
+          category: "Toz Maruziyeti",
+          o: 10, f: 6, s: 7,
+          controls: ["Solunum yolu hastalıkları, yangın yükü", "Toz emiş sistemi ve FFP2 maske uygulanmalı"]
+        },
+        {
+          hazard: "Dairesel Testere",
+          risk: "Geri tepme ve koruyucu devre dışı kullanım nedeniyle ciddi yaralanma riski oluşması.",
+          category: "Makine",
+          o: 3, f: 6, s: 40,
+          controls: ["Kesilme, uzuv kaybı", "Testere koruyucusu ve itme aparatları kullanılmalı"]
+        }
+      ],
+      'plastik': [
+        {
+          hazard: "Enjeksiyon Kalıp Değişimi",
+          risk: "Kalıp sökme-takma sırasında sıkışma ve sıcak yüzeye temas oluşması.",
+          category: "Makine",
+          o: 6, f: 6, s: 15,
+          controls: ["Ezilme, yanık", "LOTO ve kalıp değişim prosedürü uygulanmalı"]
+        },
+        {
+          hazard: "Granül Dökülmesi",
+          risk: "Hammadde granüllerinin zemine dökülmesiyle kayganlık ve düşme riski oluşması.",
+          category: "Kayma/Düşme",
+          o: 10, f: 6, s: 7,
+          controls: ["Kayma ve düşme", "Düzenli süpürme ve alan bariyeri uygulanmalı"]
+        }
+      ],
+      'laboratuvar': [
+        {
+          hazard: "Cam Malzeme Kırılması",
+          risk: "Numune işlemleri sırasında cam kapların kırılması ve kesik oluşması.",
+          category: "Kesici/Delici",
+          o: 6, f: 3, s: 7,
+          controls: ["Kesik ve kontaminasyon", "Dayanıklı ekipman ve kırık cam kutusu kullanılmalı"]
+        },
+        {
+          hazard: "Biyolojik Numune Maruziyeti",
+          risk: "Numune açma ve aktarma sırasında aerosole maruz kalınması.",
+          category: "Biyolojik",
+          o: 3, f: 3, s: 40,
+          controls: ["Enfeksiyon, kontaminasyon", "Biyogüvenlik kabini ve uygun KKD kullanılmalı"]
+        }
+      ],
+      'atik': [
+        {
+          hazard: "Kesici Atık Teması",
+          risk: "Ayrıştırma hattında kesici atıkların uygunsuz ayrılması nedeniyle yaralanma oluşması.",
+          category: "Atık Yönetimi",
+          o: 6, f: 6, s: 15,
+          controls: ["Kesik, enfeksiyon", "Kalın eldiven ve kaynakta doğru ayrıştırma uygulanmalı"]
+        },
+        {
+          hazard: "Biyolojik Atık Sızıntısı",
+          risk: "Sızdıran atık torbaları nedeniyle biyolojik maruziyet oluşması.",
+          category: "Biyolojik",
+          o: 3, f: 3, s: 40,
+          controls: ["Enfeksiyon, kötü koku, yayılım", "Sızdırmaz kap ve taşıma prosedürü uygulanmalı"]
+        }
+      ],
+      'guvenlik': [
+        {
+          hazard: "Gece Devriyesi",
+          risk: "Yetersiz aydınlatma ve tek başına devriye nedeniyle saldırı veya düşme riski oluşması.",
+          category: "Operasyon",
+          o: 6, f: 3, s: 15,
+          controls: ["Yaralanma, travma", "Panik butonu, iletişim cihazı ve aydınlatma kontrolü uygulanmalı"]
+        },
+        {
+          hazard: "Fiziksel Müdahale",
+          risk: "Çatışmalı durumlarda eğitimsiz fiziksel müdahale yapılması.",
+          category: "Davranışsal",
+          o: 3, f: 3, s: 40,
+          controls: ["Darp, ciddi yaralanma", "Müdahale eğitimi ve destek prosedürü uygulanmalı"]
+        }
+      ],
+      'temizlik': [
+        {
+          hazard: "Kimyasal Karışım",
+          risk: "Farklı temizlik kimyasallarının birbirine karıştırılması sonucu toksik gaz çıkması.",
+          category: "Kimyasal",
+          o: 3, f: 3, s: 40,
+          controls: ["Zehirlenme, solunum yolu hasarı", "Etiketleme, eğitim ve ayrı kimyasal depolama uygulanmalı"]
+        },
+        {
+          hazard: "Islak Yüzeyde Çalışma",
+          risk: "Temizlik sonrası zeminde uyarı işareti olmadan çalışma sürmesi.",
+          category: "Kayma/Düşme",
+          o: 10, f: 10, s: 7,
+          controls: ["Düşme, kırık, burkulma", "Islak zemin levhası ve çalışma alanı izolasyonu uygulanmalı"]
+        }
+      ],
+      'cagri merkezi': [
+        {
+          hazard: "Uzun Süre Headset Kullanımı",
+          risk: "Yüksek ses ve sürekli çağrı nedeniyle işitme ve stres yükü oluşması.",
+          category: "Ergonomi/Psikososyal",
+          o: 10, f: 10, s: 3,
+          controls: ["Baş ağrısı, işitme yorgunluğu, stres", "Ses limiti, mola planı ve kaliteli headset sağlanmalı"]
+        },
+        {
+          hazard: "Psikososyal Yük",
+          risk: "Yoğun çağrı, performans baskısı ve vardiyalı çalışma nedeniyle tükenmişlik gelişmesi.",
+          category: "Psikososyal",
+          o: 10, f: 6, s: 7,
+          controls: ["Stres, tükenmişlik, hata artışı", "Mola planı, vardiya dengelemesi ve destek hattı uygulanmalı"]
+        }
       ]
     };
 
-    // Sektörü bul veya genel riskler kullan
-    const risks = templates[sectorLower] || templates['otomotiv'];
+    const normalizedSector = normalizeSectorKey(sectorLower);
+    const risks = [...(templates[normalizedSector] || templates['otomotiv']), ...COMMON_TEMPLATE_RISKS];
 
     return risks.map((r, idx) => {
       const score = r.o * r.f * r.s;
@@ -1166,40 +1548,56 @@ useLayoutEffect(() => {
             <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Sektör</Label>
             <Select value={aiSector} onValueChange={setAiSector}>
               <SelectTrigger className="h-12 rounded-2xl border-cyan-400/20 bg-gradient-to-r from-slate-950/90 via-slate-900 to-slate-950/90 text-slate-100 shadow-[0_12px_28px_rgba(15,23,42,0.28)]">
-                <SelectValue placeholder="Sektör seçiniz..." />
+                {selectedSectorOption && selectedSectorMeta ? (
+                  <div className="flex min-w-0 items-center gap-3 pr-6">
+                    <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-gradient-to-br ${selectedSectorMeta.accent}`}>
+                      <span aria-hidden="true">{selectedSectorOption.icon}</span>
+                    </div>
+                    <div className="min-w-0 text-left">
+                      <div className="flex items-center gap-2">
+                        <span className="truncate text-sm font-semibold text-slate-100">{selectedSectorOption.name}</span>
+                        <Badge variant="outline" className="border-cyan-400/20 bg-cyan-500/10 px-2 py-0 text-[10px] text-cyan-200">
+                          Aktif sektör
+                        </Badge>
+                      </div>
+                      <p className="truncate text-[11px] text-slate-400">{selectedSectorMeta.hint}</p>
+                    </div>
+                  </div>
+                ) : (
+                  <SelectValue placeholder="Sektör seçiniz..." />
+                )}
               </SelectTrigger>
               <SelectContent
                 position="popper"
                 onCloseAutoFocus={(e) => e.preventDefault()}
                 className="border border-cyan-400/15 bg-slate-950/95 text-slate-100 backdrop-blur-xl"
               >
-                {[
-                  { label: "Metal", value: "metal", accent: "from-sky-500/20 to-cyan-500/10", hint: "Kesme, pres ve kaynak riskleri" },
-                  { label: "İnşaat", value: "inşaat", accent: "from-amber-500/20 to-orange-500/10", hint: "Yüksekte çalışma ve saha riskleri" },
-                  { label: "Gıda", value: "gıda", accent: "from-emerald-500/20 to-lime-500/10", hint: "Hijyen ve üretim akışı riskleri" },
-                  { label: "Lojistik", value: "lojistik", accent: "from-indigo-500/20 to-violet-500/10", hint: "Yükleme, istifleme ve sevkiyat riskleri" },
-                  { label: "Kimya", value: "kimya", accent: "from-pink-500/20 to-fuchsia-500/10", hint: "Maruziyet ve reaksiyon riskleri" },
-                  { label: "Ofis", value: "ofis", accent: "from-slate-400/20 to-slate-500/10", hint: "Ergonomi ve ekranlı araç riskleri" },
-                  { label: "Sağlık", value: "sağlık", accent: "from-red-500/20 to-rose-500/10", hint: "Biyolojik ve operasyonel riskler" },
-                  { label: "Enerji", value: "enerji", accent: "from-yellow-500/20 to-amber-500/10", hint: "Elektrik ve saha operasyon riskleri" },
-                ].map((sector) => (
+                {RISK_SECTORS.map((sector) => {
+                  const meta = SECTOR_UI_META[sector.id] ?? {
+                    accent: "from-slate-500/20 to-slate-700/10",
+                    hint: "Sektöre özel risk paketi ve önerilen önlemler",
+                  };
+
+                  return (
                   <SelectItem
-                    key={sector.value}
-                    value={sector.value}
+                    key={sector.id}
+                    value={sector.name.toLowerCase()}
                     className="rounded-xl px-3 py-3 text-slate-100 focus:bg-white/[0.08] focus:text-white"
                   >
                     <div className="flex min-w-[220px] max-w-full items-center gap-3">
-                      <div className={`h-9 w-9 rounded-xl border border-white/10 bg-gradient-to-br ${sector.accent}`} />
+                      <div className={`flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-gradient-to-br ${meta.accent} text-base`}>
+                        <span aria-hidden="true">{sector.icon}</span>
+                      </div>
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm font-semibold text-slate-100">{sector.label}</p>
-                        <p className="text-xs text-slate-400">{sector.hint}</p>
+                        <p className="text-sm font-semibold text-slate-100">{sector.name}</p>
+                        <p className="text-xs text-slate-400">{meta.hint}</p>
                       </div>
                       <Badge variant="outline" className="border-white/10 bg-white/[0.04] text-[10px] text-cyan-200">
                         Hazır Paket
                       </Badge>
                     </div>
                   </SelectItem>
-                ))}
+                )})}
               </SelectContent>
             </Select>
           </div>
@@ -1208,9 +1606,13 @@ useLayoutEffect(() => {
             <div className="flex items-start gap-2">
               <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-fuchsia-300" />
               <div>
-                <p className="font-semibold text-slate-100">Akıllı üretim notu</p>
+                <p className="font-semibold text-slate-100">
+                  {selectedSectorOption ? `${selectedSectorOption.name} için akıllı üretim notu` : "Akıllı üretim notu"}
+                </p>
                 <p className="mt-1 leading-5">
-                  Oluşturulan riskler sektöre göre kategori, olasılık, frekans, şiddet ve önerilen önlemlerle birlikte gelir. Seçtiğiniz maddeleri tabloya tek seferde ekleyebilirsiniz.
+                  {selectedSectorOption
+                    ? `${selectedSectorOption.name} sektörüne özel risk havuzu; kategori, olasılık, frekans, şiddet ve önerilen önlemlerle birlikte hazırlanır. Yapay zeka yanıt vermezse bile yerleşik sektör paketiyle üretim devam eder.`
+                    : "Oluşturulan riskler sektöre göre kategori, olasılık, frekans, şiddet ve önerilen önlemlerle birlikte gelir. Seçtiğiniz maddeleri tabloya tek seferde ekleyebilirsiniz."}
                 </p>
               </div>
             </div>

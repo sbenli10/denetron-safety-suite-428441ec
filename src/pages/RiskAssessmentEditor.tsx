@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useLayoutEffect,useMemo} from "react";
+﻿import { useState, useEffect, useCallback, useRef, useLayoutEffect,useMemo} from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { debounce } from "lodash";
 import { supabase } from "@/integrations/supabase/client";
@@ -87,6 +87,7 @@ let scrollLock = 0;
 
 export default function RiskAssessmentEditor() {
   const { user } = useAuth();
+  const riskPhotoInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   // E-posta modal için state'ler
   const [sendModalOpen, setSendModalOpen] = useState(false);
   const [currentReportUrl, setCurrentReportUrl] = useState("");
@@ -112,7 +113,7 @@ export default function RiskAssessmentEditor() {
   } | null>(null);
   const [editValue, setEditValue] = useState<any>("");
 
-  // ✅ YENİ: AI Risk Generator
+  // YENİ: AI Risk Generator
   const [aiSector, setAiSector] = useState("");
   const [aiGenerating, setAiGenerating] = useState(false);
   const [aiRisks, setAiRisks] = useState<Array<{
@@ -129,6 +130,9 @@ export default function RiskAssessmentEditor() {
     selected: boolean;
   }>>([]);
   const [showAiDialog, setShowAiDialog] = useState(false);
+  const [aiCategoryFilter, setAiCategoryFilter] = useState<string>("all");
+  const [photoUploadingItemId, setPhotoUploadingItemId] = useState<string | null>(null);
+  const [previewPhotoUrl, setPreviewPhotoUrl] = useState<string | null>(null);
 
 
   interface AIRiskPanelProps {
@@ -137,7 +141,7 @@ export default function RiskAssessmentEditor() {
     onGenerate: (sector: string) => void;
   }
 
-// ✅ TAM BURAYA EKLE:
+// TAM BURAYA EKLE:
   useLayoutEffect(() => {
     const container = tableContainerRef.current;
     if (!container) return;
@@ -178,7 +182,7 @@ useEffect(() => {
 
   // Bileşen gövdesine ekle
 useEffect(() => {
-  console.log("🔄 RiskAssessmentEditor Render Oldu!");
+  console.log("RiskAssessmentEditor render oldu!");
 });
 
 useLayoutEffect(() => {
@@ -188,7 +192,7 @@ useLayoutEffect(() => {
   const handleScrollLog = () => {
     // Sadece scroll 0 olduğunda log bas ki konsol dolmasın
     if (container.scrollLeft === 0) {
-      console.warn("⚠️ Scroll SIFIRLANDI! (Kim tetikledi?)", {
+      console.warn("Scroll sıfırlandı. Tetikleyen olayı kontrol edin.", {
         activeElement: document.activeElement?.tagName, // O an hangi input/buton seçili?
         activeElementClass: document.activeElement?.className,
         reason: "Büyük ihtimalle bir Focus veya Render olayı"
@@ -261,7 +265,7 @@ useLayoutEffect(() => {
 
   const fetchCompanies = async () => {
     try {
-      console.log("📊 Fetching companies...");
+      console.log("Fetching companies...");
       
       const { data, error } = await supabase
         .from("companies")
@@ -271,10 +275,10 @@ useLayoutEffect(() => {
 
       if (error) throw error;
 
-      console.log(`✅ Fetched ${data?.length || 0} companies`);
+      console.log(`Fetched ${data?.length || 0} companies`);
       setCompanies(data || []);
     } catch (error: any) {
-      console.error("❌ Fetch companies error:", error);
+      console.error("Fetch companies error:", error);
       toast.error("Firmalar yüklenemedi", {
         description: error.message
       });
@@ -283,7 +287,7 @@ useLayoutEffect(() => {
 
   const fetchLibrary = async () => {
     try {
-      console.log("📚 Fetching risk library...");
+      console.log("Fetching risk library...");
       
       const { data, error } = await supabase
         .from("risk_library")
@@ -293,10 +297,10 @@ useLayoutEffect(() => {
 
       if (error) throw error;
 
-      console.log(`✅ Fetched ${data?.length || 0} library items`);
+      console.log(`Fetched ${data?.length || 0} library items`);
       setLibrary(data || []);
       
-      // ✅ Risk Paketlerini Oluştur (Sektörlere Göre Grupla)
+      // Risk Paketlerini Oluştur (Sektörlere Göre Grupla)
       const packages = SECTORS.map(sector => {
         const items = (data || []).filter(item => 
           item.sector.toLowerCase().includes(sector.toLowerCase())
@@ -314,7 +318,7 @@ useLayoutEffect(() => {
       setRiskPackages(packages);
       
     } catch (error: any) {
-      console.error("❌ Fetch library error:", error);
+      console.error("Fetch library error:", error);
       toast.error("Risk kütüphanesi yüklenemedi", {
         description: error.message
       });
@@ -323,7 +327,7 @@ useLayoutEffect(() => {
 
   const fetchRiskItems = async (assessmentId: string) => {
     try {
-      console.log("📋 Fetching risk items for assessment:", assessmentId);
+      console.log("Fetching risk items for assessment:", assessmentId);
       
       const { data, error } = await supabase
         .from("risk_items")
@@ -344,11 +348,11 @@ useLayoutEffect(() => {
         risk_class_1: item.risk_class_1 ?? item.risk_class ?? "Kabul Edilebilir"
       })) as RiskItem[];
 
-      console.log(`✅ Fetched ${mappedData.length} risk items`);
+      console.log(`Fetched ${mappedData.length} risk items`);
       setRiskItems(mappedData);
       
     } catch (error: any) {
-      console.error("❌ Fetch risk items error:", error);
+      console.error("Fetch risk items error:", error);
       toast.error("Risk maddeleri yüklenemedi");
     }
   };
@@ -359,21 +363,21 @@ useLayoutEffect(() => {
   // ========================
 
     const generateAIRisks = async (sector: string) => {
-    // ✅ Artık parametre olarak geliyor
+    // Artık parametre olarak geliyor
     if (!sector || sector.trim().length < 2) {
-      toast.error("❌ Lütfen geçerli bir sektör girin");
+      toast.error("Lütfen geçerli bir sektör girin");
       return;
     }
 
     if (!assessment) {
-      toast.error("❌ Önce bir değerlendirme oluşturun");
+      toast.error("Önce bir değerlendirme oluşturun");
       return;
     }
 
     setAiGenerating(true);
     setAiSector(sector); // State'e kaydet
     
-    toast.info("🤖 Google Gemini ile risk analizi başlatılıyor...", {
+    toast.info("Google Gemini ile risk analizi başlatılıyor...", {
       description: `${sector} sektörü analiz ediliyor`,
       duration: 3000
     });
@@ -381,7 +385,7 @@ useLayoutEffect(() => {
     try {
       const company = companies.find(c => c.id === assessment.company_id);
 
-      // ✅ Gerçek Gemini API çağrısı
+      // Gerçek Gemini API çağrısı
       const geminiRisks = await generateRisksWithGemini(
         sector,
         company?.name
@@ -410,12 +414,12 @@ useLayoutEffect(() => {
       setAiRisks(mappedRisks);
       setShowAiDialog(true);
 
-      toast.success(`✅ ${mappedRisks.length} risk maddesi oluşturuldu`, {
+      toast.success(`${mappedRisks.length} risk maddesi oluşturuldu`, {
         description: `Google Gemini ${import.meta.env.VITE_GOOGLE_MODEL} ile analiz edildi`,
         duration: 5000
       });
     } catch (error: any) {
-      console.error("❌ Gemini generation error:", error);
+      console.error("Gemini generation error:", error);
       
       let errorMessage = "Yapay zeka analizi başarısız";
       let errorDescription = error.message || "Bilinmeyen hata";
@@ -490,7 +494,7 @@ useLayoutEffect(() => {
           controls: ["Ayak ezilmesi, göz kayıtı, kafa travması", "KKE kullanımı zorunlu, eğitim ve denetim"]
         },
         {
-          hazard: "Arizali Alet Kullanımı",
+          hazard: "Arızalı Alet Kullanımı",
           risk: "Çekiç saplarının gevşek, anahtar ağızlarının bozuk olması.",
           category: "El Aletleri",
           o: 3, f: 6, s: 7,
@@ -626,19 +630,19 @@ useLayoutEffect(() => {
 
   const addSelectedAIRisks = async () => {
     if (!assessment) {
-        toast.error("❌ Önce bir değerlendirme oluşturun");
+        toast.error("Önce bir değerlendirme oluşturun");
         return;
     }
 
     const selectedRisks = aiRisks.filter(r => r.selected);
 
     if (selectedRisks.length === 0) {
-        toast.error("❌ Lütfen en az bir risk seçin");
+        toast.error("Lütfen en az bir risk seçin");
         return;
     }
 
     setLoading(true);
-    toast.info(`📤 ${selectedRisks.length} risk tabloya ekleniyor...`);
+    toast.info(`${selectedRisks.length} risk tabloya ekleniyor...`);
 
     try {
         const newItems: Partial<RiskItem>[] = selectedRisks.map((r, idx) => ({
@@ -666,13 +670,13 @@ useLayoutEffect(() => {
 
         const { data, error } = await supabase
         .from("risk_items")
-        .insert(newItems as any) // ✅ as any to bypass partial type check
+        .insert(newItems as any) // as any to bypass partial type check
         .select();
 
         if (error) throw error;
 
         if (data && data.length > 0) {
-        // ✅ Map Supabase response to RiskItem type
+        // Map Supabase response to RiskItem type
         const mappedItems: RiskItem[] = data.map((item: any) => ({
             ...item,
             // Ensure all required fields exist
@@ -693,13 +697,13 @@ useLayoutEffect(() => {
         setAiRisks([]);
         setAiSector("");
 
-        toast.success(`✅ ${mappedItems.length} risk başarıyla eklendi`, {
+        toast.success(`${mappedItems.length} risk başarıyla eklendi`, {
             description: "AI tarafından oluşturulan riskler tabloda",
             duration: 5000
         });
         }
     } catch (error: any) {
-        console.error("❌ Add AI risks error:", error);
+        console.error("Add AI risks error:", error);
         toast.error("Ekleme hatası", {
         description: error.message
         });
@@ -730,7 +734,7 @@ useLayoutEffect(() => {
     if (!document.fullscreenElement) {
       document.documentElement.requestFullscreen().then(() => {
         setIsFullScreen(true);
-        toast.success("🖥️ Tam ekran modu aktif", {
+        toast.success("Tam ekran modu aktif", {
           description: "F11 veya ESC ile çıkabilirsiniz"
         });
       }).catch((err) => {
@@ -741,7 +745,7 @@ useLayoutEffect(() => {
       if (document.exitFullscreen) {
         document.exitFullscreen().then(() => {
           setIsFullScreen(false);
-          toast.info("🖥️ Tam ekran kapatıldı");
+          toast.info("Tam ekran kapatıldı");
         });
       }
     }
@@ -763,12 +767,12 @@ useLayoutEffect(() => {
 
   const createAssessment = async () => {
     if (!selectedCompany) {
-      toast.error("❌ Lütfen firma seçin");
+      toast.error("Lütfen firma seçin");
       return;
     }
 
     setLoading(true);
-    toast.info("📝 Yeni değerlendirme oluşturuluyor...");
+    toast.info("Yeni değerlendirme oluşturuluyor...");
 
     try {
       const company = companies.find(c => c.id === selectedCompany);
@@ -790,17 +794,17 @@ useLayoutEffect(() => {
       if (error) throw error;
 
       if (data) {
-        console.log("✅ Assessment created:", data.id);
+        console.log("Assessment created:", data.id);
         setAssessment(data as RiskAssessment);
         setRiskItems([]);
         
-        toast.success("✅ Yeni değerlendirme oluşturuldu", {
+        toast.success("Yeni değerlendirme oluşturuldu", {
           description: `Form No: ${data.id.substring(0, 8).toUpperCase()}`,
           duration: 5000
         });
       }
     } catch (error: any) {
-      console.error("❌ Create assessment error:", error);
+      console.error("Create assessment error:", error);
       toast.error("Oluşturma hatası", {
         description: error.message
       });
@@ -815,7 +819,7 @@ useLayoutEffect(() => {
 
   const addFromPackage = async (packageId: string) => {
     if (!assessment) {
-      toast.error("❌ Önce bir değerlendirme oluşturun");
+      toast.error("Önce bir değerlendirme oluşturun");
       return;
     }
 
@@ -823,7 +827,7 @@ useLayoutEffect(() => {
     if (!pkg) return;
 
     setLoading(true);
-    toast.info(`📦 ${pkg.name} paketi ekleniyor... (${pkg.item_count} madde)`);
+    toast.info(`${pkg.name} paketi ekleniyor... (${pkg.item_count} madde)`);
 
     try {
       const newItems: Partial<RiskItem>[] = pkg.items.map((item, idx) => ({
@@ -870,13 +874,13 @@ useLayoutEffect(() => {
 
         setRiskItems(prev => [...prev, ...newItems]);
         
-        toast.success(`✅ ${pkg.name} paketi eklendi`, {
+        toast.success(`${pkg.name} paketi eklendi`, {
         description: `${data.length} risk maddesi tabloya eklendi`,
         duration: 5000
         });
     }
     } catch (error: any) {
-      console.error("❌ Add package error:", error);
+      console.error("Add package error:", error);
       toast.error("Paket ekleme hatası", {
         description: error.message
       });
@@ -887,7 +891,7 @@ useLayoutEffect(() => {
 
   const addEmptyRisk = async () => {
     if (!assessment) {
-      toast.error("❌ Önce bir değerlendirme oluşturun");
+      toast.error("Önce bir değerlendirme oluşturun");
       return;
     }
 
@@ -933,10 +937,10 @@ useLayoutEffect(() => {
         } as RiskItem;
 
         setRiskItems(prev => [...prev, newItem]);
-        toast.success("✅ Boş risk eklendi");
+        toast.success("Boş risk eklendi");
     }
     } catch (error: any) {
-      console.error("❌ Add risk error:", error);
+      console.error("Add risk error:", error);
       toast.error("Ekleme hatası", {
         description: error.message
       });
@@ -947,7 +951,7 @@ useLayoutEffect(() => {
     itemId: string,
     field: keyof RiskItem,
     value: any,
-    stage?: 1 | 2 // ✅ Hangi aşama güncellenecek
+    stage?: 1 | 2 // Hangi aşama güncellenecek
   ) => {
     try {
       const item = riskItems.find(i => i.id === itemId);
@@ -955,7 +959,7 @@ useLayoutEffect(() => {
 
       let updateData: any = { [field]: value };
 
-      // ✅ 1. AŞAMA Fine-Kinney güncellemesi
+      // 1. AŞAMA Fine-Kinney güncellemesi
       if (stage === 1 && (field === 'probability_1' || field === 'frequency_1' || field === 'severity_1')) {
         const newProb = field === 'probability_1' ? value : item.probability_1;
         const newFreq = field === 'frequency_1' ? value : item.frequency_1;
@@ -971,7 +975,7 @@ useLayoutEffect(() => {
         };
       }
 
-      // ✅ 2. AŞAMA Fine-Kinney güncellemesi
+      // 2. AŞAMA Fine-Kinney güncellemesi
       if (stage === 2 && (field === 'probability_2' || field === 'frequency_2' || field === 'severity_2')) {
         const newProb = field === 'probability_2' ? value : (item.probability_2 || 1);
         const newFreq = field === 'frequency_2' ? value : (item.frequency_2 || 1);
@@ -1000,7 +1004,7 @@ useLayoutEffect(() => {
       );
 
     } catch (error: any) {
-      console.error("❌ Update error:", error);
+      console.error("Update error:", error);
       toast.error("Güncelleme hatası", {
         description: error.message
       });
@@ -1019,9 +1023,9 @@ useLayoutEffect(() => {
       if (error) throw error;
 
       setRiskItems(prev => prev.filter(item => item.id !== itemId));
-      toast.success("✅ Risk silindi");
+      toast.success("Risk silindi");
     } catch (error: any) {
-      console.error("❌ Delete error:", error);
+      console.error("Delete error:", error);
       toast.error("Silme hatası", {
         description: error.message
       });
@@ -1049,6 +1053,182 @@ useLayoutEffect(() => {
     setEditValue("");
   };
 
+  const loadImageAsDataUrl = async (url?: string | null) => {
+    if (!url) return null;
+    try {
+      const response = await fetch(url);
+      const blob = await response.blob();
+      return await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+    } catch (error) {
+      console.warn("Logo yüklenemedi:", error);
+      return null;
+    }
+  };
+
+  const uploadRiskItemPhoto = async (itemId: string, file: File) => {
+    if (!user?.id || !assessment?.id) {
+      toast.error("Fotoğraf yüklemek için oturum ve değerlendirme bilgisi gerekli");
+      return;
+    }
+
+    if (!file.type.startsWith("image/")) {
+      toast.error("Lütfen geçerli bir görsel seçin");
+      return;
+    }
+
+    setPhotoUploadingItemId(itemId);
+
+    try {
+      const fileExt = file.name.split(".").pop() || "jpg";
+      const storagePath = `${user.id}/${assessment.id}/${itemId}-${Date.now()}.${fileExt.toLowerCase()}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from("risk-item-photos")
+        .upload(storagePath, file, {
+          cacheControl: "3600",
+          upsert: true,
+        });
+
+      if (uploadError) throw uploadError;
+
+      const { data } = supabase.storage.from("risk-item-photos").getPublicUrl(storagePath);
+      await updateRiskItem(itemId, "photo_url", data.publicUrl);
+      toast.success("Risk maddesi fotoğrafı yüklendi");
+    } catch (error: any) {
+      console.error("Risk photo upload error:", error);
+      toast.error("Fotoğraf yüklenemedi", {
+        description: error.message,
+      });
+    } finally {
+      setPhotoUploadingItemId(null);
+      const input = riskPhotoInputRefs.current[itemId];
+      if (input) input.value = "";
+    }
+  };
+
+  const removeRiskItemPhoto = async (itemId: string, photoUrl?: string | null) => {
+    try {
+      if (photoUrl?.includes("/risk-item-photos/")) {
+        const storagePath = photoUrl.split("/risk-item-photos/")[1];
+        if (storagePath) {
+          await supabase.storage.from("risk-item-photos").remove([storagePath]);
+        }
+      }
+
+      await updateRiskItem(itemId, "photo_url", null);
+      toast.success("Risk maddesi fotoğrafı kaldırıldı");
+    } catch (error: any) {
+      console.error("Risk photo remove error:", error);
+      toast.error("Fotoğraf kaldırılamadı", {
+        description: error.message,
+      });
+    }
+  };
+
+  const AIRiskPanel = ({ isAssessmentActive, aiGenerating, onGenerate }: AIRiskPanelProps) => {
+    return (
+      <Card className="border border-fuchsia-400/20 bg-[radial-gradient(circle_at_top,rgba(168,85,247,0.22),transparent_58%),linear-gradient(180deg,rgba(15,23,42,0.94),rgba(2,6,23,0.98))] shadow-[0_22px_55px_rgba(88,28,135,0.28)]">
+        <CardContent className="space-y-4 p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.24em] text-fuchsia-200/75">AI Risk Asistanı</p>
+              <h3 className="mt-2 text-lg font-bold text-white">Sektöre özel yeni risk üret</h3>
+              <p className="mt-2 text-xs leading-5 text-slate-400">
+                Gemini destekli önerilerle sektörünüze uygun risk maddelerini, önlemleri ve başlangıç skorlarını hazır hale getirin.
+              </p>
+            </div>
+            <Badge className="border border-fuchsia-400/20 bg-fuchsia-500/10 text-fuchsia-100">
+              {aiGenerating ? "Analiz" : "Hazır"}
+            </Badge>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-3">
+              <p className="text-[11px] uppercase tracking-[0.24em] text-slate-500">Model</p>
+              <p className="mt-2 text-sm font-semibold text-slate-100">Gemini 2.5 Flash</p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-3">
+              <p className="text-[11px] uppercase tracking-[0.24em] text-slate-500">Kapsam</p>
+              <p className="mt-2 text-sm font-semibold text-slate-100">Risk + Önlem + Skor</p>
+            </div>
+            <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-3">
+              <p className="text-[11px] uppercase tracking-[0.24em] text-slate-500">Durum</p>
+              <p className="mt-2 text-sm font-semibold text-slate-100">{isAssessmentActive ? "Değerlendirme aktif" : "Önce oturum başlatın"}</p>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Sektör</Label>
+            <Select value={aiSector} onValueChange={setAiSector}>
+              <SelectTrigger className="h-12 rounded-2xl border-cyan-400/20 bg-gradient-to-r from-slate-950/90 via-slate-900 to-slate-950/90 text-slate-100 shadow-[0_12px_28px_rgba(15,23,42,0.28)]">
+                <SelectValue placeholder="Sektör seçiniz..." />
+              </SelectTrigger>
+              <SelectContent
+                position="popper"
+                onCloseAutoFocus={(e) => e.preventDefault()}
+                className="border border-cyan-400/15 bg-slate-950/95 text-slate-100 backdrop-blur-xl"
+              >
+                {[
+                  { label: "Metal", value: "metal", accent: "from-sky-500/20 to-cyan-500/10", hint: "Kesme, pres ve kaynak riskleri" },
+                  { label: "İnşaat", value: "inşaat", accent: "from-amber-500/20 to-orange-500/10", hint: "Yüksekte çalışma ve saha riskleri" },
+                  { label: "Gıda", value: "gıda", accent: "from-emerald-500/20 to-lime-500/10", hint: "Hijyen ve üretim akışı riskleri" },
+                  { label: "Lojistik", value: "lojistik", accent: "from-indigo-500/20 to-violet-500/10", hint: "Yükleme, istifleme ve sevkiyat riskleri" },
+                  { label: "Kimya", value: "kimya", accent: "from-pink-500/20 to-fuchsia-500/10", hint: "Maruziyet ve reaksiyon riskleri" },
+                  { label: "Ofis", value: "ofis", accent: "from-slate-400/20 to-slate-500/10", hint: "Ergonomi ve ekranlı araç riskleri" },
+                  { label: "Sağlık", value: "sağlık", accent: "from-red-500/20 to-rose-500/10", hint: "Biyolojik ve operasyonel riskler" },
+                  { label: "Enerji", value: "enerji", accent: "from-yellow-500/20 to-amber-500/10", hint: "Elektrik ve saha operasyon riskleri" },
+                ].map((sector) => (
+                  <SelectItem
+                    key={sector.value}
+                    value={sector.value}
+                    className="rounded-xl px-3 py-3 text-slate-100 focus:bg-white/[0.08] focus:text-white"
+                  >
+                    <div className="flex min-w-[220px] max-w-full items-center gap-3">
+                      <div className={`h-9 w-9 rounded-xl border border-white/10 bg-gradient-to-br ${sector.accent}`} />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold text-slate-100">{sector.label}</p>
+                        <p className="text-xs text-slate-400">{sector.hint}</p>
+                      </div>
+                      <Badge variant="outline" className="border-white/10 bg-white/[0.04] text-[10px] text-cyan-200">
+                        Hazır Paket
+                      </Badge>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="rounded-2xl border border-fuchsia-400/15 bg-fuchsia-500/5 p-3 text-xs text-slate-300">
+            <div className="flex items-start gap-2">
+              <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-fuchsia-300" />
+              <div>
+                <p className="font-semibold text-slate-100">Akıllı üretim notu</p>
+                <p className="mt-1 leading-5">
+                  Oluşturulan riskler sektöre göre kategori, olasılık, frekans, şiddet ve önerilen önlemlerle birlikte gelir. Seçtiğiniz maddeleri tabloya tek seferde ekleyebilirsiniz.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <Button
+            onClick={() => onGenerate(aiSector)}
+            disabled={!isAssessmentActive || aiGenerating}
+            className="h-11 w-full gap-2 rounded-2xl bg-gradient-to-r from-fuchsia-500 via-violet-500 to-indigo-500 text-white shadow-[0_18px_40px_rgba(168,85,247,0.28)] hover:from-fuchsia-400 hover:via-violet-400 hover:to-indigo-400"
+          >
+            {aiGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+            {aiGenerating ? "AI riskleri üretiyor..." : "AI ile risk üret"}
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  };
+
     // ========================
   // HELP DIALOG COMPONENT
   // ========================
@@ -1056,418 +1236,288 @@ useLayoutEffect(() => {
   const HelpDialog = () => {
     return (
       <Dialog open={showHelp} onOpenChange={setShowHelp}>
-        <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto bg-slate-900 border-slate-700">
+        <DialogContent className="max-w-5xl max-h-[85vh] overflow-y-auto border border-white/10 bg-slate-950/95 shadow-[0_30px_80px_rgba(15,23,42,0.55)] backdrop-blur-xl">
           <DialogHeader>
-            <DialogTitle className="text-2xl font-bold text-slate-100 flex items-center gap-3">
-              <BookOpen className="h-6 w-6 text-indigo-400" />
-              Risk Analiz Tablosu - Kullanım Kılavuzu
+            <DialogTitle className="flex items-center gap-3 text-2xl font-black text-slate-100">
+              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 via-violet-500 to-fuchsia-500 shadow-[0_14px_30px_rgba(99,102,241,0.3)]">
+                <BookOpen className="h-5 w-5 text-white" />
+              </div>
+              Risk Analiz Editörü • Kullanım Kılavuzu
             </DialogTitle>
             <DialogDescription className="text-slate-400">
-              2 Aşamalı Fine-Kinney metoduyla profesyonel risk değerlendirmesi
+              İki aşamalı Fine-Kinney yaklaşımıyla profesyonel risk değerlendirmesi.
             </DialogDescription>
           </DialogHeader>
 
           <Tabs defaultValue="basics" className="mt-4">
-            <TabsList className="grid grid-cols-4 w-full bg-slate-800">
-              <TabsTrigger value="basics" className="data-[state=active]:bg-indigo-600">
-                📋 Temel Bilgiler
-              </TabsTrigger>
-              <TabsTrigger value="scoring" className="data-[state=active]:bg-indigo-600">
-                🎯 Skorlama
-              </TabsTrigger>
-              <TabsTrigger value="shortcuts" className="data-[state=active]:bg-indigo-600">
-                ⌨️ Kısayollar
-              </TabsTrigger>
-              <TabsTrigger value="tips" className="data-[state=active]:bg-indigo-600">
-                💡 İpuçları
-              </TabsTrigger>
+            <TabsList className="grid w-full grid-cols-4 rounded-2xl border border-white/10 bg-white/[0.04] p-1">
+              <TabsTrigger value="basics" className="rounded-xl data-[state=active]:bg-indigo-500 data-[state=active]:text-white">Temel Bilgiler</TabsTrigger>
+              <TabsTrigger value="scoring" className="rounded-xl data-[state=active]:bg-indigo-500 data-[state=active]:text-white">Skorlama</TabsTrigger>
+              <TabsTrigger value="shortcuts" className="rounded-xl data-[state=active]:bg-indigo-500 data-[state=active]:text-white">Kısayollar</TabsTrigger>
+              <TabsTrigger value="tips" className="rounded-xl data-[state=active]:bg-indigo-500 data-[state=active]:text-white">İpuçları</TabsTrigger>
             </TabsList>
 
-            {/* TAB 1: TEMEL BİLGİLER */}
-            <TabsContent value="basics" className="space-y-4 mt-4">
-              <Card className="bg-slate-800/50 border-slate-700">
-                <CardContent className="p-4 space-y-3">
-                  <h3 className="text-lg font-semibold text-slate-100 flex items-center gap-2">
-                    <MousePointer className="h-5 w-5 text-indigo-400" />
-                    1. Başlangıç
-                  </h3>
-                  <ul className="space-y-2 text-sm text-slate-300">
-                    <li className="flex items-start gap-2">
-                      <Badge className="bg-indigo-600 shrink-0">1</Badge>
-                      <span>Üst menüden <strong>firma seçin</strong> ve "Yeni Değerlendirme Başlat" butonuna tıklayın</span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <Badge className="bg-indigo-600 shrink-0">2</Badge>
-                      <span><strong>Sol panel</strong>den sektörünüze uygun risk paketini seçin (örn: Metal, İnşaat)</span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <Badge className="bg-indigo-600 shrink-0">3</Badge>
-                      <span>Risk paketi yanındaki <strong>+ butonuna</strong> tıklayarak tüm riskleri tabloya ekleyin</span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <Badge className="bg-indigo-600 shrink-0">4</Badge>
-                      <span>Veya <strong>"Manuel Risk Ekle"</strong> butonu ile boş satır ekleyip kendiniz doldurun</span>
-                    </li>
-                  </ul>
-                </CardContent>
-              </Card>
+            <TabsContent value="basics" className="mt-4 space-y-4">
+              <Card className="border border-white/10 bg-white/[0.04]"><CardContent className="space-y-3 p-4">
+                <h3 className="flex items-center gap-2 text-lg font-semibold text-slate-100"><MousePointer className="h-5 w-5 text-indigo-400" />1. Başlangıç</h3>
+                <ul className="space-y-2 text-sm text-slate-300">
+                  <li className="flex items-start gap-2"><Badge className="shrink-0 bg-indigo-600">1</Badge><span>Üst bölümden <strong>firma seçin</strong> ve <strong>Yeni Değerlendirme Başlat</strong> ile oturumu açın.</span></li>
+                  <li className="flex items-start gap-2"><Badge className="shrink-0 bg-indigo-600">2</Badge><span><strong>Sol panelden</strong> sektörünüze uygun risk paketini seçin veya AI ile yeni risk üretin.</span></li>
+                  <li className="flex items-start gap-2"><Badge className="shrink-0 bg-indigo-600">3</Badge><span>Paket yanındaki <strong>+</strong> butonuyla tüm maddeleri tabloya ekleyin.</span></li>
+                  <li className="flex items-start gap-2"><Badge className="shrink-0 bg-indigo-600">4</Badge><span>İsterseniz <strong>Manuel Risk Ekle</strong> ile boş satır açıp değerlendirmeyi kendiniz ilerletin.</span></li>
+                </ul>
+              </CardContent></Card>
 
-              <Card className="bg-slate-800/50 border-slate-700">
-                <CardContent className="p-4 space-y-3">
-                  <h3 className="text-lg font-semibold text-slate-100">📝 Tabloda Düzenleme</h3>
-                  <ul className="space-y-2 text-sm text-slate-300">
-                    <li className="flex items-start gap-2">
-                      <span className="text-indigo-400">→</span>
-                      <span><strong>Tehlike, Risk, Önlemler</strong> alanlarına <strong>direkt tıklayarak</strong> düzenleyebilirsiniz</span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="text-indigo-400">→</span>
-                      <span><strong>Enter</strong> ile kaydedin, <strong>ESC</strong> ile iptal edin</span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <span className="text-indigo-400">→</span>
-                      <span><strong>O, F, Ş</strong> dropdown menülerinden değer seçin (skor otomatik hesaplanır)</span>
-                    </li>
-                  </ul>
-                </CardContent>
-              </Card>
+              <Card className="border border-white/10 bg-white/[0.04]"><CardContent className="space-y-3 p-4">
+                <h3 className="text-lg font-semibold text-slate-100">Tabloda Düzenleme</h3>
+                <ul className="space-y-2 text-sm text-slate-300">
+                  <li className="flex items-start gap-2"><span className="text-indigo-400">→</span><span><strong>Tehlike, Risk ve Önlemler</strong> alanlarına doğrudan tıklayarak düzenleme yapabilirsiniz.</span></li>
+                  <li className="flex items-start gap-2"><span className="text-indigo-400">→</span><span><strong>Enter</strong> ile kaydedin, <strong>ESC</strong> ile düzenlemeyi iptal edin.</span></li>
+                  <li className="flex items-start gap-2"><span className="text-indigo-400">→</span><span><strong>O, F, Ş</strong> seçimlerinden değer girin; skorlar otomatik hesaplanır.</span></li>
+                </ul>
+              </CardContent></Card>
 
-              <Card className="bg-slate-800/50 border-slate-700">
-                <CardContent className="p-4 space-y-3">
-                  <h3 className="text-lg font-semibold text-slate-100">📤 Dışa Aktarma</h3>
-                  <ul className="space-y-2 text-sm text-slate-300">
-                    <li className="flex items-start gap-2">
-                      <Download className="h-4 w-4 text-green-400 shrink-0 mt-0.5" />
-                      <span><strong>PDF İndir:</strong> Profesyonel rapor formatında (landscape, A4)</span>
-                    </li>
-                    <li className="flex items-start gap-2">
-                      <Download className="h-4 w-4 text-blue-400 shrink-0 mt-0.5" />
-                      <span><strong>Excel:</strong> Microsoft Excel'de düzenlenebilir format</span>
-                    </li>
-                  </ul>
-                </CardContent>
-              </Card>
+              <Card className="border border-white/10 bg-white/[0.04]"><CardContent className="space-y-3 p-4">
+                <h3 className="text-lg font-semibold text-slate-100">Dışa Aktarma</h3>
+                <ul className="space-y-2 text-sm text-slate-300">
+                  <li className="flex items-start gap-2"><Download className="mt-0.5 h-4 w-4 shrink-0 text-green-400" /><span><strong>PDF İndir:</strong> profesyonel rapor formatında (landscape, A4).</span></li>
+                  <li className="flex items-start gap-2"><Download className="mt-0.5 h-4 w-4 shrink-0 text-blue-400" /><span><strong>Excel:</strong> Microsoft Excel üzerinde düzenlenebilir format.</span></li>
+                </ul>
+              </CardContent></Card>
             </TabsContent>
 
-            {/* TAB 2: SKORLAMA */}
-            <TabsContent value="scoring" className="space-y-4 mt-4">
-              <Card className="bg-slate-800/50 border-slate-700">
-                <CardContent className="p-4 space-y-4">
-                  <h3 className="text-lg font-semibold text-slate-100">🎯 Fine-Kinney Formülü</h3>
-                  <div className="bg-slate-900 p-4 rounded-lg border border-slate-700">
-                    <p className="text-center text-xl font-mono text-indigo-300 mb-2">
-                      R = O × F × Ş
-                    </p>
-                    <p className="text-center text-sm text-slate-400">
-                      Risk Skoru = Olasılık × Frekans × Şiddet
-                    </p>
-                  </div>
-
-                  <div className="grid md:grid-cols-2 gap-4 mt-4">
-                    {/* 1. AŞAMA */}
-                    <div className="space-y-2">
-                      <h4 className="font-semibold text-red-300 flex items-center gap-2">
-                        🔴 1. AŞAMA (Mevcut Durum)
-                      </h4>
-                      <p className="text-xs text-slate-400">
-                        Hiçbir önlem alınmadan, şu anki durumda riskin büyüklüğü
-                      </p>
-                      <div className="space-y-1 text-xs">
-                        <div className="flex justify-between p-2 bg-slate-900 rounded">
-                          <span>O (Olasılık):</span>
-                          <span className="text-slate-300">0.2 - 10</span>
-                        </div>
-                        <div className="flex justify-between p-2 bg-slate-900 rounded">
-                          <span>F (Frekans):</span>
-                          <span className="text-slate-300">0.5 - 10</span>
-                        </div>
-                        <div className="flex justify-between p-2 bg-slate-900 rounded">
-                          <span>Ş (Şiddet):</span>
-                          <span className="text-slate-300">1 - 100</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* 2. AŞAMA */}
-                    <div className="space-y-2">
-                      <h4 className="font-semibold text-green-300 flex items-center gap-2">
-                        🟢 2. AŞAMA (Kalıntı Risk)
-                      </h4>
-                      <p className="text-xs text-slate-400">
-                        Önlemler alındıktan sonra kalan risk (hedef: Kabul Edilebilir)
-                      </p>
-                      <div className="space-y-1 text-xs">
-                        <div className="flex justify-between p-2 bg-slate-900 rounded">
-                          <span>Hedef:</span>
-                          <span className="text-green-300">R &lt; 20</span>
-                        </div>
-                        <div className="flex justify-between p-2 bg-slate-900 rounded">
-                          <span>İdeal:</span>
-                          <span className="text-green-300">R &lt; 10</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Risk Sınıfları */}
-                  <div className="mt-4">
-                    <h4 className="font-semibold text-slate-100 mb-2">📊 Risk Sınıfları</h4>
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between p-2 rounded bg-red-600/20 border border-red-600">
-                        <span className="text-sm font-semibold text-red-300">Çok Yüksek (Esaslı)</span>
-                        <Badge className="bg-red-600 text-white">R &gt; 400</Badge>
-                      </div>
-                      <div className="flex items-center justify-between p-2 rounded bg-orange-600/20 border border-orange-600">
-                        <span className="text-sm font-semibold text-orange-300">Yüksek (Tolerans)</span>
-                        <Badge className="bg-orange-600 text-white">200 ≤ R ≤ 400</Badge>
-                      </div>
-                      <div className="flex items-center justify-between p-2 rounded bg-yellow-600/20 border border-yellow-600">
-                        <span className="text-sm font-semibold text-yellow-300">Önemli (Olası)</span>
-                        <Badge className="bg-yellow-600 text-black">70 ≤ R &lt; 200</Badge>
-                      </div>
-                      <div className="flex items-center justify-between p-2 rounded bg-blue-600/20 border border-blue-600">
-                        <span className="text-sm font-semibold text-blue-300">Olası</span>
-                        <Badge className="bg-blue-600 text-white">20 ≤ R &lt; 70</Badge>
-                      </div>
-                      <div className="flex items-center justify-between p-2 rounded bg-green-600/20 border border-green-600">
-                        <span className="text-sm font-semibold text-green-300">Kabul Edilebilir</span>
-                        <Badge className="bg-green-600 text-white">R &lt; 20</Badge>
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </TabsContent>
-
-            {/* TAB 3: KISAYOLLAR */}
-            <TabsContent value="shortcuts" className="space-y-4 mt-4">
-              <Card className="bg-slate-800/50 border-slate-700">
-                <CardContent className="p-4">
-                  <h3 className="text-lg font-semibold text-slate-100 flex items-center gap-2 mb-4">
-                    <Keyboard className="h-5 w-5 text-indigo-400" />
-                    Klavye Kısayolları
-                  </h3>
+            <TabsContent value="scoring" className="mt-4 space-y-4">
+              <Card className="border border-white/10 bg-white/[0.04]"><CardContent className="space-y-4 p-4">
+                <h3 className="text-lg font-semibold text-slate-100">Fine-Kinney Formülü</h3>
+                <div className="rounded-2xl border border-white/10 bg-slate-950/70 p-4">
+                  <p className="mb-2 text-center font-mono text-xl text-indigo-300">R = O × F × Ş</p>
+                  <p className="text-center text-sm text-slate-400">Risk skoru = Olasılık × Frekans × Şiddet</p>
+                </div>
+                <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
-                    {[
-                      { keys: "Enter", desc: "Düzenlemeyi kaydet" },
-                      { keys: "Escape", desc: "Düzenlemeyi iptal et / Tam ekrandan çık" },
-                      { keys: "F11", desc: "Tam ekran modu (tarayıcı)" },
-                      { keys: "Tab", desc: "Sonraki alana geç" },
-                      { keys: "Shift + Tab", desc: "Önceki alana geç" },
-                    ].map((item, idx) => (
-                      <div key={idx} className="flex items-center justify-between p-3 bg-slate-900 rounded">
-                        <kbd className="px-3 py-1 bg-slate-700 rounded border border-slate-600 text-sm font-mono">
-                          {item.keys}
-                        </kbd>
-                        <span className="text-sm text-slate-300">{item.desc}</span>
-                      </div>
-                    ))}
+                    <h4 className="font-semibold text-red-300">1. Aşama (Mevcut Durum)</h4>
+                    <p className="text-xs text-slate-400">Hiçbir önlem alınmadan, mevcut durumda riskin büyüklüğü.</p>
+                    <div className="space-y-1 text-xs">
+                      <div className="flex justify-between rounded-xl bg-slate-950/70 p-2"><span>O (Olasılık)</span><span className="text-slate-300">0.2 - 10</span></div>
+                      <div className="flex justify-between rounded-xl bg-slate-950/70 p-2"><span>F (Frekans)</span><span className="text-slate-300">0.5 - 10</span></div>
+                      <div className="flex justify-between rounded-xl bg-slate-950/70 p-2"><span>Ş (Şiddet)</span><span className="text-slate-300">1 - 100</span></div>
+                    </div>
                   </div>
-                </CardContent>
-              </Card>
-
-              <Card className="bg-slate-800/50 border-slate-700">
-                <CardContent className="p-4">
-                  <h3 className="text-lg font-semibold text-slate-100 mb-4">🖱️ Fare İşlemleri</h3>
-                  <div className="space-y-2 text-sm text-slate-300">
-                    <li>Hücreye <strong>tek tıklama</strong> → Düzenleme modu</li>
-                    <li>Risk paketine <strong>tıklama</strong> → Detayları göster</li>
-                    <li><strong>+ butonu</strong> → Paketi tabloya ekle</li>
-                    <li><strong>Çöp kutusu</strong> → Riski sil</li>
+                  <div className="space-y-2">
+                    <h4 className="font-semibold text-green-300">2. Aşama (Kalıntı Risk)</h4>
+                    <p className="text-xs text-slate-400">Önlemler alındıktan sonra kalan risk. Hedef kabul edilebilir seviyedir.</p>
+                    <div className="space-y-1 text-xs">
+                      <div className="flex justify-between rounded-xl bg-slate-950/70 p-2"><span>Hedef</span><span className="text-green-300">R &lt; 20</span></div>
+                      <div className="flex justify-between rounded-xl bg-slate-950/70 p-2"><span>İdeal</span><span className="text-green-300">R &lt; 10</span></div>
+                    </div>
                   </div>
-                </CardContent>
-              </Card>
+                </div>
+                <div className="mt-4 space-y-2">
+                  <h4 className="font-semibold text-slate-100">Risk Sınıfları</h4>
+                  <div className="flex items-center justify-between rounded border border-red-600 bg-red-600/20 p-2"><span className="text-sm font-semibold text-red-300">Çok Yüksek (Esaslı)</span><Badge className="bg-red-600 text-white">R &gt; 400</Badge></div>
+                  <div className="flex items-center justify-between rounded border border-orange-600 bg-orange-600/20 p-2"><span className="text-sm font-semibold text-orange-300">Yüksek (Tolerans)</span><Badge className="bg-orange-600 text-white">200 ≤ R ≤ 400</Badge></div>
+                  <div className="flex items-center justify-between rounded border border-yellow-600 bg-yellow-600/20 p-2"><span className="text-sm font-semibold text-yellow-300">Önemli (Olası)</span><Badge className="bg-yellow-600 text-black">70 ≤ R &lt; 200</Badge></div>
+                  <div className="flex items-center justify-between rounded border border-blue-600 bg-blue-600/20 p-2"><span className="text-sm font-semibold text-blue-300">Olası</span><Badge className="bg-blue-600 text-white">20 ≤ R &lt; 70</Badge></div>
+                  <div className="flex items-center justify-between rounded border border-green-600 bg-green-600/20 p-2"><span className="text-sm font-semibold text-green-300">Kabul Edilebilir</span><Badge className="bg-green-600 text-white">R &lt; 20</Badge></div>
+                </div>
+              </CardContent></Card>
             </TabsContent>
 
-            {/* TAB 4: İPUÇLARI */}
-            <TabsContent value="tips" className="space-y-4 mt-4">
-              <Card className="bg-slate-800/50 border-slate-700">
-                <CardContent className="p-4 space-y-4">
-                  <h3 className="text-lg font-semibold text-slate-100 flex items-center gap-2">
-                    <Lightbulb className="h-5 w-5 text-yellow-400" />
-                    Profesyonel İpuçları
-                  </h3>
-
-                  <div className="space-y-3">
-                    <div className="p-3 bg-indigo-900/30 border border-indigo-700 rounded-lg">
-                      <p className="text-sm font-semibold text-indigo-300 mb-1">💾 Otomatik Kaydetme</p>
-                      <p className="text-xs text-slate-400">
-                        Her değişiklik 2 saniye sonra otomatik kaydedilir. "Kaydediliyor..." yazısını göreceksiniz.
-                      </p>
+            <TabsContent value="shortcuts" className="mt-4 space-y-4">
+              <Card className="border border-white/10 bg-white/[0.04]"><CardContent className="p-4">
+                <h3 className="mb-4 flex items-center gap-2 text-lg font-semibold text-slate-100"><Keyboard className="h-5 w-5 text-indigo-400" />Klavye Kısayolları</h3>
+                <div className="space-y-2">
+                  {[
+                    { keys: "Enter", desc: "Düzenlemeyi kaydet" },
+                    { keys: "Escape", desc: "Düzenlemeyi iptal et / tam ekrandan çık" },
+                    { keys: "F11", desc: "Tarayıcı tam ekran modu" },
+                    { keys: "Tab", desc: "Sonraki alana geç" },
+                    { keys: "Shift + Tab", desc: "Önceki alana geç" },
+                  ].map((item, idx) => (
+                    <div key={idx} className="flex items-center justify-between rounded-xl bg-slate-950/70 p-3">
+                      <kbd className="rounded border border-slate-600 bg-slate-800 px-3 py-1 font-mono text-sm">{item.keys}</kbd>
+                      <span className="text-sm text-slate-300">{item.desc}</span>
                     </div>
+                  ))}
+                </div>
+              </CardContent></Card>
 
-                    <div className="p-3 bg-green-900/30 border border-green-700 rounded-lg">
-                      <p className="text-sm font-semibold text-green-300 mb-1">✅ Etkili Önlemler Yazın</p>
-                      <p className="text-xs text-slate-400">
-                        Önlemler spesifik ve uygulanabilir olmalı. Örnek: "KKE kullanılmalı" yerine "Cut Level 5 eldiven ve koruyucu gözlük kullanılmalı"
-                      </p>
-                    </div>
+              <Card className="border border-white/10 bg-white/[0.04]"><CardContent className="p-4">
+                <h3 className="mb-4 text-lg font-semibold text-slate-100">Fare İşlemleri</h3>
+                <div className="space-y-2 text-sm text-slate-300">
+                  <p>Hücreye tek tıklama → düzenleme modu</p>
+                  <p>Risk paketine tıklama → detayları göster</p>
+                  <p>+ butonu → paketi tabloya ekle</p>
+                  <p>Çöp kutusu → riski sil</p>
+                </div>
+              </CardContent></Card>
+            </TabsContent>
 
-                    <div className="p-3 bg-orange-900/30 border border-orange-700 rounded-lg">
-                      <p className="text-sm font-semibold text-orange-300 mb-1">🎯 Hedef: Kalıntı Risk &lt; 20</p>
-                      <p className="text-xs text-slate-400">
-                        2. Aşama'da (yeşil sütunlar) risk skorunu 20'nin altına indirmeyi hedefleyin. Bu "Kabul Edilebilir" seviyedir.
-                      </p>
-                    </div>
-
-                    <div className="p-3 bg-blue-900/30 border border-blue-700 rounded-lg">
-                      <p className="text-sm font-semibold text-blue-300 mb-1">📸 Fotoğraf Ekleyin</p>
-                      <p className="text-xs text-slate-400">
-                        Foto sütunundaki kamera ikonuna tıklayarak tehlike bölgesinin fotoğrafını ekleyebilirsiniz.
-                      </p>
-                    </div>
-
-                    <div className="p-3 bg-purple-900/30 border border-purple-700 rounded-lg">
-                      <p className="text-sm font-semibold text-purple-300 mb-1">📋 Sorumlu ve Termin Belirleyin</p>
-                      <p className="text-xs text-slate-400">
-                        Her önlem için sorumlu kişi ve termin tarihi mutlaka girilmelidir. Bu takip için kritiktir.
-                      </p>
-                    </div>
-
-                    <div className="p-3 bg-red-900/30 border border-red-700 rounded-lg">
-                      <p className="text-sm font-semibold text-red-300 mb-1">⚠️ Kritik Riskler Öncelikli</p>
-                      <p className="text-xs text-slate-400">
-                        Kırmızı ve turuncu riskler (R &gt; 200) acil eylem gerektir. Bunları öncelikli olarak ele alın.
-                      </p>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
+            <TabsContent value="tips" className="mt-4 space-y-4">
+              <Card className="border border-white/10 bg-white/[0.04]"><CardContent className="p-4">
+                <div className="space-y-4">
+                  <div className="mb-4 flex items-center gap-2"><Lightbulb className="h-5 w-5 text-yellow-400" /><h3 className="text-lg font-semibold text-slate-100">Profesyonel İpuçları</h3></div>
+                  <div className="rounded-lg border border-green-700 bg-green-900/30 p-3"><p className="mb-1 text-sm font-semibold text-green-300">Etkili Önlemler Yazın</p><p className="text-xs text-slate-400">Önlemler spesifik ve uygulanabilir olmalı. Örnek: “KKE kullanılmalı” yerine “Cut Level 5 eldiven ve koruyucu gözlük kullanılmalı”.</p></div>
+                  <div className="rounded-lg border border-blue-700 bg-blue-900/30 p-3"><p className="mb-1 text-sm font-semibold text-blue-300">Kalıntı Riski Düşürün</p><p className="text-xs text-slate-400">2. aşamada risk skorunu 20'nin altına indirmeyi hedefleyin. Bu kabul edilebilir seviyedir.</p></div>
+                  <div className="rounded-lg border border-red-700 bg-red-900/30 p-3"><p className="mb-1 text-sm font-semibold text-red-300">Kritik Riskler Öncelikli</p><p className="text-xs text-slate-400">Kırmızı ve turuncu riskler (R &gt; 200) acil eylem gerektirir. Bu kayıtları öncelikli olarak ele alın.</p></div>
+                </div>
+              </CardContent></Card>
             </TabsContent>
           </Tabs>
 
           <div className="mt-6 flex justify-end">
-            <Button onClick={() => setShowHelp(false)} className="bg-indigo-600 hover:bg-indigo-700">
-              Anladım, Başlayalım!
+            <Button onClick={() => setShowHelp(false)} className="rounded-xl bg-gradient-to-r from-indigo-500 to-violet-500 hover:from-indigo-400 hover:to-violet-400">
+              Anladım, başlayalım
             </Button>
           </div>
         </DialogContent>
       </Dialog>
     );
   };
-
-    // ========================
+  // ========================
   // AI RESULTS DIALOG
   // ========================
 
   const AIResultsDialog = () => {
-    const selectedCount = aiRisks.filter(r => r.selected).length;
+    const categoryOptions = Array.from(new Set(aiRisks.map((r) => r.category))).sort();
+    const filteredRisks = aiCategoryFilter === "all" ? aiRisks : aiRisks.filter((r) => r.category === aiCategoryFilter);
+    const selectedCount = aiRisks.filter((r) => r.selected).length;
+    const aiRiskSummary = {
+      critical: aiRisks.filter((r) => r.riskClass === "Çok Yüksek").length,
+      high: aiRisks.filter((r) => r.riskClass === "Yüksek").length,
+      notable: aiRisks.filter((r) => r.riskClass === "Önemli" || r.riskClass === "Olası").length,
+    };
 
     return (
       <Dialog open={showAiDialog} onOpenChange={setShowAiDialog}>
-        <DialogContent className="max-w-5xl max-h-[85vh] bg-slate-900 border-purple-700">
-          <DialogHeader>
-            <DialogTitle className="text-2xl font-bold flex items-center gap-3">
-              <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-purple-600 to-indigo-600 flex items-center justify-center">
+        <DialogContent className="flex max-h-[90vh] max-w-6xl flex-col overflow-hidden border border-fuchsia-400/20 bg-slate-950/95 p-0 shadow-[0_30px_80px_rgba(15,23,42,0.55)] backdrop-blur-xl">
+          <DialogHeader className="shrink-0 border-b border-white/10 px-6 pb-4 pt-6">
+            <DialogTitle className="flex items-center gap-3 text-2xl font-black text-slate-100">
+              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-fuchsia-500 via-violet-500 to-indigo-500 shadow-[0_18px_35px_rgba(168,85,247,0.28)]">
                 <Sparkles className="h-6 w-6 text-white" />
               </div>
               <div>
-                <span className="text-slate-100">AI Bulduğu Riskler - "{aiSector}"</span>
-                <p className="text-sm text-slate-400 font-normal">
-                  {aiRisks.length} risk maddesi • {selectedCount} seçili
-                </p>
+                <span>AI Tarafından Üretilen Riskler · {aiSector}</span>
+                <p className="mt-1 text-sm font-normal text-slate-400">{aiRisks.length} risk maddesi • {selectedCount} seçili</p>
               </div>
             </DialogTitle>
           </DialogHeader>
 
-          {/* Selection Buttons */}
-          <div className="flex items-center justify-between py-2 border-y border-slate-700">
-            <div className="flex items-center gap-2">
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={selectAllAIRisks}
-                className="gap-2 border-slate-600"
-              >
-                <CheckCircle2 className="h-4 w-4 text-green-500" />
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-6 pb-6 pt-5">
+          <div className="shrink-0 flex flex-col gap-3">
+          <div className="flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 md:flex-row md:items-center md:justify-between">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button size="sm" variant="outline" onClick={selectAllAIRisks} className="gap-2 border-white/10 bg-white/[0.04] text-slate-200 hover:bg-white/[0.08]">
+                <CheckCircle2 className="h-4 w-4 text-green-400" />
                 Tümünü Seç
               </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={deselectAllAIRisks}
-                className="gap-2 border-slate-600"
-              >
-                <X className="h-4 w-4 text-red-500" />
-                Tümünü Kaldır
+              <Button size="sm" variant="outline" onClick={deselectAllAIRisks} className="gap-2 border-white/10 bg-white/[0.04] text-slate-200 hover:bg-white/[0.08]">
+                <X className="h-4 w-4 text-red-400" />
+                Seçimi Temizle
               </Button>
             </div>
-
-            <Badge className="bg-purple-600 text-white">
-              {selectedCount} / {aiRisks.length} seçildi
-            </Badge>
+            <Badge className="border border-fuchsia-400/20 bg-fuchsia-500/10 text-fuchsia-100">{selectedCount} / {aiRisks.length} seçili</Badge>
           </div>
 
-          
+          <div className="grid shrink-0 gap-3 md:grid-cols-3">
+            <div className="rounded-2xl border border-red-400/20 bg-red-500/10 p-4">
+              <p className="text-[11px] uppercase tracking-[0.22em] text-red-200/75">Kritik Risk</p>
+              <p className="mt-2 text-2xl font-black text-white">{aiRiskSummary.critical}</p>
+              <p className="mt-1 text-xs text-red-100/70">Acil değerlendirme gerektiren maddeler</p>
+            </div>
+            <div className="rounded-2xl border border-orange-400/20 bg-orange-500/10 p-4">
+              <p className="text-[11px] uppercase tracking-[0.22em] text-orange-200/75">Yüksek Risk</p>
+              <p className="mt-2 text-2xl font-black text-white">{aiRiskSummary.high}</p>
+              <p className="mt-1 text-xs text-orange-100/70">Önlem planı öncelikli maddeler</p>
+            </div>
+            <div className="rounded-2xl border border-cyan-400/20 bg-cyan-500/10 p-4">
+              <p className="text-[11px] uppercase tracking-[0.22em] text-cyan-200/75">İzleme Havuzu</p>
+              <p className="mt-2 text-2xl font-black text-white">{aiRiskSummary.notable}</p>
+              <p className="mt-1 text-xs text-cyan-100/70">Kontrolle kabul edilebilir seviyeye indirilebilecek maddeler</p>
+            </div>
+          </div>
 
-          {/* Risks List */}
-          <ScrollArea className="flex-1 max-h-[50vh]">
-            <div className="space-y-2 pr-4">
-              {aiRisks.map((risk) => (
+          <div className="shrink-0 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400">Kategori Filtreleri</p>
+                <p className="mt-1 text-xs text-slate-500">İlgili risk grubuna odaklanmak için filtreleyin.</p>
+              </div>
+              <Badge variant="outline" className="border-white/10 bg-white/[0.04] text-slate-300">
+                {filteredRisks.length} görünür kayıt
+              </Badge>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                size="sm"
+                variant={aiCategoryFilter === "all" ? "default" : "outline"}
+                onClick={() => setAiCategoryFilter("all")}
+                className={aiCategoryFilter === "all" ? "bg-fuchsia-500 text-white hover:bg-fuchsia-400" : "border-white/10 bg-white/[0.04] text-slate-300 hover:bg-white/[0.08]"}
+              >
+                <Sparkles className="mr-1 h-3.5 w-3.5" />
+                Tümü
+                <span className="ml-1 rounded-full bg-black/20 px-1.5 py-0.5 text-[10px]">
+                  {aiRisks.length}
+                </span>
+              </Button>
+              {categoryOptions.map((category) => (
+                <Button
+                  key={category}
+                  size="sm"
+                  variant={aiCategoryFilter === category ? "default" : "outline"}
+                  onClick={() => setAiCategoryFilter(category)}
+                  className={aiCategoryFilter === category ? "bg-cyan-500 text-slate-950 hover:bg-cyan-400" : "border-white/10 bg-white/[0.04] text-slate-300 hover:bg-white/[0.08]"}
+                >
+                  <Library className="mr-1 h-3.5 w-3.5" />
+                  {category}
+                  <span className="ml-1 rounded-full bg-black/15 px-1.5 py-0.5 text-[10px]">
+                    {aiRisks.filter((risk) => risk.category === category).length}
+                  </span>
+                </Button>
+              ))}
+            </div>
+          </div>
+
+          </div>
+
+          <ScrollArea className="mt-4 min-h-0 flex-1 rounded-2xl border border-white/10 bg-slate-950/40 pr-2">
+            <div className="space-y-3 p-4 pr-5">
+              {filteredRisks.map((risk) => (
                 <div
                   key={risk.id}
                   onClick={() => toggleAIRiskSelection(risk.id)}
-                  className={`
-                    p-4 rounded-lg border cursor-pointer transition-all
-                    ${risk.selected 
-                      ? 'bg-purple-900/30 border-purple-600' 
-                      : 'bg-slate-800/30 border-slate-700 hover:border-slate-600'
-                    }
-                  `}
+                  className={`cursor-pointer rounded-2xl border p-4 transition-all ${risk.selected ? "border-fuchsia-400/30 bg-fuchsia-500/10 shadow-[0_18px_35px_rgba(168,85,247,0.14)]" : "border-white/10 bg-white/[0.03] hover:border-white/20 hover:bg-white/[0.06]"}`}
                 >
                   <div className="flex items-start gap-3">
-                    {/* Checkbox */}
                     <div className="mt-1">
-                      <div className={`
-                        h-5 w-5 rounded border-2 flex items-center justify-center
-                        ${risk.selected 
-                          ? 'bg-purple-600 border-purple-600' 
-                          : 'border-slate-600'
-                        }
-                      `}>
+                      <div className={`flex h-5 w-5 items-center justify-center rounded border-2 ${risk.selected ? "border-fuchsia-500 bg-fuchsia-500" : "border-slate-600"}`}>
                         {risk.selected && <Check className="h-3 w-3 text-white" />}
                       </div>
                     </div>
 
-                    {/* Content */}
-                    <div className="flex-1 space-y-2">
-                      <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 space-y-3">
+                      <div className="flex items-start justify-between gap-3">
                         <div>
-                          <Badge variant="outline" className="mb-2 border-purple-600 text-purple-300 text-xs">
-                            {risk.category}
-                          </Badge>
-                          <h4 className="font-semibold text-slate-100 text-sm">
-                            {risk.hazard}
-                          </h4>
+                          <Badge variant="outline" className="mb-2 border-fuchsia-400/20 text-fuchsia-200 text-xs">{risk.category}</Badge>
+                          <h4 className="text-sm font-semibold text-slate-100">{risk.hazard}</h4>
+                          <p className="mt-2 text-xs leading-5 text-slate-400">{risk.risk}</p>
                         </div>
-                        <Badge className={`${getRiskClassColor(risk.riskClass)} shrink-0`}>
-                          {risk.score}
-                        </Badge>
+                        <Badge className={`${getRiskClassColor(risk.riskClass)} shrink-0`}>{risk.score}</Badge>
                       </div>
 
-                      <p className="text-xs text-slate-400">
-                        {risk.risk}
-                      </p>
-
-                      <div className="flex items-center gap-2 text-xs">
-                        <Badge variant="outline" className="border-slate-600 text-slate-400">
-                          O: {risk.probability}
-                        </Badge>
-                        <Badge variant="outline" className="border-slate-600 text-slate-400">
-                          F: {risk.frequency}
-                        </Badge>
-                        <Badge variant="outline" className="border-slate-600 text-slate-400">
-                          Ş: {risk.severity}
-                        </Badge>
+                      <div className="flex flex-wrap items-center gap-2 text-xs">
+                        <Badge variant="outline" className="border-white/10 bg-white/[0.04] text-slate-300">O: {risk.probability}</Badge>
+                        <Badge variant="outline" className="border-white/10 bg-white/[0.04] text-slate-300">F: {risk.frequency}</Badge>
+                        <Badge variant="outline" className="border-white/10 bg-white/[0.04] text-slate-300">Ş: {risk.severity}</Badge>
                       </div>
 
-                      <div className="pt-2 border-t border-slate-700">
-                        <p className="text-xs text-slate-500 mb-1">Önerilen Önlemler:</p>
-                        <ul className="space-y-1">
+                      <div className="rounded-2xl border border-white/10 bg-slate-950/60 p-3">
+                        <p className="mb-2 text-xs uppercase tracking-[0.18em] text-slate-400">Önerilen Önlemler</p>
+                        <ul className="space-y-1.5">
                           {risk.controls.map((control, idx) => (
-                            <li key={idx} className="text-xs text-slate-400 flex items-start gap-2">
-                              <span className="text-purple-400">→</span>
-                              {control}
+                            <li key={idx} className="flex items-start gap-2 text-xs text-slate-300">
+                              <span className="text-fuchsia-300">→</span>
+                              <span>{control}</span>
                             </li>
                           ))}
                         </ul>
@@ -1479,261 +1529,58 @@ useLayoutEffect(() => {
             </div>
           </ScrollArea>
 
-          {/* Footer */}
-          <div className="flex items-center justify-between pt-4 border-t border-slate-700">
-            <Button
-              variant="outline"
-              onClick={() => setShowAiDialog(false)}
-              className="border-slate-600"
-            >
+          <div className="mt-4 flex shrink-0 flex-col gap-3 border-t border-white/10 pt-4 sm:flex-row sm:items-center sm:justify-between">
+            <Button variant="outline" onClick={() => setShowAiDialog(false)} className="border-white/10 bg-white/[0.04] text-slate-200 hover:bg-white/[0.08]">
               İptal
             </Button>
 
-            <Button
-              onClick={addSelectedAIRisks}
-              disabled={selectedCount === 0}
-              className="gap-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700"
-            >
+            <Button onClick={addSelectedAIRisks} disabled={selectedCount === 0} className="gap-2 rounded-xl bg-gradient-to-r from-fuchsia-500 via-violet-500 to-indigo-500 hover:from-fuchsia-400 hover:via-violet-400 hover:to-indigo-400">
               <Plus className="h-4 w-4" />
-              {selectedCount} Maddeyi Tabloya Ekle
+              {selectedCount} maddeyi tabloya ekle
             </Button>
+          </div>
           </div>
         </DialogContent>
       </Dialog>
     );
   };
-
-    // ========================
-  // AI RISK GENERATOR PANEL
-  // ========================
-
-  interface AIRiskPanelProps {
-    isAssessmentActive: boolean;
-    aiGenerating: boolean;
-    onGenerate: (sector: string) => void;
-  }
-
-  const AIRiskPanel: React.FC<AIRiskPanelProps> = ({
-    isAssessmentActive,
-    aiGenerating,
-    onGenerate
-  }) => {
-    const modelName = import.meta.env.VITE_GOOGLE_MODEL || "gemini-2.0-flash-exp";
-    
-    // ✅ Local state for autocomplete
-    const [searchQuery, setSearchQuery] = useState("");
-    const [showSuggestions, setShowSuggestions] = useState(false);
-    const [selectedSector, setSelectedSector] = useState<string | null>(null);
-    const inputRef = useRef<HTMLInputElement>(null);
-    const suggestionsRef = useRef<HTMLDivElement>(null);
-    
-    // ✅ Filter sectors based on search
-    const filteredSectors = RISK_SECTORS.filter(sector => 
-      sector.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      sector.keywords.some(kw => kw.toLowerCase().includes(searchQuery.toLowerCase()))
-    ).slice(0, 10); // Maksimum 10 öneri
-
-    // ✅ Handle sector selection
-    const handleSelectSector = (sectorName: string) => {
-      setSelectedSector(sectorName);
-      setSearchQuery(sectorName);
-      setShowSuggestions(false);
-      inputRef.current?.blur();
-    };
-
-    const handleGenerate = () => {
-      const sector = selectedSector || searchQuery.trim();
-      
-      if (sector.length < 2) {
-        toast.error("❌ Lütfen bir sektör seçin veya yazın", {
-          description: "Örnek: Otomotiv, İnşaat, Gıda"
-        });
-        return;
-      }
-
-      if (!isAssessmentActive) {
-        toast.error("❌ Önce bir değerlendirme oluşturun");
-        return;
-      }
-
-      onGenerate(sector);
-    };
-
-    // ✅ Close suggestions on outside click
-    useEffect(() => {
-      const handleClickOutside = (e: MouseEvent) => {
-        if (
-          suggestionsRef.current && 
-          !suggestionsRef.current.contains(e.target as Node) &&
-          inputRef.current &&
-          !inputRef.current.contains(e.target as Node)
-        ) {
-          setShowSuggestions(false);
-        }
-      };
-
-      document.addEventListener("mousedown", handleClickOutside);
-      return () => document.removeEventListener("mousedown", handleClickOutside);
-    }, []);
-
-    return (
-      <Card className="bg-gradient-to-br from-purple-900/30 to-indigo-900/30 border-purple-700/50">
-        <CardContent className="p-4">
-          <div className="flex items-center gap-2 mb-3">
-            <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-purple-600 to-indigo-600 flex items-center justify-center">
-              <Sparkles className="h-4 w-4 text-white" />
-            </div>
-            <div>
-              <h3 className="text-sm font-bold text-purple-300">YAPAY ZEKA RİSK ANALİZ</h3>
-              <p className="text-xs text-purple-400/70">
-                Google Gemini • BETA
-              </p>
-            </div>
-          </div>
-
-          <div className="space-y-3">
-            {/* ✅ Autocomplete Input */}
-            <div className="relative">
-              <Label className="text-xs text-slate-300 mb-1 block">Sektör Seçin</Label>
-              <Input
-                ref={inputRef}
-                type="text"
-                value={searchQuery}
-                onChange={(e) => {
-                  setSearchQuery(e.target.value);
-                  setShowSuggestions(true);
-                  setSelectedSector(null);
-                }}
-                onFocus={() => setShowSuggestions(true)}
-                placeholder="Otomotiv, İnşaat, Gıda..."
-                className="h-9 bg-slate-800 border-purple-700/50 text-slate-100 placeholder:text-slate-500"
-                disabled={aiGenerating}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !aiGenerating) {
-                    e.preventDefault();
-                    if (filteredSectors.length === 1) {
-                      handleSelectSector(filteredSectors[0].name);
-                    }
-                    handleGenerate();
-                  }
-                  if (e.key === 'Escape') {
-                    setShowSuggestions(false);
-                  }
-                }}
-              />
-
-              {/* ✅ Suggestions Dropdown */}
-              {showSuggestions && searchQuery.length > 0 && filteredSectors.length > 0 && (
-                <div
-                  ref={suggestionsRef}
-                  className="absolute z-50 w-full mt-1 bg-slate-800 border border-purple-700/50 rounded-lg shadow-xl max-h-64 overflow-y-auto"
-                >
-                  <div className="p-2">
-                    <p className="text-xs text-slate-400 mb-2 px-2">
-                      ÖNERİLER ({filteredSectors.length})
-                    </p>
-                    <div className="space-y-1">
-                      {filteredSectors.map((sector, idx) => (
-                        <button
-                          key={sector.id}
-                          onClick={() => handleSelectSector(sector.name)}
-                          className="w-full flex items-center gap-3 p-2 rounded-lg hover:bg-purple-700/30 transition-colors text-left"
-                        >
-                          <div className="flex items-center justify-center w-8 h-8 bg-slate-700 rounded text-lg">
-                            {sector.icon}
-                          </div>
-                          <div className="flex-1">
-                            <div className="flex items-center gap-2">
-                              <Badge variant="outline" className="border-purple-600 text-purple-300 text-xs">
-                                #{idx + 1}
-                              </Badge>
-                              <span className="text-sm font-semibold text-slate-100">
-                                {sector.name}
-                              </span>
-                            </div>
-                            <p className="text-xs text-slate-400 mt-0.5">
-                              {sector.keywords.slice(0, 3).join(", ")}
-                            </p>
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* No results */}
-              {showSuggestions && searchQuery.length > 0 && filteredSectors.length === 0 && (
-                <div className="absolute z-50 w-full mt-1 bg-slate-800 border border-purple-700/50 rounded-lg shadow-xl p-4 text-center">
-                  <p className="text-sm text-slate-400">
-                    Sonuç bulunamadı. Yine de devam edebilirsiniz.
-                  </p>
-                </div>
-              )}
-            </div>
-
-            <Button
-              onClick={handleGenerate}
-              disabled={!isAssessmentActive || aiGenerating}
-              className="w-full gap-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700"
-              size="sm"
-            >
-              {aiGenerating ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Yapay Zeka Analiz Ediyor...
-                </>
-              ) : (
-                <>
-                  <Sparkles className="h-4 w-4" />
-                  AI ile Risk Oluştur
-                </>
-              )}
-            </Button>
-
-            <div className="text-xs text-slate-400 space-y-1 pt-2 border-t border-purple-700/30">
-              <p>• Google Gemini</p>
-              <p>• Türkiye İSG mevzuatına uygun</p>
-              <p>• Fine-Kinney skoru otomatik</p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    );
-  };
-
   // ========================
   // LEFT PANEL COMPONENT
   // ========================
 
   const RiskLibraryPanel = () => {
-    const filteredPackages = riskPackages.filter(pkg => 
+    const filteredPackages = riskPackages.filter((pkg) =>
       pkg.name.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
     return (
-      <div className="h-full flex flex-col bg-slate-900/50 border-r border-slate-700">
-        {/* Header */}
-        <div className="p-4 border-b border-slate-700">
-          <div className="flex items-center gap-2 mb-3">
-            <Library className="h-5 w-5 text-indigo-400" />
-            <h2 className="text-sm font-bold text-slate-100">RİSK KÜTÜPHANESİ</h2>
+      <div className="flex h-auto flex-col border-b border-white/10 bg-slate-950/65 backdrop-blur-xl lg:h-full lg:border-b-0 lg:border-r">
+        <div className="border-b border-white/10 p-4">
+          <div className="mb-4 flex items-start justify-between gap-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <Library className="h-5 w-5 text-cyan-300" />
+                <h2 className="text-sm font-black uppercase tracking-[0.18em] text-slate-100">Risk Kütüphanesi</h2>
+              </div>
+              <p className="mt-2 text-xs leading-5 text-slate-400">
+                Hazır sektör paketleri ve AI önerileriyle tabloyu hızlıca doldurun.
+              </p>
+            </div>
+            <Badge className="border border-cyan-400/20 bg-cyan-400/10 text-cyan-100">{filteredPackages.length} paket</Badge>
           </div>
-          
-          {/* Search */}
+
           <div className="relative">
-            <Search className="absolute left-2 top-2.5 h-4 w-4 text-slate-400" />
+            <Search className="absolute left-3 top-3 h-4 w-4 text-slate-500" />
             <Input
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Risk ara..."
-              className="pl-8 h-9 bg-slate-800 border-slate-600 text-slate-100 placeholder:text-slate-500"
+              placeholder="Risk paketi ara..."
+              className="h-10 rounded-xl border-white/10 bg-slate-950/70 pl-9 text-slate-100 placeholder:text-slate-500"
             />
           </div>
         </div>
 
-        {/* ✅ AI Panel - Düzeltilmiş Props */}
-        <div className="p-4 border-b border-slate-700">
+        <div className="border-b border-white/10 p-4">
           <AIRiskPanel
             isAssessmentActive={!!assessment}
             aiGenerating={aiGenerating}
@@ -1741,14 +1588,16 @@ useLayoutEffect(() => {
           />
         </div>
 
-        {/* Packages List */}
-        <ScrollArea className="flex-1">
-          <div className="p-2 space-y-1">
+        <ScrollArea className="max-h-[32rem] lg:flex-1 lg:max-h-none">
+          <div className="space-y-2 p-3">
             {filteredPackages.length === 0 ? (
-              <div className="text-center py-8">
-                <Library className="h-12 w-12 mx-auto mb-2 text-slate-600" />
-                <p className="text-sm text-slate-500">
-                  {searchQuery ? "Sonuç bulunamadı" : "Risk paketi yok"}
+              <div className="rounded-3xl border border-dashed border-white/10 bg-white/[0.03] px-5 py-10 text-center">
+                <Library className="mx-auto mb-3 h-12 w-12 text-slate-600" />
+                <p className="text-sm font-semibold text-slate-200">
+                  {searchQuery ? "Sonuç bulunamadı" : "Henüz risk paketi görünmüyor"}
+                </p>
+                <p className="mt-2 text-xs leading-5 text-slate-500">
+                  {searchQuery ? "Arama terimini değiştirerek daha fazla paket görüntüleyebilirsiniz." : "Kütüphane yüklendiğinde sektör bazlı paketler burada listelenir."}
                 </p>
               </div>
             ) : (
@@ -1756,30 +1605,22 @@ useLayoutEffect(() => {
                 <Collapsible key={pkg.id}>
                   <CollapsibleTrigger asChild>
                     <div
-                      className={`
-                        flex items-center justify-between p-3 rounded-lg
-                        hover:bg-slate-800/50 transition-all cursor-pointer w-full
-                        ${selectedPackage === pkg.id ? 'bg-slate-800 border border-indigo-500' : 'bg-slate-800/30'}
-                      `}
+                      className={`flex w-full cursor-pointer items-center justify-between rounded-2xl border p-3 transition-all ${selectedPackage === pkg.id ? "border-cyan-400/30 bg-cyan-400/10 shadow-[0_12px_25px_rgba(34,211,238,0.12)]" : "border-white/10 bg-white/[0.03] hover:border-white/20 hover:bg-white/[0.06]"}`}
                       onClick={() => setSelectedPackage(pkg.id)}
                     >
                       <div className="flex items-center gap-3">
-                        <div className="flex items-center justify-center w-8 h-8 rounded bg-slate-700 text-slate-300 text-xs font-bold">
-                          {String(index + 1).padStart(2, '0')}
+                        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-900/80 text-xs font-black text-slate-100">
+                          {String(index + 1).padStart(2, "0")}
                         </div>
                         <div className="text-left">
-                          <p className="text-sm font-semibold text-slate-100">
-                            {pkg.name}
-                          </p>
-                          <p className="text-xs text-slate-400">
-                            {pkg.item_count} Risk Maddesi
-                          </p>
+                          <p className="text-sm font-semibold text-slate-100">{pkg.name}</p>
+                          <p className="text-xs text-slate-400">{pkg.item_count} risk maddesi</p>
                         </div>
                       </div>
                       <Button
                         size="icon"
                         variant="ghost"
-                        className="h-8 w-8 text-indigo-400 hover:bg-indigo-500/20"
+                        className="h-9 w-9 rounded-xl text-cyan-300 hover:bg-cyan-500/15"
                         onClick={(e) => {
                           e.stopPropagation();
                           addFromPackage(pkg.id);
@@ -1790,23 +1631,16 @@ useLayoutEffect(() => {
                       </Button>
                     </div>
                   </CollapsibleTrigger>
-                  
-                  <CollapsibleContent className="mt-1">
-                    <div className="pl-12 pr-2 space-y-1">
+
+                  <CollapsibleContent className="mt-2">
+                    <div className="space-y-2 pl-12 pr-1">
                       {pkg.items.slice(0, 3).map((item) => (
-                        <div
-                          key={item.id}
-                          className="p-2 rounded bg-slate-900/50 border border-slate-700/50"
-                        >
-                          <p className="text-xs text-slate-300 line-clamp-2">
-                            {item.hazard}
-                          </p>
+                        <div key={item.id} className="rounded-xl border border-white/10 bg-slate-950/60 p-3">
+                          <p className="line-clamp-2 text-xs text-slate-300">{item.hazard}</p>
                         </div>
                       ))}
                       {pkg.items.length > 3 && (
-                        <p className="text-xs text-slate-500 text-center py-1">
-                          +{pkg.items.length - 3} madde daha
-                        </p>
+                        <p className="py-1 text-center text-xs text-slate-500">+{pkg.items.length - 3} madde daha</p>
                       )}
                     </div>
                   </CollapsibleContent>
@@ -1816,31 +1650,31 @@ useLayoutEffect(() => {
           </div>
         </ScrollArea>
 
-        {/* Footer Info */}
-        <div className="p-3 border-t border-slate-700 bg-slate-900/80">
-          <div className="text-xs text-slate-400 space-y-1">
-            <p>• Seçilen sektöre uygun riskler</p>
-            <p>• İSG mevzuatına uyumlu</p>
+        <div className="border-t border-white/10 bg-slate-950/85 p-4">
+          <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-3 text-xs text-slate-300">
+            <p>• Seçilen sektöre uygun riskler listelenir.</p>
+            <p className="mt-1">• İSG mevzuatına uyumlu başlangıç kurgusu sunar.</p>
           </div>
         </div>
       </div>
     );
   };
+
   const RiskAnalysisTable = () => {
     if (riskItems.length === 0) {
       return (
-        <div className="flex items-center justify-center h-96">
-          <div className="text-center">
-            <FileText className="h-20 w-20 mx-auto mb-4 text-slate-600" />
-            <p className="text-lg font-semibold text-slate-300 mb-2">
+        <div className="flex h-96 items-center justify-center">
+          <div className="rounded-3xl border border-dashed border-white/10 bg-white/[0.03] px-8 py-10 text-center shadow-[0_20px_45px_rgba(15,23,42,0.28)]">
+            <FileText className="mx-auto mb-4 h-20 w-20 text-slate-600" />
+            <p className="mb-2 text-lg font-semibold text-slate-200">
               Henüz risk eklenmedi
             </p>
-            <p className="text-sm text-slate-500 mb-4">
-              Sol panelden risk paketi seçin veya manuel risk ekleyin
+            <p className="mb-4 text-sm text-slate-400">
+              Sol panelden risk paketi seçin veya manuel risk ekleyin.
             </p>
             <Button
               onClick={addEmptyRisk}
-              className="gap-2 bg-indigo-600 hover:bg-indigo-700"
+              className="gap-2 rounded-xl bg-gradient-to-r from-indigo-500 via-violet-500 to-fuchsia-500 hover:from-indigo-400 hover:via-violet-400 hover:to-fuchsia-400"
             >
               <Plus className="h-4 w-4" />
               Manuel Risk Ekle
@@ -1851,92 +1685,85 @@ useLayoutEffect(() => {
     }
 
     return (
-      <div className="w-full overflow-x-auto">
+      <div className="w-full overflow-x-auto rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.82),rgba(2,6,23,0.98))] shadow-[0_30px_80px_rgba(15,23,42,0.4)]">
         <table className="w-full border-collapse text-sm" style={{ minWidth: '2000px' }}>
           {/* TABLE HEADER */}
           <thead className="sticky top-0 z-10">
             {/* Ana Başlık Satırı */}
-            <tr className="bg-gradient-to-r from-slate-800 to-slate-900">
-              <th rowSpan={2} className="sticky left-0 z-20 bg-slate-800 border border-slate-600 p-2 w-16">
-                <div className="text-slate-300 font-bold text-xs">NO</div>
+            <tr className="bg-[linear-gradient(90deg,rgba(2,6,23,0.98),rgba(15,23,42,0.98),rgba(30,41,59,0.96))] shadow-[inset_0_-1px_0_rgba(255,255,255,0.07)]">
+              <th rowSpan={2} className="sticky left-0 z-20 w-16 border border-slate-700/80 bg-slate-950 px-2 py-3">
+                <div className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-300">No</div>
               </th>
-              <th rowSpan={2} className="border border-slate-600 p-2 min-w-[120px]">
-                <div className="text-slate-300 font-bold text-xs">BÖLÜM/ORTAM</div>
+              <th rowSpan={2} className="min-w-[152px] border border-slate-700/80 px-2 py-3">
+                <div className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-200">Bölüm / Ortam</div>
               </th>
-              <th rowSpan={2} className="border border-slate-600 p-2 min-w-[100px]">
-                <div className="text-slate-300 font-bold text-xs">FOTO</div>
+              <th rowSpan={2} className="min-w-[112px] border border-slate-700/80 px-2 py-3">
+                <div className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-200">Foto</div>
               </th>
-              <th rowSpan={2} className="border border-slate-600 p-2 min-w-[200px]">
-                <div className="text-slate-300 font-bold text-xs">TEHLİKE</div>
+              <th rowSpan={2} className="min-w-[280px] border border-slate-700/80 px-2 py-3">
+                <div className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-200">Tehlike</div>
               </th>
-              <th rowSpan={2} className="border border-slate-600 p-2 min-w-[200px]">
-                <div className="text-slate-300 font-bold text-xs">RİSK</div>
+              <th rowSpan={2} className="min-w-[300px] border border-slate-700/80 px-2 py-3">
+                <div className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-200">Risk</div>
               </th>
-              <th rowSpan={2} className="border border-slate-600 p-2 min-w-[120px]">
-                <div className="text-slate-300 font-bold text-xs">ETKİLENEN</div>
+              <th rowSpan={2} className="min-w-[152px] border border-slate-700/80 px-2 py-3">
+                <div className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-200">Etkilenen</div>
               </th>
-              
-              {/* 1. AŞAMA Header */}
-              <th colSpan={5} className="border border-slate-600 p-2 bg-red-900/30">
-                <div className="text-red-300 font-bold text-sm">1. AŞAMA (Mevcut Durum)</div>
-              </th>
-
-              {/* ÖNLEMLER Header */}
-              <th rowSpan={2} className="border border-slate-600 p-2 min-w-[250px] bg-blue-900/30">
-                <div className="text-blue-300 font-bold text-xs">ÖNLEMLER</div>
+                
+              <th colSpan={5} className="border border-slate-700/80 bg-red-500/10 px-2 py-3">
+                <div className="text-sm font-black tracking-[0.16em] text-red-200">1. AŞAMA · MEVCUT DURUM</div>
               </th>
 
-              {/* 2. AŞAMA Header */}
-              <th colSpan={5} className="border border-slate-600 p-2 bg-green-900/30">
-                <div className="text-green-300 font-bold text-sm">2. AŞAMA (Kalıntı Risk)</div>
+              <th rowSpan={2} className="min-w-[320px] border border-slate-700/80 bg-cyan-500/10 px-2 py-3">
+                <div className="text-[11px] font-black uppercase tracking-[0.18em] text-cyan-200">Önlemler</div>
               </th>
 
-              {/* Diğer */}
-              <th rowSpan={2} className="border border-slate-600 p-2 min-w-[120px]">
-                <div className="text-slate-300 font-bold text-xs">SORUMLU</div>
+              <th colSpan={5} className="border border-slate-700/80 bg-emerald-500/10 px-2 py-3">
+                <div className="text-sm font-black tracking-[0.16em] text-emerald-200">2. AŞAMA · KALINTI RİSK</div>
               </th>
-              <th rowSpan={2} className="border border-slate-600 p-2 min-w-[100px]">
-                <div className="text-slate-300 font-bold text-xs">TERMİN</div>
+
+              <th rowSpan={2} className="min-w-[160px] border border-slate-700/80 px-2 py-3">
+                <div className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-200">Sorumlu</div>
               </th>
-              <th rowSpan={2} className="border border-slate-600 p-2 w-20">
-                <div className="text-slate-300 font-bold text-xs">İŞLEM</div>
+              <th rowSpan={2} className="min-w-[132px] border border-slate-700/80 px-2 py-3">
+                <div className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-200">Termin</div>
+              </th>
+              <th rowSpan={2} className="w-20 border border-slate-700/80 px-2 py-3">
+                <div className="text-[11px] font-black uppercase tracking-[0.18em] text-slate-200">İşlem</div>
               </th>
             </tr>
 
-            {/* Alt Başlık Satırı (O, F, Ş kolonları) */}
-            <tr className="bg-slate-800/80">
-              {/* 1. AŞAMA Alt Başlıklar */}
-              <th className="border border-slate-600 p-1 bg-red-900/20 w-16">
-                <div className="text-red-300 font-semibold text-xs">O</div>
+            <tr className="bg-slate-900/95">
+              <th className="w-16 border border-slate-700/80 bg-red-500/5 p-2">
+                <div className="text-xs font-bold uppercase tracking-[0.14em] text-red-300">O</div>
               </th>
-              <th className="border border-slate-600 p-1 bg-red-900/20 w-16">
-                <div className="text-red-300 font-semibold text-xs">F</div>
+              <th className="w-16 border border-slate-700/80 bg-red-500/5 p-2">
+                <div className="text-xs font-bold uppercase tracking-[0.14em] text-red-300">F</div>
               </th>
-              <th className="border border-slate-600 p-1 bg-red-900/20 w-16">
-                <div className="text-red-300 font-semibold text-xs">Ş</div>
+              <th className="w-16 border border-slate-700/80 bg-red-500/5 p-2">
+                <div className="text-xs font-bold uppercase tracking-[0.14em] text-red-300">Ş</div>
               </th>
-              <th className="border border-slate-600 p-1 bg-red-900/20 w-20">
-                <div className="text-red-300 font-semibold text-xs">Skor</div>
+              <th className="w-20 border border-slate-700/80 bg-red-500/5 p-2">
+                <div className="text-xs font-bold uppercase tracking-[0.14em] text-red-300">Skor</div>
               </th>
-              <th className="border border-slate-600 p-1 bg-red-900/20 min-w-[100px]">
-                <div className="text-red-300 font-semibold text-xs">Sınıf</div>
+              <th className="min-w-[100px] border border-slate-700/80 bg-red-500/5 p-2">
+                <div className="text-xs font-bold uppercase tracking-[0.14em] text-red-300">Sınıf</div>
               </th>
 
-              {/* 2. AŞAMA Alt Başlıklar */}
-              <th className="border border-slate-600 p-1 bg-green-900/20 w-16">
-                <div className="text-green-300 font-semibold text-xs">O</div>
+              <th className="w-16 border border-slate-700/80 bg-emerald-500/5 p-2">
+                <div className="text-xs font-bold uppercase tracking-[0.14em] text-green-300">O</div>
               </th>
-              <th className="border border-slate-600 p-1 bg-green-900/20 w-16">
-                <div className="text-green-300 font-semibold text-xs">F</div>
+              <th className="w-16 border border-slate-700/80 bg-emerald-500/5 p-2">
+                <div className="text-xs font-bold uppercase tracking-[0.14em] text-green-300">F</div>
               </th>
-              <th className="border border-slate-600 p-1 bg-green-900/20 w-16">
-                <div className="text-green-300 font-semibold text-xs">Ş</div>
+              <th className="w-16 border border-slate-700/80 bg-emerald-500/5 p-2">
+                <div className="text-xs font-bold uppercase tracking-[0.14em] text-green-300">Ş</div>
               </th>
-              <th className="border border-slate-600 p-1 bg-green-900/20 w-20">
-                <div className="text-green-300 font-semibold text-xs">Skor</div>
+              <th className="w-20 border border-slate-700/80 bg-emerald-500/5 p-2">
+                <div className="text-xs font-bold uppercase tracking-[0.14em] text-green-300">Skor</div>
               </th>
-              <th className="border border-slate-600 p-1 bg-green-900/20 min-w-[100px]">
-                <div className="text-green-300 font-semibold text-xs">Sınıf</div>
+              <th className="min-w-[100px] border border-slate-700/80 bg-emerald-500/5 p-2">
+                <div className="text-xs font-bold uppercase tracking-[0.14em] text-green-300">Sınıf</div>
               </th>
             </tr>
           </thead>
@@ -1946,23 +1773,23 @@ useLayoutEffect(() => {
             {riskItems.map((item, idx) => (
               <tr
                 key={item.id}
-                className="border-b border-slate-700 hover:bg-slate-800/30 transition-colors"
+                className="border-b border-slate-800/70 transition-colors odd:bg-white/[0.015] even:bg-slate-950/35 hover:bg-white/[0.06]"
               >
                 {/* NO */}
-                <td className="sticky left-0 z-10 bg-slate-900 border border-slate-700 p-2 text-center">
-                  <Badge variant="outline" className="bg-slate-800 text-slate-300 border-slate-600 font-mono">
+                <td className="sticky left-0 z-10 border border-slate-800/80 bg-slate-950 px-2 py-3 text-center">
+                  <Badge variant="outline" className="border-slate-600 bg-slate-900/80 font-mono text-slate-200">
                     {String(idx + 1).padStart(2, '0')}
                   </Badge>
                 </td>
 
                 {/* BÖLÜM/ORTAM */}
-                <td className="border border-slate-700 p-2">
+                <td className="border border-slate-800/80 px-2 py-3">
                   {editingCell?.itemId === item.id && editingCell.field === 'department' ? (
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-2 rounded-2xl border border-cyan-400/20 bg-cyan-500/[0.06] p-2">
                       <Input
                         value={editValue}
                         onChange={(e) => setEditValue(e.target.value)}
-                        className="h-8 text-xs bg-slate-800 border-slate-600"
+                        className="h-9 rounded-xl border-white/10 bg-slate-950/80 text-xs text-slate-100 placeholder:text-slate-500"
                         autoFocus
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') saveEdit();
@@ -1979,7 +1806,7 @@ useLayoutEffect(() => {
                   ) : (
                     <div
                       onClick={() => startEdit(item.id, 'department', item.department)}
-                      className="cursor-pointer hover:bg-slate-800 p-2 rounded min-h-[32px]"
+                      className="min-h-[40px] cursor-pointer rounded-xl border border-transparent p-2 transition hover:border-white/10 hover:bg-white/[0.04]"
                     >
                       <p className="text-xs text-slate-300">
                         {item.department || "—"}
@@ -1989,24 +1816,86 @@ useLayoutEffect(() => {
                 </td>
 
                 {/* FOTO */}
-                <td className="border border-slate-700 p-2">
-                  <Button
-                    size="icon"
-                    variant="outline"
-                    className="h-16 w-16 border-dashed border-slate-600 hover:border-indigo-500"
-                  >
-                    <Camera className="h-5 w-5 text-slate-500" />
-                  </Button>
+                <td className="border border-slate-800/80 px-2 py-3">
+                  <div className="flex flex-col items-center gap-2">
+                    <input
+                      ref={(element) => {
+                        riskPhotoInputRefs.current[item.id] = element;
+                      }}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          void uploadRiskItemPhoto(item.id, file);
+                        }
+                      }}
+                    />
+
+                    {item.photo_url ? (
+                      <button
+                        type="button"
+                        onClick={() => setPreviewPhotoUrl(item.photo_url || null)}
+                        className="group relative h-16 w-16 overflow-hidden rounded-2xl border border-cyan-400/20 bg-slate-950/80 transition hover:border-cyan-300/40"
+                      >
+                        <img
+                          src={item.photo_url}
+                          alt={`Risk ${idx + 1} fotoğrafı`}
+                          className="h-full w-full object-cover"
+                        />
+                        <div className="absolute inset-0 bg-slate-950/0 transition group-hover:bg-slate-950/20" />
+                      </button>
+                    ) : (
+                      <Button
+                        size="icon"
+                        variant="outline"
+                        onClick={() => riskPhotoInputRefs.current[item.id]?.click()}
+                        disabled={photoUploadingItemId === item.id}
+                        className="h-16 w-16 rounded-2xl border-dashed border-white/10 bg-white/[0.03] hover:border-indigo-400 hover:bg-indigo-500/10"
+                      >
+                        {photoUploadingItemId === item.id ? (
+                          <Loader2 className="h-5 w-5 animate-spin text-cyan-300" />
+                        ) : (
+                          <Camera className="h-5 w-5 text-slate-500" />
+                        )}
+                      </Button>
+                    )}
+
+                    <div className="flex items-center gap-1">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => riskPhotoInputRefs.current[item.id]?.click()}
+                        disabled={photoUploadingItemId === item.id}
+                        className="h-7 rounded-full px-2 text-[10px] text-slate-300 hover:bg-white/10"
+                      >
+                        {item.photo_url ? "Değiştir" : "Yükle"}
+                      </Button>
+                      {item.photo_url && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => void removeRiskItemPhoto(item.id, item.photo_url)}
+                          className="h-7 rounded-full px-2 text-[10px] text-rose-300 hover:bg-rose-500/10"
+                        >
+                          Kaldır
+                        </Button>
+                      )}
+                    </div>
+                  </div>
                 </td>
 
                 {/* TEHLİKE */}
-                <td className="border border-slate-700 p-2">
+                <td className="border border-slate-800/80 px-2 py-3">
                   {editingCell?.itemId === item.id && editingCell.field === 'hazard' ? (
-                    <div className="flex items-start gap-1">
+                    <div className="flex items-start gap-2 rounded-2xl border border-cyan-400/20 bg-cyan-500/[0.06] p-2">
                       <Textarea
                         value={editValue}
                         onChange={(e) => setEditValue(e.target.value)}
-                        className="min-h-[60px] text-xs bg-slate-800 border-slate-600 resize-none"
+                        className="min-h-[84px] rounded-2xl border-white/10 bg-slate-950/80 text-xs text-slate-100 placeholder:text-slate-500 resize-none"
                         autoFocus
                       />
                       <div className="flex flex-col gap-1">
@@ -2021,7 +1910,7 @@ useLayoutEffect(() => {
                   ) : (
                     <div
                       onClick={() => startEdit(item.id, 'hazard', item.hazard)}
-                      className="cursor-pointer hover:bg-slate-800 p-2 rounded min-h-[32px]"
+                      className="min-h-[72px] cursor-pointer rounded-xl border border-transparent p-2 transition hover:border-white/10 hover:bg-white/[0.04]"
                     >
                       <p className="text-xs text-slate-300 whitespace-pre-wrap">
                         {item.hazard}
@@ -2031,13 +1920,13 @@ useLayoutEffect(() => {
                 </td>
 
                 {/* RİSK */}
-                <td className="border border-slate-700 p-2">
+                <td className="border border-slate-800/80 px-2 py-3">
                   {editingCell?.itemId === item.id && editingCell.field === 'risk' ? (
-                    <div className="flex items-start gap-1">
+                    <div className="flex items-start gap-2 rounded-2xl border border-cyan-400/20 bg-cyan-500/[0.06] p-2">
                       <Textarea
                         value={editValue}
                         onChange={(e) => setEditValue(e.target.value)}
-                        className="min-h-[60px] text-xs bg-slate-800 border-slate-600 resize-none"
+                        className="min-h-[84px] rounded-2xl border-white/10 bg-slate-950/80 text-xs text-slate-100 placeholder:text-slate-500 resize-none"
                         autoFocus
                       />
                       <div className="flex flex-col gap-1">
@@ -2052,7 +1941,7 @@ useLayoutEffect(() => {
                   ) : (
                     <div
                       onClick={() => startEdit(item.id, 'risk', item.risk)}
-                      className="cursor-pointer hover:bg-slate-800 p-2 rounded min-h-[32px]"
+                      className="min-h-[72px] cursor-pointer rounded-xl border border-transparent p-2 transition hover:border-white/10 hover:bg-white/[0.04]"
                     >
                       <p className="text-xs text-slate-300 whitespace-pre-wrap">
                         {item.risk}
@@ -2062,13 +1951,13 @@ useLayoutEffect(() => {
                 </td>
 
                 {/* ETKİLENEN */}
-                <td className="border border-slate-700 p-2">
+                <td className="border border-slate-800/80 px-2 py-3">
                   {editingCell?.itemId === item.id && editingCell.field === 'affected_people' ? (
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-2 rounded-2xl border border-cyan-400/20 bg-cyan-500/[0.06] p-2">
                       <Input
                         value={editValue}
                         onChange={(e) => setEditValue(e.target.value)}
-                        className="h-8 text-xs bg-slate-800 border-slate-600"
+                        className="h-9 rounded-xl border-white/10 bg-slate-950/80 text-xs text-slate-100 placeholder:text-slate-500"
                         autoFocus
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') saveEdit();
@@ -2085,7 +1974,7 @@ useLayoutEffect(() => {
                   ) : (
                     <div
                       onClick={() => startEdit(item.id, 'affected_people', item.affected_people)}
-                      className="cursor-pointer hover:bg-slate-800 p-2 rounded min-h-[32px]"
+                      className="min-h-[40px] cursor-pointer rounded-xl border border-transparent p-2 transition hover:border-white/10 hover:bg-white/[0.04]"
                     >
                       <p className="text-xs text-slate-300">
                         {item.affected_people || "—"}
@@ -2095,17 +1984,17 @@ useLayoutEffect(() => {
                 </td>
 
                 {/* 1. AŞAMA - O */}
-                <td className="border border-slate-700 p-1 bg-red-900/10 text-center">
+                <td className="border border-slate-800/80 bg-red-900/10 p-2 text-center">
                   <Select
                     value={item.probability_1.toString()}
                     onValueChange={(value) => updateRiskItem(item.id, 'probability_1', parseFloat(value), 1)}
                   >
-                    <SelectTrigger className="h-8 w-14 bg-slate-800 border-slate-600 text-xs font-mono">
+                    <SelectTrigger className="h-9 w-[72px] rounded-xl border-red-400/15 bg-slate-950/80 text-xs font-semibold text-slate-100">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent 
                         position="popper" 
-                        onCloseAutoFocus={(e) => e.preventDefault()} // 👈 Burası hayati!
+                        onCloseAutoFocus={(e) => e.preventDefault()} // Bu davranış gerekli.
                     >
                       {FINE_KINNEY_SCALES.probability.map(scale => (
                         <SelectItem key={scale.value} value={scale.value.toString()}>
@@ -2117,17 +2006,17 @@ useLayoutEffect(() => {
                 </td>
 
                 {/* 1. AŞAMA - F */}
-                <td className="border border-slate-700 p-1 bg-red-900/10 text-center">
+                <td className="border border-slate-800/80 bg-red-900/10 p-2 text-center">
                   <Select
                     value={item.frequency_1.toString()}
                     onValueChange={(value) => updateRiskItem(item.id, 'frequency_1', parseFloat(value), 1)}
                   >
-                    <SelectTrigger className="h-8 w-14 bg-slate-800 border-slate-600 text-xs font-mono">
+                    <SelectTrigger className="h-9 w-[72px] rounded-xl border-red-400/15 bg-slate-950/80 text-xs font-semibold text-slate-100">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent 
                         position="popper" 
-                        onCloseAutoFocus={(e) => e.preventDefault()} // 👈 Burası hayati!
+                        onCloseAutoFocus={(e) => e.preventDefault()} // Bu davranış gerekli.
                     >                        
                       {FINE_KINNEY_SCALES.frequency.map(scale => (
                         <SelectItem key={scale.value} value={scale.value.toString()}>
@@ -2139,17 +2028,17 @@ useLayoutEffect(() => {
                 </td>
 
                 {/* 1. AŞAMA - Ş */}
-                <td className="border border-slate-700 p-1 bg-red-900/10 text-center">
+                <td className="border border-slate-800/80 bg-red-900/10 p-2 text-center">
                   <Select
                     value={item.severity_1.toString()}
                     onValueChange={(value) => updateRiskItem(item.id, 'severity_1', parseFloat(value), 1)}
                   >
-                    <SelectTrigger className="h-8 w-14 bg-slate-800 border-slate-600 text-xs font-mono">
+                    <SelectTrigger className="h-9 w-[72px] rounded-xl border-red-400/15 bg-slate-950/80 text-xs font-semibold text-slate-100">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent 
                     position="popper" 
-                    onCloseAutoFocus={(e) => e.preventDefault()} // 👈 Burası hayati!
+                    onCloseAutoFocus={(e) => e.preventDefault()} // Bu davranış gerekli.
                     >
                       {FINE_KINNEY_SCALES.severity.map(scale => (
                         <SelectItem key={scale.value} value={scale.value.toString()}>
@@ -2161,27 +2050,27 @@ useLayoutEffect(() => {
                 </td>
 
                 {/* 1. AŞAMA - Skor */}
-                <td className="border border-slate-700 p-1 bg-red-900/10 text-center">
+                <td className="border border-slate-800/80 bg-red-900/10 p-2 text-center">
                   <Badge className="bg-red-600 text-white font-mono font-bold text-xs">
                     {item.score_1}
                   </Badge>
                 </td>
 
                 {/* 1. AŞAMA - Sınıf */}
-                <td className="border border-slate-700 p-1 bg-red-900/10 text-center">
+                <td className="border border-slate-800/80 bg-red-900/10 p-2 text-center">
                   <Badge className={`${getRiskClassColor(item.risk_class_1)} font-semibold text-xs`}>
                     {getRiskClassLabel(item.risk_class_1)}
                   </Badge>
                 </td>
 
                 {/* ÖNLEMLER */}
-                <td className="border border-slate-700 p-2 bg-blue-900/10">
+                <td className="border border-slate-800/80 bg-cyan-900/10 px-2 py-3">
                   {editingCell?.itemId === item.id && editingCell.field === 'proposed_controls' ? (
-                    <div className="flex items-start gap-1">
+                    <div className="flex items-start gap-2 rounded-2xl border border-cyan-400/20 bg-cyan-500/[0.06] p-2">
                       <Textarea
                         value={editValue}
                         onChange={(e) => setEditValue(e.target.value)}
-                        className="min-h-[60px] text-xs bg-slate-800 border-slate-600 resize-none"
+                        className="min-h-[84px] rounded-2xl border-white/10 bg-slate-950/80 text-xs text-slate-100 placeholder:text-slate-500 resize-none"
                         autoFocus
                       />
                       <div className="flex flex-col gap-1">
@@ -2196,7 +2085,7 @@ useLayoutEffect(() => {
                   ) : (
                     <div
                       onClick={() => startEdit(item.id, 'proposed_controls', item.proposed_controls)}
-                      className="cursor-pointer hover:bg-slate-800 p-2 rounded min-h-[32px]"
+                      className="min-h-[72px] cursor-pointer rounded-xl border border-transparent p-2 transition hover:border-white/10 hover:bg-white/[0.04]"
                     >
                       <p className="text-xs text-slate-300 whitespace-pre-wrap">
                         {item.proposed_controls || "—"}
@@ -2206,17 +2095,17 @@ useLayoutEffect(() => {
                 </td>
 
                 {/* 2. AŞAMA - O */}
-                <td className="border border-slate-700 p-1 bg-green-900/10 text-center">
+                <td className="border border-slate-800/80 bg-green-900/10 p-2 text-center">
                   <Select
                     value={(item.probability_2 || 1).toString()}
                     onValueChange={(value) => updateRiskItem(item.id, 'probability_2', parseFloat(value), 2)}
                   >
-                    <SelectTrigger className="h-8 w-14 bg-slate-800 border-slate-600 text-xs font-mono">
+                    <SelectTrigger className="h-9 w-[72px] rounded-xl border-emerald-400/15 bg-slate-950/80 text-xs font-semibold text-slate-100">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent 
                         position="popper" 
-                        onCloseAutoFocus={(e) => e.preventDefault()} // 👈 Burası hayati!
+                        onCloseAutoFocus={(e) => e.preventDefault()} // Bu davranış gerekli.
                         >
                       {FINE_KINNEY_SCALES.probability.map(scale => (
                         <SelectItem key={scale.value} value={scale.value.toString()}>
@@ -2228,17 +2117,17 @@ useLayoutEffect(() => {
                 </td>
 
                 {/* 2. AŞAMA - F */}
-                <td className="border border-slate-700 p-1 bg-green-900/10 text-center">
+                <td className="border border-slate-800/80 bg-green-900/10 p-2 text-center">
                   <Select
                     value={(item.frequency_2 || 1).toString()}
                     onValueChange={(value) => updateRiskItem(item.id, 'frequency_2', parseFloat(value), 2)}
                   >
-                    <SelectTrigger className="h-8 w-14 bg-slate-800 border-slate-600 text-xs font-mono">
+                    <SelectTrigger className="h-9 w-[72px] rounded-xl border-emerald-400/15 bg-slate-950/80 text-xs font-semibold text-slate-100">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent 
                     position="popper" 
-                    onCloseAutoFocus={(e) => e.preventDefault()} // 👈 Burası hayati!
+                    onCloseAutoFocus={(e) => e.preventDefault()} // Bu davranış gerekli.
                     >
                       {FINE_KINNEY_SCALES.frequency.map(scale => (
                         <SelectItem key={scale.value} value={scale.value.toString()}>
@@ -2250,17 +2139,17 @@ useLayoutEffect(() => {
                 </td>
 
                 {/* 2. AŞAMA - Ş */}
-                <td className="border border-slate-700 p-1 bg-green-900/10 text-center">
+                <td className="border border-slate-800/80 bg-green-900/10 p-2 text-center">
                   <Select
                     value={(item.severity_2 || 1).toString()}
                     onValueChange={(value) => updateRiskItem(item.id, 'severity_2', parseFloat(value), 2)}
                   >
-                    <SelectTrigger className="h-8 w-14 bg-slate-800 border-slate-600 text-xs font-mono">
+                    <SelectTrigger className="h-9 w-[72px] rounded-xl border-emerald-400/15 bg-slate-950/80 text-xs font-semibold text-slate-100">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent 
                     position="popper" 
-                    onCloseAutoFocus={(e) => e.preventDefault()} // 👈 Burası hayati!
+                    onCloseAutoFocus={(e) => e.preventDefault()} // Bu davranış gerekli.
                     >
                       {FINE_KINNEY_SCALES.severity.map(scale => (
                         <SelectItem key={scale.value} value={scale.value.toString()}>
@@ -2349,11 +2238,11 @@ useLayoutEffect(() => {
 
    const exportToPDF = async () => {
   if (!assessment || riskItems.length === 0) {
-    toast.error("❌ PDF oluşturmak için veri yok");
+    toast.error("PDF oluşturmak için veri yok");
     return;
   }
 
-  toast.info("📄 Profesyonel PDF oluşturuluyor...");
+  toast.info("Profesyonel PDF oluşturuluyor...");
 
   try {
     const doc = new jsPDF({
@@ -2362,55 +2251,99 @@ useLayoutEffect(() => {
       format: 'a4'
     });
 
-    // ✅ TÜRKÇE FONTU KAYDET VE AKTİF ET
     addInterFontsToJsPDF(doc);
-    doc.setFont("Inter"); // Varsayılan fontu Inter yap
+    doc.setFont("Inter");
 
     const pageWidth = doc.internal.pageSize.getWidth();
     const pageHeight = doc.internal.pageSize.getHeight();
-
-    // ========================
-    // HEADER
-    // ========================
-    doc.setFontSize(16);
-    doc.setFont("Inter", "bold"); // ✅ helvetica yerine Inter
-    doc.text("RİSK DEĞERLENDİRME FORMU (2 AŞAMALI FİNE-KİNNEY)", pageWidth / 2, 15, { align: 'center' });
-
-    // ========================
-    // COMPANY INFO BOX
-    // ========================
     const company = companies.find(c => c.id === assessment.company_id);
+    const logoDataUrl = await loadImageAsDataUrl(company?.logo_url);
+
+    doc.setFillColor(15, 23, 42);
+    doc.rect(0, 0, pageWidth, 30, "F");
+    doc.setDrawColor(34, 211, 238);
+    doc.setLineWidth(0.8);
+    doc.line(0, 30, pageWidth, 30);
+
+    if (logoDataUrl) {
+      doc.addImage(logoDataUrl, "PNG", 12, 6, 18, 16);
+    }
+
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(16);
+    doc.setFont("Inter", "bold");
+    doc.text("KURUMSAL RİSK DEĞERLENDİRME FORMU", pageWidth / 2, 13, { align: 'center' });
+    doc.setFontSize(8.5);
+    doc.setFont("Inter", "normal");
+    doc.text("Operasyon özeti, risk dağılımı ve önerilen aksiyonlar", pageWidth / 2, 20, { align: 'center' });
+    const coverBoxX = pageWidth - 74;
+    const coverBoxY = 5.5;
+    const coverBoxW = 60;
+    const coverBoxH = 24;
+    const coverCenterX = coverBoxX + coverBoxW / 2;
+    doc.roundedRect(coverBoxX, coverBoxY, coverBoxW, coverBoxH, 3, 3, "S");
+    doc.setTextColor(226, 232, 240);
+    doc.setDrawColor(125, 211, 252);
+    doc.setLineWidth(0.35);
+    doc.roundedRect(coverBoxX + 4, coverBoxY + 4, 5.5, 7, 1.2, 1.2, "S");
+    doc.line(coverBoxX + 5.2, coverBoxY + 6.1, coverBoxX + 8.3, coverBoxY + 6.1);
+    doc.line(coverBoxX + 5.2, coverBoxY + 7.8, coverBoxX + 8.3, coverBoxY + 7.8);
+    doc.setFont("Inter", "bold");
+    doc.setFontSize(7.2);
+    doc.text("Kurum Kapak Bloğu", coverCenterX + 2, 10.3, { align: "center" });
+    doc.setFontSize(8.3);
+    doc.text(`Rev. ${assessment.version ?? 0}`, coverCenterX + 2, 15.4, { align: "center" });
+    doc.setFont("Inter", "normal");
+    doc.setFontSize(6.2);
+    doc.text("Oluşturulma", coverCenterX + 2, 20.1, { align: "center" });
+    doc.setFontSize(6.5);
+    doc.text(format(new Date(), "dd.MM.yyyy HH:mm", { locale: tr }), coverCenterX + 2, 23.2, { align: "center" });
+
+    doc.setTextColor(30, 41, 59);
+    doc.setFillColor(248, 250, 252);
+    doc.roundedRect(10, 36, pageWidth - 20, 16, 3, 3, "F");
     doc.setFontSize(9);
-    doc.setFont("Inter", "normal"); // ✅ helvetica yerine Inter
-    
-    doc.text(`Firma: ${company?.name || "—"}`, 15, 25);
-    doc.text(`Değerlendiren: ${assessment.assessor_name || "—"}`, 15, 30);
-    doc.text(`Bölüm: ${assessment.department || "Tüm Bölümler"}`, 15, 35);
-    
-    doc.text(`Tarih: ${format(new Date(assessment.assessment_date), 'dd.MM.yyyy', { locale: tr })}`, pageWidth - 70, 25);
-    doc.text(`Form No: ${assessment.id.substring(0, 8).toUpperCase()}`, pageWidth - 70, 30);
-    doc.text(`Yöntem: Fine-Kinney (2 Aşama)`, pageWidth - 70, 35);
+    doc.setFont("Inter", "normal");
+    doc.text(`Firma: ${company?.name || "—"}`, 15, 43);
+    doc.text(`Değerlendiren: ${assessment.assessor_name || "—"}`, 15, 48);
+    doc.text(`Bölüm: ${assessment.department || "Tüm Bölümler"}`, 90, 43);
+    doc.text(`Tarih: ${format(new Date(assessment.assessment_date), 'dd.MM.yyyy', { locale: tr })}`, 90, 48);
+    doc.text(`Form No: ${assessment.id.substring(0, 8).toUpperCase()}`, pageWidth - 65, 43);
+    doc.text(`Yöntem: Fine-Kinney (2 Aşama)`, pageWidth - 65, 48);
 
     // ========================
     // STATISTICS
     // ========================
     doc.setFontSize(8);
-    doc.setFont("Inter", "bold"); // ✅ helvetica yerine Inter
-    doc.text("İSTATİSTİKLER:", 15, 42);
+    doc.setFont("Inter", "bold");
+    doc.text("OPERASYON ÖZETİ:", 15, 58);
     doc.setFont("Inter", "normal");
-    const stats = {
+      const stats = {
       total: riskItems.length,
       critical: riskItems.filter(i => i.risk_class_1 === "Çok Yüksek").length,
       residual_safe: riskItems.filter(i => (i.risk_class_2 === "Kabul Edilebilir" || i.risk_class_2 === "Olası")).length
     };
-    doc.text(`Toplam: ${stats.total} | Kritik: ${stats.critical} | Kalıntı Risk Güvenli: ${stats.residual_safe}`, 50, 42);
+    doc.text(`Toplam: ${stats.total} | Kritik: ${stats.critical} | Kalıntı Risk Güvenli: ${stats.residual_safe}`, 50, 58);
 
     // ========================
     // MAIN TABLE DATA
     // ========================
+    const sharePhotoDataMap = new Map<string, string>();
+    await Promise.all(
+      riskItems.map(async (item) => {
+        if (item.photo_url) {
+          const dataUrl = await loadImageAsDataUrl(item.photo_url);
+          if (dataUrl) {
+            sharePhotoDataMap.set(item.id, dataUrl);
+          }
+        }
+      })
+    );
+
     const tableData = riskItems.map((item, idx) => [
       String(idx + 1).padStart(2, '0'),
       item.department || "—",
+      sharePhotoDataMap.has(item.id) ? " " : "—",
       item.hazard || "—",
       item.risk || "—",
       item.affected_people || "—",
@@ -2430,32 +2363,87 @@ useLayoutEffect(() => {
     ]);
 
     autoTable(doc, {
-      startY: 47,
-      head: [['No', 'Bölüm', 'Tehlike', 'Risk', 'Etkilenen', 'O', 'F', 'Ş', 'Skor', 'Sınıf', 'Önlemler', 'O', 'F', 'Ş', 'Skor', 'Sınıf', 'Sorumlu', 'Termin']],
+      startY: 63,
+      head: [['No', 'Bölüm', 'Foto', 'Tehlike', 'Risk', 'Etkilenen', 'O', 'F', 'Ş', 'Skor', 'Sınıf', 'Önlemler', 'O', 'F', 'Ş', 'Skor', 'Sınıf', 'Sorumlu', 'Termin']],
       body: tableData,
       theme: 'grid',
       styles: {
         fontSize: 6,
         cellPadding: 1.5,
-        font: "Inter", // ✅ KRİTİK: Tablo fontunu Inter yap
-        lineColor: [100, 100, 100],
+        font: "Inter",
+        lineColor: [148, 163, 184],
         lineWidth: 0.1,
-        textColor: [50, 50, 50]
+        textColor: [30, 41, 59],
+        fillColor: [248, 250, 252],
+        valign: "middle"
       },
       headStyles: {
-        fillColor: [51, 65, 85],
+        fillColor: [15, 23, 42],
         textColor: [255, 255, 255],
-        font: "Inter", // ✅ Başlık fontu Inter
+        font: "Inter",
         fontStyle: 'bold',
         halign: 'center',
         valign: 'middle',
         fontSize: 7
       },
       columnStyles: {
-        // ... Mevcut columnStyles ayarların aynı kalsın
+        0: { cellWidth: 10, halign: "center" },
+        1: { cellWidth: 20 },
+        2: { cellWidth: 16, halign: "center" },
+        3: { cellWidth: 27 },
+        4: { cellWidth: 30 },
+        5: { cellWidth: 18 },
+        6: { cellWidth: 8, halign: "center" },
+        7: { cellWidth: 8, halign: "center" },
+        8: { cellWidth: 8, halign: "center" },
+        9: { cellWidth: 10, halign: "center" },
+        10: { cellWidth: 16, halign: "center" },
+        11: { cellWidth: 36 },
+        12: { cellWidth: 8, halign: "center" },
+        13: { cellWidth: 8, halign: "center" },
+        14: { cellWidth: 8, halign: "center" },
+        15: { cellWidth: 10, halign: "center" },
+        16: { cellWidth: 16, halign: "center" },
+        17: { cellWidth: 20 },
+        18: { cellWidth: 16, halign: "center" },
       },
       didParseCell: (data) => {
-        // ... Mevcut renklendirme mantığın aynı kalsın
+        if (data.section === "body") {
+          data.cell.styles.fillColor = data.row.index % 2 === 0 ? [248, 250, 252] : [241, 245, 249];
+          if (data.column.index === 2) {
+            data.cell.styles.fillColor = [240, 249, 255];
+          }
+          if (data.column.index >= 6 && data.column.index <= 10) {
+            data.cell.styles.fillColor = [254, 242, 242];
+          }
+          if (data.column.index === 11) {
+            data.cell.styles.fillColor = [236, 254, 255];
+          }
+          if (data.column.index >= 12 && data.column.index <= 16) {
+            data.cell.styles.fillColor = [240, 253, 244];
+          }
+
+          const riskItem = riskItems[data.row.index];
+          const contentLength =
+            (riskItem?.hazard?.length || 0) +
+            (riskItem?.risk?.length || 0) +
+            (riskItem?.proposed_controls?.length || 0);
+          if (riskItem?.photo_url || contentLength > 180) {
+            data.cell.styles.minCellHeight = contentLength > 260 ? 24 : 18;
+          }
+        }
+      },
+      didDrawCell: (data) => {
+        if (data.section === "body" && data.column.index === 2) {
+          const riskItem = riskItems[data.row.index];
+          const imageData = riskItem ? sharePhotoDataMap.get(riskItem.id) : null;
+          if (imageData) {
+            const size = Math.min(data.cell.width - 3, data.cell.height - 3, 13);
+            const x = data.cell.x + (data.cell.width - size) / 2;
+            const y = data.cell.y + (data.cell.height - size) / 2;
+            doc.addImage(imageData, "JPEG", x, y, size, size);
+          }
+        }
       },
       margin: { left: 8, right: 8 },
       tableWidth: 'auto'
@@ -2468,16 +2456,16 @@ useLayoutEffect(() => {
     doc.text(`Bu rapor İSGVizyon İSG Yazılımı ile oluşturulmuştur.`, pageWidth / 2, pageHeight - 8, { align: 'center' });
 
     doc.save(`Risk-Analiz-${assessment.id.substring(0, 8)}.pdf`);
-    toast.success("✅ PDF rapor indirildi");
+    toast.success("PDF rapor indirildi");
 
   } catch (error: any) {
-    console.error("💥 PDF error:", error);
+    console.error("PDF error:", error);
     toast.error("PDF oluşturma hatası");
   }
 };
 
 // PDF export fonksiyonundan sonra:
-// ✅ PDF Export ve Share Fonksiyonu
+// PDF Export ve Share Fonksiyonu
 const exportToPDFAndShare = async () => {
   if (riskItems.length === 0) {
     toast.error("Rapor oluşturmak için en az bir risk kaydı gerekli");
@@ -2486,9 +2474,9 @@ const exportToPDFAndShare = async () => {
 
   try {
     setSaving(true);
-    toast.info("📄 PDF raporu oluşturuluyor...");
+    toast.info("PDF raporu oluşturuluyor...");
 
-    // ✅ 1. PDF BLOB OLUŞTUR (Mevcut exportToPDF fonksiyonundan al)
+    // 1. PDF BLOB OLUŞTUR (Mevcut exportToPDF fonksiyonundan al)
     const doc = new jsPDF({
       orientation: "landscape",
       unit: "mm",
@@ -2501,19 +2489,46 @@ const exportToPDFAndShare = async () => {
     const pageWidth = doc.internal.pageSize.getWidth();
     const pageHeight = doc.internal.pageSize.getHeight();
 
+    const company = companies.find((c) => c.id === assessment?.company_id);
+    const logoDataUrl = await loadImageAsDataUrl(company?.logo_url);
+
     // Header
-    doc.setFillColor(29, 78, 216);
-    doc.rect(0, 0, pageWidth, 25, "F");
+    doc.setFillColor(15, 23, 42);
+    doc.rect(0, 0, pageWidth, 28, "F");
+    if (logoDataUrl) {
+      doc.addImage(logoDataUrl, "PNG", 12, 6, 16, 14);
+    }
 
     doc.setFont("Inter", "bold");
     doc.setFontSize(16);
     doc.setTextColor(255, 255, 255);
-    doc.text("RİSK ANALİZ TABLOSU", pageWidth / 2, 12, { align: "center" });
+    doc.text("KURUMSAL RİSK DEĞERLENDİRME ÖZETİ", pageWidth / 2, 12, { align: "center" });
+    const shareCoverBoxX = pageWidth - 74;
+    const shareCoverBoxY = 5;
+    const shareCoverBoxW = 60;
+    const shareCoverBoxH = 23;
+    const shareCoverCenterX = shareCoverBoxX + shareCoverBoxW / 2;
+    doc.roundedRect(shareCoverBoxX, shareCoverBoxY, shareCoverBoxW, shareCoverBoxH, 3, 3, "S");
+    doc.setDrawColor(125, 211, 252);
+    doc.setLineWidth(0.35);
+    doc.roundedRect(shareCoverBoxX + 4, shareCoverBoxY + 4, 5.5, 7, 1.2, 1.2, "S");
+    doc.line(shareCoverBoxX + 5.2, shareCoverBoxY + 6.1, shareCoverBoxX + 8.3, shareCoverBoxY + 6.1);
+    doc.line(shareCoverBoxX + 5.2, shareCoverBoxY + 7.8, shareCoverBoxX + 8.3, shareCoverBoxY + 7.8);
+    doc.setFont("Inter", "bold");
+    doc.setFontSize(7.1);
+    doc.text("Kurum Kapak Bloğu", shareCoverCenterX + 2, 9.9, { align: "center" });
+    doc.setFontSize(8.1);
+    doc.text(`Rev. ${assessment?.version ?? 0}`, shareCoverCenterX + 2, 14.9, { align: "center" });
+    doc.setFont("Inter", "normal");
+    doc.setFontSize(6.1);
+    doc.text("Oluşturulma", shareCoverCenterX + 2, 19.2, { align: "center" });
+    doc.setFontSize(6.4);
+    doc.text(format(new Date(), "dd.MM.yyyy HH:mm", { locale: tr }), shareCoverCenterX + 2, 22.1, { align: "center" });
 
     doc.setFontSize(9);
     doc.setFont("Inter", "normal");
     doc.text(
-      `Firma: ${companies.find((c) => c.id === assessment?.company_id)?.name || "—"}`,
+      `Firma: ${company?.name || "—"}`,
       14,
       20
     );
@@ -2543,10 +2558,23 @@ const exportToPDFAndShare = async () => {
       42
     );
 
+    const photoDataMap = new Map<string, string>();
+    await Promise.all(
+      riskItems.map(async (item) => {
+        if (item.photo_url) {
+          const dataUrl = await loadImageAsDataUrl(item.photo_url);
+          if (dataUrl) {
+            photoDataMap.set(item.id, dataUrl);
+          }
+        }
+      })
+    );
+
     // Table
     const tableData = riskItems.map((item, idx) => [
       String(idx + 1).padStart(2, "0"),
       item.department || "—",
+      photoDataMap.has(item.id) ? " " : "—",
       item.hazard || "—",
       item.risk || "—",
       item.affected_people || "—",
@@ -2568,6 +2596,7 @@ const exportToPDFAndShare = async () => {
         [
           "No",
           "Birim",
+          "Foto",
           "Tehlike",
           "Risk",
           "Etkilenen",
@@ -2586,29 +2615,60 @@ const exportToPDFAndShare = async () => {
       ],
       body: tableData,
       startY: 50,
-      styles: { fontSize: 7, cellPadding: 1.5, font: "Inter" },
+      styles: { fontSize: 7, cellPadding: 1.5, font: "Inter", lineColor: [148, 163, 184], lineWidth: 0.1, textColor: [30, 41, 59], fillColor: [248, 250, 252], valign: "middle" },
       headStyles: {
-        fillColor: [59, 130, 246],
+        fillColor: [15, 23, 42],
         textColor: [255, 255, 255],
         fontStyle: "bold",
       },
       columnStyles: {
         0: { cellWidth: 8 },
         1: { cellWidth: 18 },
-        2: { cellWidth: 25 },
-        3: { cellWidth: 25 },
-        4: { cellWidth: 15 },
-        5: { cellWidth: 8 },
+        2: { cellWidth: 18 },
+        3: { cellWidth: 24 },
+        4: { cellWidth: 24 },
+        5: { cellWidth: 14 },
         6: { cellWidth: 8 },
         7: { cellWidth: 8 },
-        8: { cellWidth: 10 },
-        9: { cellWidth: 15 },
-        10: { cellWidth: 35 },
-        11: { cellWidth: 8 },
+        8: { cellWidth: 8 },
+        9: { cellWidth: 10 },
+        10: { cellWidth: 14 },
+        11: { cellWidth: 28 },
         12: { cellWidth: 8 },
         13: { cellWidth: 8 },
-        14: { cellWidth: 10 },
-        15: { cellWidth: 15 },
+        14: { cellWidth: 8 },
+        15: { cellWidth: 10 },
+        16: { cellWidth: 14 },
+      },
+      didParseCell: (data) => {
+        if (data.section === "body") {
+          data.cell.styles.fillColor = data.row.index % 2 === 0 ? [248, 250, 252] : [241, 245, 249];
+          if (data.column.index === 2) data.cell.styles.fillColor = [240, 249, 255];
+          if (data.column.index >= 6 && data.column.index <= 10) data.cell.styles.fillColor = [254, 242, 242];
+          if (data.column.index === 11) data.cell.styles.fillColor = [236, 254, 255];
+          if (data.column.index >= 12 && data.column.index <= 16) data.cell.styles.fillColor = [240, 253, 244];
+
+          const riskItem = riskItems[data.row.index];
+          const contentLength =
+            (riskItem?.hazard?.length || 0) +
+            (riskItem?.risk?.length || 0) +
+            (riskItem?.proposed_controls?.length || 0);
+          if (riskItem?.photo_url || contentLength > 180) {
+            data.cell.styles.minCellHeight = contentLength > 260 ? 24 : 18;
+          }
+        }
+      },
+      didDrawCell: (data) => {
+        if (data.section === "body" && data.column.index === 2) {
+          const riskItem = riskItems[data.row.index];
+          const imageData = riskItem ? photoDataMap.get(riskItem.id) : null;
+          if (imageData) {
+            const size = Math.min(data.cell.width - 3, data.cell.height - 3, 14);
+            const x = data.cell.x + (data.cell.width - size) / 2;
+            const y = data.cell.y + (data.cell.height - size) / 2;
+            doc.addImage(imageData, "JPEG", x, y, size, size);
+          }
+        }
       },
       margin: { left: 8, right: 8 },
       tableWidth: "auto",
@@ -2632,7 +2692,7 @@ const exportToPDFAndShare = async () => {
       return;
     }
 
-    // ✅ 2. SUPABASE STORAGE'A YÜKLE
+    // 2. SUPABASE STORAGE'A YÜKLE
     const fileName = `risk-assessment-${assessment.id}-${Date.now()}.pdf`;
     const storagePath = `risk-reports/${user?.id}/${fileName}`;
 
@@ -2644,28 +2704,28 @@ const exportToPDFAndShare = async () => {
       });
 
     if (uploadError) {
-      console.error("❌ Storage upload error:", uploadError);
+      console.error("Storage upload error:", uploadError);
       toast.error("Dosya yüklenemedi", { description: uploadError.message });
       return;
     }
 
-    // ✅ 3. PUBLIC URL AL
+    // 3. PUBLIC URL AL
     const { data: publicUrlData } = supabase.storage
       .from("reports")
       .getPublicUrl(uploadData.path);
 
     const reportUrl = publicUrlData.publicUrl;
 
-    // ✅ 4. LOCAL İNDİR
+    // 4. LOCAL İNDİR
     doc.save(fileName);
-    toast.success("✅ PDF indirildi");
+    toast.success("PDF indirildi");
 
-    // ✅ 5. E-POSTA MODAL AÇ
+    // 5. E-POSTA MODAL AÇ
     setCurrentReportUrl(reportUrl);
     setCurrentReportFilename(fileName);
     setSendModalOpen(true);
   } catch (error: any) {
-    console.error("❌ PDF export error:", error);
+    console.error("PDF export error:", error);
     toast.error(`PDF oluşturulamadı: ${error.message}`);
   } finally {
     setSaving(false);
@@ -2682,9 +2742,12 @@ const exportToPDFAndShare = async () => {
     }
 
     try {
+      const company = companies.find((c) => c.id === assessment?.company_id);
       const exportData = riskItems.map((item, idx) => ({
         'No': idx + 1,
         'Bölüm': item.department || "",
+        'Foto': item.photo_url ? "Var" : "Yok",
+        'Foto URL': item.photo_url || "",
         'Tehlike': item.hazard,
         'Risk': item.risk,
         'Etkilenen': item.affected_people || "",
@@ -2707,14 +2770,104 @@ const exportToPDFAndShare = async () => {
         'Termin': item.deadline || ""
       }));
 
-      const ws = XLSX.utils.json_to_sheet(exportData);
+      const headerRows = [
+        ["KURUMSAL RİSK DEĞERLENDİRME ANALİZİ", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""],
+        ["Firma", company?.name || "—", "", "Değerlendiren", assessment?.assessor_name || "—", "", "Bölüm", assessment?.department || "Tüm Bölümler", "", "Tarih", assessment?.assessment_date ? format(new Date(assessment.assessment_date), 'dd.MM.yyyy', { locale: tr }) : format(new Date(), 'dd.MM.yyyy', { locale: tr }), "", "", "", "", "", "", "", "", ""],
+        ["Toplam Risk", riskItems.length, "", "Kritik Risk", riskItems.filter((i) => i.risk_class_1 === "Çok Yüksek").length, "", "Güvenli Kalıntı Risk", riskItems.filter((i) => i.risk_class_2 === "Kabul Edilebilir" || i.risk_class_2 === "Olası").length, "", "Oluşturulma", format(new Date(), 'dd.MM.yyyy HH:mm', { locale: tr }), "", "", "", "", "", "", "", "", ""],
+        ["TEMEL BİLGİLER", "", "", "", "", "", "1. AŞAMA · MEVCUT DURUM", "", "", "", "", "ÖNERİLEN ÖNLEMLER", "2. AŞAMA · KALINTI RİSK", "", "", "", "", "AKSİYON TAKİBİ", "", ""],
+      ];
+      const ws = XLSX.utils.aoa_to_sheet(headerRows);
+      XLSX.utils.sheet_add_json(ws, exportData, { origin: "A5" });
       const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Risk Analizi");
+      XLSX.utils.book_append_sheet(wb, ws, "Kurumsal Risk Analizi");
 
-      const fileName = `Risk-Analiz-2Asama-${format(new Date(), 'yyyy-MM-dd-HHmmss')}.xlsx`;
+      ws["!merges"] = [
+        { s: { r: 0, c: 0 }, e: { r: 0, c: 19 } },
+        { s: { r: 1, c: 1 }, e: { r: 1, c: 2 } },
+        { s: { r: 1, c: 4 }, e: { r: 1, c: 5 } },
+        { s: { r: 1, c: 7 }, e: { r: 1, c: 8 } },
+        { s: { r: 1, c: 10 }, e: { r: 1, c: 11 } },
+        { s: { r: 2, c: 1 }, e: { r: 2, c: 2 } },
+        { s: { r: 2, c: 4 }, e: { r: 2, c: 5 } },
+        { s: { r: 2, c: 7 }, e: { r: 2, c: 8 } },
+        { s: { r: 2, c: 10 }, e: { r: 2, c: 11 } },
+        { s: { r: 3, c: 0 }, e: { r: 3, c: 5 } },
+        { s: { r: 3, c: 6 }, e: { r: 3, c: 10 } },
+        { s: { r: 3, c: 12 }, e: { r: 3, c: 16 } },
+        { s: { r: 3, c: 17 }, e: { r: 3, c: 19 } },
+      ];
+      ws["!cols"] = [
+        { wch: 8 }, { wch: 18 }, { wch: 10 }, { wch: 28 }, { wch: 24 }, { wch: 18 }, { wch: 8 }, { wch: 8 }, { wch: 8 },
+        { wch: 10 }, { wch: 16 }, { wch: 34 }, { wch: 8 }, { wch: 8 }, { wch: 8 }, { wch: 10 }, { wch: 16 }, { wch: 18 }, { wch: 14 }, { wch: 28 }
+      ];
+      ws["!rows"] = [{ hpt: 28 }, { hpt: 22 }, { hpt: 22 }, { hpt: 22 }, { hpt: 20 }];
+      if (ws["A1"]) {
+        ws["A1"].s = {
+          font: { bold: true, sz: 16, color: { rgb: "FFFFFF" } },
+          alignment: { horizontal: "center", vertical: "center" },
+          fill: { fgColor: { rgb: "0F172A" } }
+        } as any;
+      }
+      const metaLabelStyle = {
+        font: { bold: true, color: { rgb: "0F172A" } },
+        alignment: { horizontal: "left", vertical: "center" },
+        fill: { fgColor: { rgb: "E2E8F0" } },
+        border: {
+          top: { style: "thin", color: { rgb: "CBD5E1" } },
+          bottom: { style: "thin", color: { rgb: "CBD5E1" } },
+          left: { style: "thin", color: { rgb: "CBD5E1" } },
+          right: { style: "thin", color: { rgb: "CBD5E1" } },
+        },
+      } as any;
+      const metaValueStyle = {
+        font: { color: { rgb: "1E293B" } },
+        alignment: { horizontal: "left", vertical: "center" },
+        fill: { fgColor: { rgb: "F8FAFC" } },
+        border: {
+          top: { style: "thin", color: { rgb: "CBD5E1" } },
+          bottom: { style: "thin", color: { rgb: "CBD5E1" } },
+          left: { style: "thin", color: { rgb: "CBD5E1" } },
+          right: { style: "thin", color: { rgb: "CBD5E1" } },
+        },
+      } as any;
+      ["A2", "D2", "G2", "J2", "A3", "D3", "G3", "J3"].forEach((cell) => {
+        if (ws[cell]) ws[cell].s = metaLabelStyle;
+      });
+      ["B2", "E2", "H2", "K2", "B3", "E3", "H3", "K3"].forEach((cell) => {
+        if (ws[cell]) ws[cell].s = metaValueStyle;
+      });
+      const groupHeaderStyles: Record<string, any> = {
+        A4: { font: { bold: true, color: { rgb: "FFFFFF" } }, alignment: { horizontal: "center", vertical: "center" }, fill: { fgColor: { rgb: "1D4ED8" } } },
+        F4: { font: { bold: true, color: { rgb: "FFFFFF" } }, alignment: { horizontal: "center", vertical: "center" }, fill: { fgColor: { rgb: "991B1B" } } },
+        K4: { font: { bold: true, color: { rgb: "0F172A" } }, alignment: { horizontal: "center", vertical: "center" }, fill: { fgColor: { rgb: "67E8F9" } } },
+        L4: { font: { bold: true, color: { rgb: "FFFFFF" } }, alignment: { horizontal: "center", vertical: "center" }, fill: { fgColor: { rgb: "166534" } } },
+        Q4: { font: { bold: true, color: { rgb: "FFFFFF" } }, alignment: { horizontal: "center", vertical: "center" }, fill: { fgColor: { rgb: "7C3AED" } } },
+      };
+      Object.entries(groupHeaderStyles).forEach(([cell, style]) => {
+        if (ws[cell]) ws[cell].s = style;
+      });
+      const columnHeaderStyles: Record<string, any> = {};
+      ["A", "B", "C", "D", "E", "F"].forEach((col) => {
+        columnHeaderStyles[`${col}5`] = { font: { bold: true, color: { rgb: "FFFFFF" } }, alignment: { horizontal: "center", vertical: "center" }, fill: { fgColor: { rgb: "1E293B" } } };
+      });
+      ["G", "H", "I", "J", "K"].forEach((col) => {
+        columnHeaderStyles[`${col}5`] = { font: { bold: true, color: { rgb: "FFFFFF" } }, alignment: { horizontal: "center", vertical: "center" }, fill: { fgColor: { rgb: "7F1D1D" } } };
+      });
+      columnHeaderStyles["L5"] = { font: { bold: true, color: { rgb: "0F172A" } }, alignment: { horizontal: "center", vertical: "center" }, fill: { fgColor: { rgb: "A5F3FC" } } };
+      ["M", "N", "O", "P", "Q"].forEach((col) => {
+        columnHeaderStyles[`${col}5`] = { font: { bold: true, color: { rgb: "FFFFFF" } }, alignment: { horizontal: "center", vertical: "center" }, fill: { fgColor: { rgb: "166534" } } };
+      });
+      ["R", "S", "T"].forEach((col) => {
+        columnHeaderStyles[`${col}5`] = { font: { bold: true, color: { rgb: "FFFFFF" } }, alignment: { horizontal: "center", vertical: "center" }, fill: { fgColor: { rgb: "6D28D9" } } };
+      });
+      Object.entries(columnHeaderStyles).forEach(([cell, style]) => {
+        if (ws[cell]) ws[cell].s = style;
+      });
+
+      const fileName = `Kurumsal-Risk-Analizi-${format(new Date(), 'yyyy-MM-dd-HHmmss')}.xlsx`;
       XLSX.writeFile(wb, fileName);
 
-      toast.success("✅ Excel dosyası indirildi", {
+      toast.success("Excel dosyası indirildi", {
         description: fileName
       });
     } catch (error: any) {
@@ -2722,231 +2875,370 @@ const exportToPDFAndShare = async () => {
       toast.error("Dışa aktarma hatası");
     }
   };
+  const activeCompanyName =
+    companies.find((company) => company.id === assessment?.company_id)?.name ||
+    companies.find((company) => company.id === selectedCompany)?.name ||
+    "Firma seçilmedi";
 
-    // ========================
+  const riskMetrics = useMemo(() => {
+    const critical = riskItems.filter((item) => item.risk_class_1 === "Çok Yüksek").length;
+    const high = riskItems.filter((item) => item.risk_class_1 === "Yüksek").length;
+    const acceptable = riskItems.filter(
+      (item) => item.risk_class_2 === "Kabul Edilebilir" || item.risk_class_2 === "Olası"
+    ).length;
+
+    return {
+      total: riskItems.length,
+      critical,
+      high,
+      acceptable,
+    };
+  }, [riskItems]);
+
+  // ========================
   // MAIN RENDER
   // ========================
 
   return (
-    <div className="h-screen flex flex-col bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
-      {/* TOP BAR */}
-<div className="h-16 border-b border-slate-700 bg-slate-900/80 backdrop-blur-sm flex items-center justify-between px-6">
-  <div className="flex items-center gap-4">
-    <div className="flex items-center gap-3">
-      <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-indigo-600 to-purple-600 flex items-center justify-center">
-        <FileText className="h-6 w-6 text-white" />
-      </div>
-      <div>
-        <h1 className="text-lg font-bold text-slate-100">
-          Risk Analiz Tablosu
-        </h1>
-      </div>
-    </div>
-
-    {saving && (
-      <Badge variant="outline" className="gap-2 animate-pulse border-indigo-500 text-indigo-400">
-        <Loader2 className="h-3 w-3 animate-spin" />
-        Kaydediliyor...
-      </Badge>
-    )}
-  </div>
-
-  <div className="flex items-center gap-2">
-    {/* ✅ YENİ: Nasıl Kullanılır Butonu */}
-    <Button
-      variant="outline"
-      size="sm"
-      className="gap-2 border-slate-600 hover:bg-slate-800 text-slate-300"
-      onClick={() => setShowHelp(true)}
-    >
-      <HelpCircle className="h-4 w-4" />
-      Nasıl Kullanılır?
-    </Button>
-
-    {/* ✅ YENİ: Tam Ekran Butonu */}
-    <Button
-      variant="outline"
-      size="sm"
-      className="gap-2 border-slate-600 hover:bg-slate-800 text-slate-300"
-      onClick={toggleFullScreen}
-    >
-      {isFullScreen ? (
-        <>
-          <Minimize2 className="h-4 w-4" />
-          Küçült
-        </>
-      ) : (
-        <>
-          <Maximize2 className="h-4 w-4" />
-          Tam Ekran
-        </>
-      )}
-    </Button>
-
-    {assessment && (
-      <>
-        <Separator orientation="vertical" className="h-6 bg-slate-600" />
-        
-        <Badge variant="outline" className="gap-2 border-slate-600 text-slate-300">
-          <Building2 className="h-3 w-3" />
-          {companies.find(c => c.id === assessment.company_id)?.name || "Firma"}
-        </Badge>
-        <Badge variant="outline" className="gap-2 border-slate-600 text-slate-300">
-          <FileText className="h-3 w-3" />
-          {assessment.id.substring(0, 8).toUpperCase()}
-        </Badge>
-      </>
-    )}
-
-    <Separator orientation="vertical" className="h-6 bg-slate-600" />
-
-    <Button
-      variant="outline"
-      size="sm"
-      className="gap-2 border-slate-600 hover:bg-slate-800"
-      onClick={exportToExcel}
-      disabled={!assessment || riskItems.length === 0}
-    >
-      <Download className="h-4 w-4" />
-      Excel
-    </Button>
-
-    <Button
-      size="sm"
-      className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white"
-      onClick={exportToPDFAndShare}
-      disabled={!assessment || riskItems.length === 0}
-    >
-      <Share2 className="h-4 w-4" />
-      PDF Oluştur ve Gönder
-    </Button>
-  </div>
-</div>
-      {/* MAIN CONTENT */}
-      {!assessment ? (
-        // ========================
-        // STEP 1: COMPANY SELECTION
-        // ========================
-        <div className="flex-1 flex items-center justify-center p-6">
-          <Card className="w-full max-w-2xl bg-slate-900/50 border-slate-700">
-            <CardContent className="p-8">
-              <div className="text-center mb-6">
-                <Building2 className="h-16 w-16 mx-auto mb-4 text-indigo-400" />
-                <h2 className="text-2xl font-bold text-slate-100 mb-2">
-                  1. Firma & Rapor Bilgileri
-                </h2>
-                <p className="text-sm text-slate-400">
-                  Kayıtlı firmalarınızdan birini seçin ve rapor tarihini girin
+    <div className="min-h-screen flex flex-col overflow-x-hidden bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950">
+      <div className="border-b border-white/10 bg-slate-950/80 px-6 py-4 backdrop-blur-xl">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex items-start gap-4">
+            <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl border border-indigo-400/20 bg-gradient-to-br from-indigo-500 via-violet-500 to-fuchsia-500 shadow-[0_18px_45px_rgba(99,102,241,0.35)]">
+              <FileText className="h-7 w-7 text-white" />
+            </div>
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge className="border border-cyan-400/30 bg-cyan-400/10 text-cyan-200">Risk Operasyon Merkezi</Badge>
+                <Badge variant="outline" className="border-white/10 bg-white/5 text-slate-300">
+                  2 Aşamalı Fine-Kinney
+                </Badge>
+                {saving && (
+                  <Badge variant="outline" className="gap-2 animate-pulse border-indigo-500/40 bg-indigo-500/10 text-indigo-200">
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    Kaydediliyor
+                  </Badge>
+                )}
+              </div>
+              <div>
+                <h1 className="text-2xl font-black tracking-tight text-white xl:text-3xl">
+                  Risk Analiz Editörü
+                </h1>
+                <p className="mt-1 max-w-3xl text-sm text-slate-300 xl:text-base">
+                  Risk maddelerini kurumsal bir editör deneyimiyle yönetin, AI desteğiyle yeni riskler üretin ve profesyonel PDF/Excel çıktıları alın.
                 </p>
               </div>
+            </div>
+          </div>
 
-              <div className="space-y-4">
-                <div>
-                  <Label className="text-slate-300 mb-2 block">Firma Seçin</Label>
-                  <Select value={selectedCompany} onValueChange={setSelectedCompany}>
-                    <SelectTrigger className="bg-slate-800 border-slate-600 text-slate-100">
-                      <SelectValue placeholder="Firma seçiniz..." />
-                    </SelectTrigger>
-                    <SelectContent 
-                    position="popper" 
-                    onCloseAutoFocus={(e) => e.preventDefault()} // 👈 Burası hayati!
-                    >
-                      {companies.length === 0 ? (
-                        <SelectItem value="none" disabled>
-                          Kayıtlı firma yok
-                        </SelectItem>
-                      ) : (
-                        companies.map(company => (
-                          <SelectItem key={company.id} value={company.id}>
-                            {company.name}
-                          </SelectItem>
-                        ))
-                      )}
-                    </SelectContent>
-                  </Select>
+          <div className="grid gap-3 sm:grid-cols-2 xl:min-w-[520px] xl:grid-cols-4">
+            <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-3 shadow-[0_16px_40px_rgba(15,23,42,0.28)]">
+              <p className="text-[11px] uppercase tracking-[0.22em] text-slate-400">Aktif Firma</p>
+              <p className="mt-2 line-clamp-1 text-sm font-semibold text-white">{activeCompanyName}</p>
+            </div>
+            <div className="rounded-2xl border border-red-400/20 bg-red-500/10 p-3 shadow-[0_16px_40px_rgba(248,113,113,0.12)]">
+              <p className="text-[11px] uppercase tracking-[0.22em] text-red-200/80">Kritik Risk</p>
+              <p className="mt-2 text-2xl font-black text-red-100">{riskMetrics.critical}</p>
+            </div>
+            <div className="rounded-2xl border border-amber-400/20 bg-amber-500/10 p-3 shadow-[0_16px_40px_rgba(245,158,11,0.12)]">
+              <p className="text-[11px] uppercase tracking-[0.22em] text-amber-200/80">Yüksek Risk</p>
+              <p className="mt-2 text-2xl font-black text-amber-100">{riskMetrics.high}</p>
+            </div>
+            <div className="rounded-2xl border border-emerald-400/20 bg-emerald-500/10 p-3 shadow-[0_16px_40px_rgba(16,185,129,0.12)]">
+              <p className="text-[11px] uppercase tracking-[0.22em] text-emerald-200/80">Kalıntı Güvenli</p>
+              <p className="mt-2 text-2xl font-black text-emerald-100">{riskMetrics.acceptable}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-4 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-2 border-white/10 bg-white/[0.04] text-slate-200 hover:bg-white/[0.08]"
+              onClick={() => setShowHelp(true)}
+            >
+              <HelpCircle className="h-4 w-4" />
+              Nasıl Kullanılır?
+            </Button>
+
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-2 border-white/10 bg-white/[0.04] text-slate-200 hover:bg-white/[0.08]"
+              onClick={toggleFullScreen}
+            >
+              {isFullScreen ? (
+                <>
+                  <Minimize2 className="h-4 w-4" />
+                  Küçült
+                </>
+              ) : (
+                <>
+                  <Maximize2 className="h-4 w-4" />
+                  Tam Ekran
+                </>
+              )}
+            </Button>
+
+            {assessment && (
+              <>
+                <Badge variant="outline" className="gap-2 border-white/10 bg-white/[0.04] text-slate-300">
+                  <Building2 className="h-3 w-3" />
+                  {activeCompanyName}
+                </Badge>
+                <Badge variant="outline" className="gap-2 border-white/10 bg-white/[0.04] font-mono text-slate-300">
+                  <FileText className="h-3 w-3" />
+                  {assessment.id.substring(0, 8).toUpperCase()}
+                </Badge>
+              </>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-2 border-white/10 bg-white/[0.04] text-slate-200 hover:bg-white/[0.08]"
+              onClick={exportToExcel}
+              disabled={!assessment || riskItems.length === 0}
+            >
+              <Download className="h-4 w-4" />
+              Excel
+            </Button>
+
+            <Button
+              size="sm"
+              className="gap-2 bg-gradient-to-r from-emerald-500 to-cyan-500 text-white shadow-[0_14px_30px_rgba(16,185,129,0.28)] hover:from-emerald-400 hover:to-cyan-400"
+              onClick={exportToPDFAndShare}
+              disabled={!assessment || riskItems.length === 0}
+            >
+              <Share2 className="h-4 w-4" />
+              PDF Oluştur ve Gönder
+            </Button>
+          </div>
+        </div>
+      </div>
+      {/* MAIN CONTENT */}
+      {!assessment ? (
+        <div className="flex-1 overflow-auto p-6">
+          <div className="mx-auto grid max-w-6xl gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+            <Card className="border border-white/10 bg-white/[0.04] shadow-[0_30px_80px_rgba(15,23,42,0.35)] backdrop-blur-xl">
+              <CardContent className="p-8">
+                <div className="mb-8 flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+                  <div className="max-w-xl">
+                    <Badge className="border border-indigo-400/30 bg-indigo-500/10 text-indigo-200">Adım 1 · Kurulum</Badge>
+                    <h2 className="mt-4 text-3xl font-black tracking-tight text-white">
+                      Firma ve değerlendirme oturumunu başlatın
+                    </h2>
+                    <p className="mt-3 text-sm leading-6 text-slate-300">
+                      Risk tablolarını, AI önerilerini ve profesyonel çıktı akışını tek bir değerlendirme oturumu içinde yönetin. İlk adımda şirketi seçin ve çalışma alanını açın.
+                    </p>
+                  </div>
+                  <div className="grid w-full gap-3 sm:grid-cols-3 lg:max-w-sm lg:grid-cols-1">
+                    <div className="rounded-2xl border border-cyan-400/20 bg-cyan-500/10 p-4">
+                      <p className="text-[11px] uppercase tracking-[0.24em] text-cyan-200/80">Firma</p>
+                      <p className="mt-2 text-sm font-semibold text-white">{companies.length} kayıtlı şirket</p>
+                    </div>
+                    <div className="rounded-2xl border border-violet-400/20 bg-violet-500/10 p-4">
+                      <p className="text-[11px] uppercase tracking-[0.24em] text-violet-200/80">Hazırlık</p>
+                      <p className="mt-2 text-sm font-semibold text-white">AI destekli analiz akışı hazır</p>
+                    </div>
+                    <div className="rounded-2xl border border-emerald-400/20 bg-emerald-500/10 p-4">
+                      <p className="text-[11px] uppercase tracking-[0.24em] text-emerald-200/80">Çıktı</p>
+                      <p className="mt-2 text-sm font-semibold text-white">PDF ve Excel rapor merkezi</p>
+                    </div>
+                  </div>
                 </div>
 
-                <Button
-                  onClick={createAssessment}
-                  disabled={!selectedCompany || loading}
-                  className="w-full gap-2 bg-indigo-600 hover:bg-indigo-700"
-                  size="lg"
-                >
-                  {loading ? (
-                    <>
-                      <Loader2 className="h-5 w-5 animate-spin" />
-                      Oluşturuluyor...
-                    </>
-                  ) : (
-                    <>
-                      <Plus className="h-5 w-5" />
-                      Yeni Değerlendirme Başlat
-                    </>
-                  )}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+                <div className="space-y-5">
+                  <div>
+                    <Label className="mb-2 block text-slate-200">Firma Seçin</Label>
+                    <Select value={selectedCompany} onValueChange={setSelectedCompany}>
+                      <SelectTrigger className="h-12 rounded-2xl border-white/10 bg-slate-950/60 text-slate-100">
+                        <SelectValue placeholder="Firma seçiniz..." />
+                      </SelectTrigger>
+                      <SelectContent position="popper" onCloseAutoFocus={(e) => e.preventDefault()}>
+                        {companies.length === 0 ? (
+                          <SelectItem value="none" disabled>
+                            Kayıtlı firma yok
+                          </SelectItem>
+                        ) : (
+                          companies.map(company => (
+                            <SelectItem key={company.id} value={company.id}>
+                              {company.name}
+                            </SelectItem>
+                          ))
+                        )}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <Button
+                    onClick={createAssessment}
+                    disabled={!selectedCompany || loading}
+                    className="h-12 w-full gap-2 rounded-2xl bg-gradient-to-r from-indigo-500 via-violet-500 to-fuchsia-500 text-white shadow-[0_18px_40px_rgba(99,102,241,0.35)] hover:from-indigo-400 hover:via-violet-400 hover:to-fuchsia-400"
+                    size="lg"
+                  >
+                    {loading ? (
+                      <>
+                        <Loader2 className="h-5 w-5 animate-spin" />
+                        Oluşturuluyor...
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="h-5 w-5" />
+                        Yeni Değerlendirme Başlat
+                      </>
+                    )}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            <div className="space-y-6">
+              <Card className="border border-white/10 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 shadow-[0_30px_80px_rgba(15,23,42,0.35)]">
+                <CardContent className="p-6">
+                  <p className="text-[11px] uppercase tracking-[0.24em] text-cyan-300/80">Operasyon Özeti</p>
+                  <h3 className="mt-3 text-xl font-bold text-white">Kullanıcıyı zorlamayan başlangıç akışı</h3>
+                  <p className="mt-2 text-sm leading-6 text-slate-300">
+                    Firma seçimi sonrası risk kütüphanesi, AI üretim paneli ve iki aşamalı skor tablosu tek bir merkezde aktif olur.
+                  </p>
+                  <div className="mt-5 space-y-3">
+                    <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+                      <p className="text-xs text-slate-400">Hazırlık durumu</p>
+                      <div className="mt-2 flex items-center justify-between">
+                        <span className="text-sm font-semibold text-white">Analiz motoru hazır</span>
+                        <Badge className="bg-emerald-500/15 text-emerald-200">Canlı</Badge>
+                      </div>
+                    </div>
+                    <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+                      <p className="text-xs text-slate-400">Masaüstü deneyimi</p>
+                      <p className="mt-2 text-sm font-semibold text-white">Geniş tablo, sol kütüphane ve yardım akışı optimize</p>
+                    </div>
+                    <div className="rounded-2xl border border-cyan-400/20 bg-cyan-500/10 p-4">
+                      <p className="text-xs text-cyan-100/80">Bu modül neden güçlü?</p>
+                      <ul className="mt-2 space-y-2 text-sm text-cyan-50">
+                        <li>• Aynı ekranda kütüphane ve manuel giriş birlikte çalışır.</li>
+                        <li>• AI sektöre göre başlangıç risk seti önerir.</li>
+                        <li>• PDF ve Excel çıkışı doğrudan rapor akışına bağlıdır.</li>
+                      </ul>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
         </div>
       ) : (
-        // ========================
-        // STEP 2: RISK ANALYSIS TABLE
-        // ========================
-        <div className="flex-1 flex overflow-hidden">
-          {/* LEFT PANEL: Risk Library */}
-          <div className="w-80 shrink-0">
+        <div className="flex-1 flex flex-col overflow-y-auto overflow-x-hidden lg:flex-row lg:overflow-hidden">
+          <div className="w-full shrink-0 lg:w-[24rem]">
             <RiskLibraryPanel />
           </div>
 
-        <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Table Toolbar */}
-            <div className="h-14 border-b border-slate-700 bg-slate-900/50 flex items-center justify-between px-4 flex-shrink-0">
-                <div className="flex items-center gap-2">
-                <Badge variant="outline" className="gap-2 border-slate-600 text-slate-300">
-                    <FileText className="h-3 w-3" />
-                    {riskItems.length} Risk Maddesi
+          <div className="flex min-h-0 flex-1 flex-col overflow-visible lg:overflow-hidden">
+            <div className="border-b border-white/10 bg-slate-950/50 px-5 py-4">
+              <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
+                <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-5 shadow-[0_20px_50px_rgba(15,23,42,0.35)]">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge className="border border-indigo-400/30 bg-indigo-500/10 text-indigo-200">Aktif Değerlendirme</Badge>
+                    <Badge variant="outline" className="border-white/10 bg-white/[0.04] text-slate-300">{activeCompanyName}</Badge>
+                  </div>
+                  <h2 className="mt-3 text-2xl font-black tracking-tight text-white">Risk tablosunu kurum standardında yönetin</h2>
+                  <p className="mt-2 text-sm leading-6 text-slate-300">
+                    Sol panelden paket ekleyin, AI ile yeni risk maddeleri oluşturun ve iki aşamalı Fine-Kinney skoru ile kalıntı riski hedef seviyeye indirin.
+                  </p>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <div className="rounded-3xl border border-white/10 bg-white/[0.04] p-4">
+                    <p className="text-[11px] uppercase tracking-[0.24em] text-slate-400">Toplam Madde</p>
+                    <p className="mt-3 text-3xl font-black text-white">{riskMetrics.total}</p>
+                  </div>
+                  <div className="rounded-3xl border border-red-400/20 bg-red-500/10 p-4">
+                    <p className="text-[11px] uppercase tracking-[0.24em] text-red-200/80">Kritik Baskı</p>
+                    <p className="mt-3 text-3xl font-black text-red-100">{riskMetrics.critical}</p>
+                  </div>
+                  <div className="rounded-3xl border border-emerald-400/20 bg-emerald-500/10 p-4">
+                    <p className="text-[11px] uppercase tracking-[0.24em] text-emerald-200/80">Güvenli Hedef</p>
+                    <p className="mt-3 text-3xl font-black text-emerald-100">{riskMetrics.acceptable}</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div className="border-b border-white/10 bg-slate-950/60 px-4 py-3 flex items-center justify-between gap-3 flex-shrink-0">
+              <div className="flex items-center gap-2">
+                <Badge variant="outline" className="gap-2 border-white/10 bg-white/[0.04] text-slate-200">
+                  <FileText className="h-3 w-3" />
+                  {riskItems.length} Risk Maddesi
                 </Badge>
 
                 {riskItems.length > 0 && (
-                    <>
+                  <>
                     <Separator orientation="vertical" className="h-4 bg-slate-600" />
-                    <Badge className="bg-red-600/20 text-red-300 border-red-600">
-                        {riskItems.filter(i => i.risk_class_1 === "Çok Yüksek").length} Kritik
+                    <Badge className="border border-red-500/30 bg-red-500/10 text-red-200">
+                      {riskMetrics.critical} Kritik
                     </Badge>
-                    <Badge className="bg-orange-600/20 text-orange-300 border-orange-600">
-                        {riskItems.filter(i => i.risk_class_1 === "Yüksek").length} Yüksek
+                    <Badge className="border border-orange-500/30 bg-orange-500/10 text-orange-200">
+                      {riskMetrics.high} Yüksek
                     </Badge>
-                    <Badge className="bg-green-600/20 text-green-300 border-green-600">
-                        {riskItems.filter(i => (i.risk_class_2 === "Kabul Edilebilir" || i.risk_class_2 === "Olası")).length} Güvenli
+                    <Badge className="border border-emerald-500/30 bg-emerald-500/10 text-emerald-200">
+                      {riskMetrics.acceptable} Güvenli
                     </Badge>
-                    </>
+                  </>
                 )}
-                </div>
+              </div>
 
-                <Button
+              <Button
                 onClick={addEmptyRisk}
                 size="sm"
                 variant="outline"
-                className="gap-2 border-slate-600 hover:bg-slate-800"
+                className="gap-2 border-white/10 bg-white/[0.04] text-slate-200 hover:bg-white/[0.08]"
                 disabled={!assessment}
-                >
+              >
                 <Plus className="h-4 w-4" />
                 Manuel Risk Ekle
-                </Button>
+              </Button>
             </div>
-            <div className="flex-1 relative overflow-hidden"> {/* overflow-hidden ekledik */}
-            <div 
-                ref={tableContainerRef} 
-                className="absolute inset-0 overflow-auto scroll-smooth" // absolute inset-0 ve smooth scroll
-                onScroll={handleScroll} // Callback'i tekrar buraya bağlayalım
-            >
+            <div className="relative flex-1 overflow-auto lg:overflow-hidden">
+              <div
+                ref={tableContainerRef}
+                className="min-h-[60vh] overflow-auto scroll-smooth lg:absolute lg:inset-0 lg:min-h-0"
+                onScroll={handleScroll}
+              >
                 <RiskAnalysisTable />
+              </div>
             </div>
-            </div>
-         </div>
-       </div>
+          </div>
+        </div>
       )}
-        {/* ✅ YENİ: AI Results Dialog */}
+        <Dialog open={!!previewPhotoUrl} onOpenChange={(open) => !open && setPreviewPhotoUrl(null)}>
+          <DialogContent className="max-w-4xl border border-cyan-400/20 bg-slate-950/95 p-0 shadow-[0_30px_80px_rgba(15,23,42,0.55)] backdrop-blur-xl">
+            <div className="border-b border-white/10 bg-[linear-gradient(90deg,rgba(8,47,73,0.95),rgba(15,23,42,0.98),rgba(17,24,39,0.95))] px-6 py-4">
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2 text-white">
+                  <Camera className="h-4 w-4 text-cyan-300" />
+                  Risk Maddesi Fotoğraf Önizlemesi
+                </DialogTitle>
+                <DialogDescription className="text-slate-300">
+                  Yüklenen görselin büyük görünümünü buradan kontrol edebilirsiniz.
+                </DialogDescription>
+              </DialogHeader>
+            </div>
+            <div className="p-6">
+              <div className="overflow-hidden rounded-3xl border border-white/10 bg-slate-900/80 shadow-[0_20px_50px_rgba(15,23,42,0.35)]">
+                {previewPhotoUrl ? (
+                  <img
+                    src={previewPhotoUrl}
+                    alt="Risk maddesi fotoğraf önizlemesi"
+                    className="max-h-[72vh] w-full object-contain bg-[radial-gradient(circle_at_top,rgba(34,211,238,0.08),transparent_55%),linear-gradient(180deg,rgba(2,6,23,0.98),rgba(15,23,42,0.92))]"
+                  />
+                ) : null}
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+        {/* AI Results Dialog */}
         <AIResultsDialog />
 
 

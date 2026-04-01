@@ -979,7 +979,7 @@ export default function CompanyManager() {
               </div>
 
               <div>
-                <Label>Vergi Numarası *</Label>
+                <Label>Sicil Numarası *</Label>
                 <Input
                   value={formData.tax_number}
                   onChange={(e) => {

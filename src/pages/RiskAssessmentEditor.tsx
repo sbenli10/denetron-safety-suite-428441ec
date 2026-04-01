@@ -185,6 +185,33 @@ const COMMON_TEMPLATE_RISKS = [
     s: 40,
     controls: ["Elektrik çarpması, proses duruşu, yaralanma", "Yetkilendirme matrisi, LOTO ve izinli çalışma sistemi uygulanmalı"],
   },
+  {
+    hazard: "KKD Disiplini",
+    risk: "İşe uygun kişisel koruyucu donanımın eksik, yanlış veya düzensiz kullanılması.",
+    category: "Kişisel Koruyucu Donanım",
+    o: 6,
+    f: 6,
+    s: 15,
+    controls: ["Kesilme, göz yaralanması, maruziyet, travma", "Saha bazlı KKD matrisi, zimmet takibi ve vardiya denetimi uygulanmalı"],
+  },
+  {
+    hazard: "Yetersiz Eğitim ve Bilgilendirme",
+    risk: "Çalışanların işi, ekipmanı veya acil durum akışını yeterince bilmeden çalışmaya başlaması.",
+    category: "Eğitim",
+    o: 6,
+    f: 3,
+    s: 15,
+    controls: ["Hatalı uygulama, ramak kala, proses sapması", "İşe başlangıç eğitimi, toolbox ve görev kartları güncellenmeli"],
+  },
+  {
+    hazard: "Periyodik Kontrol Eksikliği",
+    risk: "Ekipman, kaldırma araçları veya basınçlı sistemlerin periyodik kontrollerinin gecikmesi.",
+    category: "Periyodik Kontrol",
+    o: 3,
+    f: 3,
+    s: 40,
+    controls: ["Ekipman arızası, ani duruş, ciddi yaralanma", "Periyodik kontrol takvimi ve etiket takibi dijital olarak sürdürülmeli"],
+  },
 ];
 
 export default function RiskAssessmentEditor() {
@@ -250,6 +277,19 @@ export default function RiskAssessmentEditor() {
         : null,
     [selectedSectorOption]
   );
+  const selectedSectorRiskPreview = useMemo(() => {
+    if (!selectedSectorOption) return [];
+    return generateMockRisksForSector(selectedSectorOption.name.toLowerCase());
+  }, [selectedSectorOption]);
+  const selectedSectorDistribution = useMemo(() => {
+    const bucket = { critical: 0, high: 0, monitored: 0 };
+    selectedSectorRiskPreview.forEach((risk) => {
+      if (risk.riskClass === "Çok Yüksek") bucket.critical += 1;
+      else if (risk.riskClass === "Yüksek") bucket.high += 1;
+      else bucket.monitored += 1;
+    });
+    return bucket;
+  }, [selectedSectorRiskPreview]);
 
 
   interface AIRiskPanelProps {
@@ -570,7 +610,7 @@ useLayoutEffect(() => {
     }
   };
   // Mock risk generator (gerçekte OpenAI kullanacağız)
-  const generateMockRisksForSector = (sector: string): typeof aiRisks => {
+  function generateMockRisksForSector(sector: string): typeof aiRisks {
     const sectorLower = sector.toLowerCase();
     
     // Sektöre özel risk templates
@@ -988,7 +1028,8 @@ useLayoutEffect(() => {
     };
 
     const normalizedSector = normalizeSectorKey(sectorLower);
-    const risks = [...(templates[normalizedSector] || templates['otomotiv']), ...COMMON_TEMPLATE_RISKS];
+    const sectorSpecificRisks = templates[normalizedSector] || templates[sectorLower] || templates['otomotiv'];
+    const risks = [...sectorSpecificRisks, ...COMMON_TEMPLATE_RISKS].slice(0, 12);
 
     return risks.map((r, idx) => {
       const score = r.o * r.f * r.s;
@@ -1008,7 +1049,7 @@ useLayoutEffect(() => {
         selected: true // Default: tümü seçili
       };
     });
-  };
+  }
 
   const addSelectedAIRisks = async () => {
     if (!assessment) {
@@ -1532,15 +1573,25 @@ useLayoutEffect(() => {
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-3">
               <p className="text-[11px] uppercase tracking-[0.24em] text-slate-500">Model</p>
-              <p className="mt-2 text-sm font-semibold text-slate-100">Gemini 2.5 Flash</p>
+              <p className="mt-2 text-sm font-semibold text-slate-100">
+                {selectedSectorOption ? `${selectedSectorOption.name} Paketi` : "Gemini 2.5 Flash"}
+              </p>
             </div>
             <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-3">
               <p className="text-[11px] uppercase tracking-[0.24em] text-slate-500">Kapsam</p>
-              <p className="mt-2 text-sm font-semibold text-slate-100">Risk + Önlem + Skor</p>
+              <p className="mt-2 text-sm font-semibold text-slate-100">
+                {selectedSectorOption ? `${selectedSectorRiskPreview.length} hazır risk + önlem` : "Risk + Önlem + Skor"}
+              </p>
             </div>
             <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-3">
               <p className="text-[11px] uppercase tracking-[0.24em] text-slate-500">Durum</p>
-              <p className="mt-2 text-sm font-semibold text-slate-100">{isAssessmentActive ? "Değerlendirme aktif" : "Önce oturum başlatın"}</p>
+              <p className="mt-2 text-sm font-semibold text-slate-100">
+                {selectedSectorOption
+                  ? `${selectedSectorDistribution.critical} kritik · ${selectedSectorDistribution.high} yüksek`
+                  : isAssessmentActive
+                    ? "Değerlendirme aktif"
+                    : "Önce oturum başlatın"}
+              </p>
             </div>
           </div>
 
@@ -1617,6 +1668,26 @@ useLayoutEffect(() => {
               </div>
             </div>
           </div>
+
+          {selectedSectorOption ? (
+            <div className="grid gap-3 sm:grid-cols-3">
+              <div className="rounded-2xl border border-red-400/15 bg-red-500/5 p-3">
+                <p className="text-[11px] uppercase tracking-[0.22em] text-red-200/70">Kritik Risk</p>
+                <p className="mt-2 text-lg font-black text-white">{selectedSectorDistribution.critical}</p>
+                <p className="mt-1 text-[11px] text-slate-400">Anında aksiyon gerektiren başlıklar</p>
+              </div>
+              <div className="rounded-2xl border border-amber-400/15 bg-amber-500/5 p-3">
+                <p className="text-[11px] uppercase tracking-[0.22em] text-amber-200/70">Yüksek Risk</p>
+                <p className="mt-2 text-lg font-black text-white">{selectedSectorDistribution.high}</p>
+                <p className="mt-1 text-[11px] text-slate-400">Kontrol planı gerektiren başlıklar</p>
+              </div>
+              <div className="rounded-2xl border border-emerald-400/15 bg-emerald-500/5 p-3">
+                <p className="text-[11px] uppercase tracking-[0.22em] text-emerald-200/70">Risk Havuzu</p>
+                <p className="mt-2 text-lg font-black text-white">{selectedSectorRiskPreview.length}</p>
+                <p className="mt-1 text-[11px] text-slate-400">Seçili sektör için hazır öneri havuzu</p>
+              </div>
+            </div>
+          ) : null}
 
           <Button
             onClick={() => onGenerate(aiSector)}
@@ -1951,9 +2022,17 @@ useLayoutEffect(() => {
   // ========================
 
   const RiskLibraryPanel = () => {
-    const filteredPackages = riskPackages.filter((pkg) =>
-      pkg.name.toLowerCase().includes(searchQuery.toLowerCase())
-    );
+    const filteredPackages = riskPackages.filter((pkg) => {
+      const matchesSearch = pkg.name.toLowerCase().includes(searchQuery.toLowerCase());
+      if (!selectedSectorOption) return matchesSearch;
+
+      const normalizedPackageSector = normalizeSectorKey(pkg.sector || "");
+      const matchesSector =
+        normalizedPackageSector === selectedSectorOption.id ||
+        pkg.name.toLowerCase().includes(selectedSectorOption.name.toLowerCase());
+
+      return matchesSearch && matchesSector;
+    });
 
     return (
       <div className="flex h-auto flex-col border-b border-white/10 bg-slate-950/65 backdrop-blur-xl lg:h-full lg:border-b-0 lg:border-r">

@@ -2608,19 +2608,48 @@ export type Database = {
           assessment_name: string
           assessor_name: string | null
           company_id: string | null
+          control_measures: string | null
           created_at: string | null
           department: string | null
+          employee_representative_signature_url: string | null
+          employee_representative_signed_at: string | null
+          employee_representative_approval_status: string | null
+          employee_representative_name: string | null
+          employer_name: string | null
+          employer_representative_approval_status: string | null
+          employer_representative_signature_url: string | null
+          employer_representative_signed_at: string | null
+          employer_representative_name: string | null
+          hazard_sources: string | null
           id: string
+          identified_risks: string | null
           is_deleted: boolean | null
+          legislation_notes: string | null
           method: string | null
           next_review_date: string | null
           notes: string | null
+          occupational_safety_specialist_signature_url: string | null
+          occupational_safety_specialist_signed_at: string | null
+          occupational_safety_specialist_approval_status: string | null
+          occupational_safety_specialist_name: string | null
           reviewer_name: string | null
+          renewal_triggers_note: string | null
+          responsible_persons: string | null
           sector: string | null
           status: string | null
+          support_personnel_approval_status: string | null
+          support_personnel_signature_url: string | null
+          support_personnel_signed_at: string | null
+          support_personnel_name: string | null
           updated_at: string | null
           user_id: string | null
           version: number | null
+          workplace_address: string | null
+          workplace_doctor_approval_status: string | null
+          workplace_doctor_signature_url: string | null
+          workplace_doctor_signed_at: string | null
+          workplace_doctor_name: string | null
+          workplace_title: string | null
         }
         Insert: {
           approval_date?: string | null
@@ -2628,19 +2657,48 @@ export type Database = {
           assessment_name: string
           assessor_name?: string | null
           company_id?: string | null
+          control_measures?: string | null
           created_at?: string | null
           department?: string | null
+          employee_representative_signature_url?: string | null
+          employee_representative_signed_at?: string | null
+          employee_representative_approval_status?: string | null
+          employee_representative_name?: string | null
+          employer_name?: string | null
+          employer_representative_approval_status?: string | null
+          employer_representative_signature_url?: string | null
+          employer_representative_signed_at?: string | null
+          employer_representative_name?: string | null
+          hazard_sources?: string | null
           id?: string
+          identified_risks?: string | null
           is_deleted?: boolean | null
+          legislation_notes?: string | null
           method?: string | null
           next_review_date?: string | null
           notes?: string | null
+          occupational_safety_specialist_signature_url?: string | null
+          occupational_safety_specialist_signed_at?: string | null
+          occupational_safety_specialist_approval_status?: string | null
+          occupational_safety_specialist_name?: string | null
           reviewer_name?: string | null
+          renewal_triggers_note?: string | null
+          responsible_persons?: string | null
           sector?: string | null
           status?: string | null
+          support_personnel_approval_status?: string | null
+          support_personnel_signature_url?: string | null
+          support_personnel_signed_at?: string | null
+          support_personnel_name?: string | null
           updated_at?: string | null
           user_id?: string | null
           version?: number | null
+          workplace_address?: string | null
+          workplace_doctor_approval_status?: string | null
+          workplace_doctor_signature_url?: string | null
+          workplace_doctor_signed_at?: string | null
+          workplace_doctor_name?: string | null
+          workplace_title?: string | null
         }
         Update: {
           approval_date?: string | null
@@ -2648,19 +2706,48 @@ export type Database = {
           assessment_name?: string
           assessor_name?: string | null
           company_id?: string | null
+          control_measures?: string | null
           created_at?: string | null
           department?: string | null
+          employee_representative_signature_url?: string | null
+          employee_representative_signed_at?: string | null
+          employee_representative_approval_status?: string | null
+          employee_representative_name?: string | null
+          employer_name?: string | null
+          employer_representative_approval_status?: string | null
+          employer_representative_signature_url?: string | null
+          employer_representative_signed_at?: string | null
+          employer_representative_name?: string | null
+          hazard_sources?: string | null
           id?: string
+          identified_risks?: string | null
           is_deleted?: boolean | null
+          legislation_notes?: string | null
           method?: string | null
           next_review_date?: string | null
           notes?: string | null
+          occupational_safety_specialist_signature_url?: string | null
+          occupational_safety_specialist_signed_at?: string | null
+          occupational_safety_specialist_approval_status?: string | null
+          occupational_safety_specialist_name?: string | null
           reviewer_name?: string | null
+          renewal_triggers_note?: string | null
+          responsible_persons?: string | null
           sector?: string | null
           status?: string | null
+          support_personnel_approval_status?: string | null
+          support_personnel_signature_url?: string | null
+          support_personnel_signed_at?: string | null
+          support_personnel_name?: string | null
           updated_at?: string | null
           user_id?: string | null
           version?: number | null
+          workplace_address?: string | null
+          workplace_doctor_approval_status?: string | null
+          workplace_doctor_signature_url?: string | null
+          workplace_doctor_signed_at?: string | null
+          workplace_doctor_name?: string | null
+          workplace_title?: string | null
         }
         Relationships: []
       }

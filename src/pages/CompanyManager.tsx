@@ -307,6 +307,8 @@ export default function CompanyManager() {
   const [existingEmployees, setExistingEmployees] = useState<Employee[]>([]);
   const [loadingExistingEmployees, setLoadingExistingEmployees] = useState(false);
   const [employeeSearchQuery, setEmployeeSearchQuery] = useState("");
+  const [detailEmployeeSearchQuery, setDetailEmployeeSearchQuery] = useState("");
+  const [detailEmployeeDepartmentFilter, setDetailEmployeeDepartmentFilter] = useState("all");
   const [employeeDepartmentFilter, setEmployeeDepartmentFilter] = useState("all");
   const [editingEmployeeId, setEditingEmployeeId] = useState<string | null>(null);
   const [employeeDraft, setEmployeeDraft] = useState<Partial<Employee>>({});
@@ -433,6 +435,32 @@ export default function CompanyManager() {
       return haystack.includes(normalizedSearch);
     });
   }, [employeeDepartmentFilter, employeeSearchQuery, existingEmployees]);
+
+  const filteredDetailEmployees = useMemo(() => {
+    const normalizedSearch = detailEmployeeSearchQuery.trim().toLocaleLowerCase("tr-TR");
+    return existingEmployees.filter((employee) => {
+      const matchesDepartment =
+        detailEmployeeDepartmentFilter === "all" ||
+        (employee.department || "").trim() === detailEmployeeDepartmentFilter;
+
+      if (!matchesDepartment) return false;
+      if (!normalizedSearch) return true;
+
+      const haystack = [
+        employee.first_name,
+        employee.last_name,
+        employee.job_title,
+        employee.department,
+        employee.phone,
+        employee.email,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLocaleLowerCase("tr-TR");
+
+      return haystack.includes(normalizedSearch);
+    });
+  }, [detailEmployeeDepartmentFilter, detailEmployeeSearchQuery, existingEmployees]);
 
   const startEmployeeEdit = (employee: Employee) => {
     setEditingEmployeeId(employee.id);
@@ -575,6 +603,8 @@ export default function CompanyManager() {
   const handleViewCompany = async (companyId: string) => {
     const company = companies.find(c => c.id === companyId);
     if (company) {
+      setDetailEmployeeSearchQuery("");
+      setDetailEmployeeDepartmentFilter("all");
       void loadExistingEmployees(companyId);
       if (company.logo_url && !/^https?:\/\//i.test(company.logo_url) && !company.logo_url.startsWith("data:")) {
         const { data } = await supabase.storage.from("company-logos").createSignedUrl(company.logo_url, 3600);
@@ -2060,17 +2090,38 @@ export default function CompanyManager() {
                     className="rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.96),rgba(15,23,42,0.82))] p-5 shadow-[0_18px_45px_rgba(2,6,23,0.32)] transition-all hover:-translate-y-0.5 hover:border-cyan-400/20 hover:shadow-[0_24px_60px_rgba(2,6,23,0.4)]"
                   >
                     <div className="flex items-start justify-between gap-3">
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04]">
-                          {company.logo_url ? (
-                            <img src={company.logo_url} alt={company.company_name} className="h-8 w-8 rounded-xl object-contain" />
-                          ) : (
-                            <Building2 className="h-5 w-5 text-cyan-200" />
-                          )}
+                      <div className="flex-1">
+                        <div className="mb-3 flex items-center justify-between gap-3 text-[11px] text-slate-500">
+                          <span className="rounded-full border border-white/10 bg-white/[0.03] px-2.5 py-1 uppercase tracking-[0.18em]">
+                            Portföy kartı
+                          </span>
+                          <span>
+                            Son güncelleme{" "}
+                            {new Date(((company as any).updated_at || (company as any).created_at || Date.now()) as string).toLocaleDateString("tr-TR")}
+                          </span>
                         </div>
-                        <div>
-                          <p className="text-base font-bold text-white">{company.company_name}</p>
-                          <p className="mt-1 text-xs text-slate-500">{company.industry_sector || "Sektör bilgisi yok"}</p>
+                        <div className="mb-3 flex items-center justify-between gap-3 text-[11px] text-slate-500">
+                          <span>
+                            Oluşturulma{" "}
+                            {new Date(((company as any).created_at || Date.now()) as string).toLocaleDateString("tr-TR")}
+                          </span>
+                          <span>
+                            Son düzenleyen{" "}
+                            {(company as any).updated_by_name || "Sistem"}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04]">
+                            {company.logo_url ? (
+                              <img src={company.logo_url} alt={company.company_name} className="h-8 w-8 rounded-xl object-contain" />
+                            ) : (
+                              <Building2 className="h-5 w-5 text-cyan-200" />
+                            )}
+                          </div>
+                          <div>
+                            <p className="text-base font-bold text-white">{company.company_name}</p>
+                            <p className="mt-1 text-xs text-slate-500">{company.industry_sector || "Sektör bilgisi yok"}</p>
+                          </div>
                         </div>
                       </div>
                       <Badge className={cn("border", companyRisk.tone)}>{company.hazard_class}</Badge>
@@ -2163,32 +2214,36 @@ export default function CompanyManager() {
                 return (
                   <Tabs defaultValue="logo" className="space-y-4">
                     <TabsList className="grid h-auto w-full grid-cols-4 rounded-2xl border border-white/10 bg-white/[0.04] p-1">
-                      <TabsTrigger value="logo" className="group rounded-xl data-[state=active]:bg-cyan-500/12 data-[state=active]:text-cyan-50">
+                      <TabsTrigger value="logo" className={cn("group rounded-xl data-[state=active]:text-cyan-50", tabCounts.logo === 0 ? "data-[state=active]:bg-amber-500/12 text-amber-100" : "data-[state=active]:bg-cyan-500/12")}>
                         <span className="flex items-center gap-2">
+                          <Building2 className="h-3.5 w-3.5" />
                           Logo
                           <span className="rounded-full border border-white/10 bg-white/[0.05] px-2 py-0.5 text-[10px] text-slate-300 transition-colors group-data-[state=active]:border-cyan-400/25 group-data-[state=active]:bg-cyan-500/15 group-data-[state=active]:text-cyan-50">
                             {tabCounts.logo}
                           </span>
                         </span>
                       </TabsTrigger>
-                      <TabsTrigger value="iletisim" className="group rounded-xl data-[state=active]:bg-cyan-500/12 data-[state=active]:text-cyan-50">
+                      <TabsTrigger value="iletisim" className={cn("group rounded-xl data-[state=active]:text-cyan-50", tabCounts.contact === 0 ? "data-[state=active]:bg-amber-500/12 text-amber-100" : "data-[state=active]:bg-cyan-500/12")}>
                         <span className="flex items-center gap-2">
+                          <Phone className="h-3.5 w-3.5" />
                           İletişim
                           <span className="rounded-full border border-white/10 bg-white/[0.05] px-2 py-0.5 text-[10px] text-slate-300 transition-colors group-data-[state=active]:border-cyan-400/25 group-data-[state=active]:bg-cyan-500/15 group-data-[state=active]:text-cyan-50">
                             {tabCounts.contact}
                           </span>
                         </span>
                       </TabsTrigger>
-                      <TabsTrigger value="risk" className="group rounded-xl data-[state=active]:bg-cyan-500/12 data-[state=active]:text-cyan-50">
+                      <TabsTrigger value="risk" className={cn("group rounded-xl data-[state=active]:text-cyan-50", tabCounts.risk === 0 ? "data-[state=active]:bg-amber-500/12 text-amber-100" : "data-[state=active]:bg-cyan-500/12")}>
                         <span className="flex items-center gap-2">
+                          <AlertTriangle className="h-3.5 w-3.5" />
                           Risk
                           <span className="rounded-full border border-white/10 bg-white/[0.05] px-2 py-0.5 text-[10px] text-slate-300 transition-colors group-data-[state=active]:border-cyan-400/25 group-data-[state=active]:bg-cyan-500/15 group-data-[state=active]:text-cyan-50">
                             {tabCounts.risk}
                           </span>
                         </span>
                       </TabsTrigger>
-                      <TabsTrigger value="calisan" className="group rounded-xl data-[state=active]:bg-cyan-500/12 data-[state=active]:text-cyan-50">
+                      <TabsTrigger value="calisan" className={cn("group rounded-xl data-[state=active]:text-cyan-50", tabCounts.employee === 0 ? "data-[state=active]:bg-amber-500/12 text-amber-100" : "data-[state=active]:bg-cyan-500/12")}>
                         <span className="flex items-center gap-2">
+                          <Users className="h-3.5 w-3.5" />
                           Çalışan
                           <span className="rounded-full border border-white/10 bg-white/[0.05] px-2 py-0.5 text-[10px] text-slate-300 transition-colors group-data-[state=active]:border-cyan-400/25 group-data-[state=active]:bg-cyan-500/15 group-data-[state=active]:text-cyan-50">
                             {tabCounts.employee}
@@ -2349,6 +2404,29 @@ export default function CompanyManager() {
                         </p>
 
                         <div className="mt-4 rounded-2xl border border-white/10 bg-slate-950/55 p-4">
+                          <div className="mb-4 grid gap-3 md:grid-cols-[1fr_220px]">
+                            <div className="relative">
+                              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+                              <Input
+                                value={detailEmployeeSearchQuery}
+                                onChange={(e) => setDetailEmployeeSearchQuery(e.target.value)}
+                                placeholder="Çalışan adı, görev veya departman ara..."
+                                className="h-11 rounded-2xl border-white/10 bg-white/[0.04] pl-10 text-slate-100 placeholder:text-slate-500"
+                              />
+                            </div>
+                            <select
+                              value={detailEmployeeDepartmentFilter}
+                              onChange={(e) => setDetailEmployeeDepartmentFilter(e.target.value)}
+                              className="h-11 rounded-2xl border border-white/10 bg-white/[0.04] px-3 text-sm text-slate-100 outline-none"
+                            >
+                              <option value="all">Tüm departmanlar</option>
+                              {employeeDepartments.map((department) => (
+                                <option key={department} value={department}>
+                                  {department}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
                           {loadingExistingEmployees ? (
                             <div className="space-y-3">
                               {[0, 1, 2].map((item) => (
@@ -2359,9 +2437,13 @@ export default function CompanyManager() {
                             <div className="rounded-2xl border border-fuchsia-400/15 bg-fuchsia-500/5 p-4 text-sm text-slate-300">
                               Henüz çalışan yüklenmemiş. Şirket kartını düzenleyerek Excel ile personel yükleme akışını tamamlayabilirsiniz.
                             </div>
+                          ) : filteredDetailEmployees.length === 0 ? (
+                            <div className="rounded-2xl border border-amber-400/15 bg-amber-500/5 p-4 text-sm text-slate-300">
+                              Aramanıza uyan çalışan bulunamadı. Farklı bir isim, görev veya departman deneyin.
+                            </div>
                           ) : (
                             <div className="space-y-3">
-                              {existingEmployees.slice(0, 5).map((employee) => (
+                              {filteredDetailEmployees.slice(0, 5).map((employee) => (
                                 <div key={employee.id} className="flex items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3">
                                   <div>
                                     <p className="text-sm font-semibold text-white">{employee.first_name} {employee.last_name}</p>
@@ -2370,8 +2452,8 @@ export default function CompanyManager() {
                                   <Badge className="border border-emerald-400/20 bg-emerald-500/10 text-emerald-100">Aktif</Badge>
                                 </div>
                               ))}
-                              {existingEmployees.length > 5 && (
-                                <p className="text-xs text-slate-500">+ {existingEmployees.length - 5} çalışan daha listede yer alıyor.</p>
+                              {filteredDetailEmployees.length > 5 && (
+                                <p className="text-xs text-slate-500">+ {filteredDetailEmployees.length - 5} çalışan daha listede yer alıyor.</p>
                               )}
                             </div>
                           )}

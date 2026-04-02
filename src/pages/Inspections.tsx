@@ -17,6 +17,7 @@ import {
   AlertTriangle,
   Share2,
   X,
+  Trash2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -76,6 +77,23 @@ interface InspectionReportEvent {
   report_kind?: "dof" | "inspection";
 }
 
+const extractStorageReference = (rawUrl?: string | null) => {
+  if (!rawUrl) return null;
+
+  try {
+    const parsedUrl = new URL(rawUrl);
+    const match = parsedUrl.pathname.match(/\/storage\/v1\/object\/(?:public|sign)\/([^/]+)\/(.+)$/i);
+    if (!match) return null;
+
+    return {
+      bucket: decodeURIComponent(match[1]),
+      path: decodeURIComponent(match[2]),
+    };
+  } catch {
+    return null;
+  }
+};
+
 const statusFilters = ["all", "completed", "in_progress", "draft", "cancelled"] as const;
 const PAGE_SIZE = 24;
 const INSPECTIONS_CACHE_TTL = 5 * 60 * 1000;
@@ -117,9 +135,11 @@ export default function Inspections() {
   const [sharePreparing, setSharePreparing] = useState(false);
   const [currentReportUrl, setCurrentReportUrl] = useState("");
   const [currentReportFilename, setCurrentReportFilename] = useState("");
-  const [linkedReport, setLinkedReport] = useState<{ url: string; filename: string; kind: "dof" | "inspection" } | null>(null);
+  const [linkedReport, setLinkedReport] = useState<{ id: string; url: string; filename: string; kind: "dof" | "inspection" } | null>(null);
   const [reportEvents, setReportEvents] = useState<InspectionReportEvent[]>([]);
   const [loadingLinkedReport, setLoadingLinkedReport] = useState(false);
+  const [deletingLinkedReport, setDeletingLinkedReport] = useState(false);
+  const [inspectionReportIds, setInspectionReportIds] = useState<Record<string, boolean>>({});
   const [highlightedInspectionId, setHighlightedInspectionId] = useState<string | null>(null);
 
   const [locationName, setLocationName] = useState("");
@@ -189,6 +209,32 @@ export default function Inspections() {
 
       setInspections(pageData.items);
       setHasNextPage(pageData.hasNextPage);
+      const inspectionIds = pageData.items.map((item) => item.id).filter(Boolean);
+
+      if (inspectionIds.length > 0) {
+        const { data: reportRows, error: reportLookupError } = await supabase
+          .from("reports")
+          .select("content")
+          .eq("user_id", activeUserId)
+          .in("content->>inspection_id", inspectionIds);
+
+        if (reportLookupError) {
+          console.error("Inspection report lookup error:", reportLookupError);
+          setInspectionReportIds({});
+        } else {
+          const reportMap = ((reportRows as any[]) ?? []).reduce<Record<string, boolean>>((acc, row) => {
+            const inspectionId = row?.content?.inspection_id;
+            if (typeof inspectionId === "string" && inspectionId.length > 0) {
+              acc[inspectionId] = true;
+            }
+            return acc;
+          }, {});
+          setInspectionReportIds(reportMap);
+        }
+      } else {
+        setInspectionReportIds({});
+      }
+
       if (listCacheKey) {
         writePageSessionCache(listCacheKey, pageData);
       }
@@ -405,6 +451,7 @@ export default function Inspections() {
       const title = latest.title.includes(".") ? latest.title : `${latest.title}.${fallbackExt}`;
 
       setLinkedReport({
+        id: latest.id,
         url: latest.file_url,
         filename: title,
         kind: latest.report_kind || "inspection",
@@ -437,14 +484,45 @@ export default function Inspections() {
   };
 
   const openLinkedReport = () => {
-    if (!linkedReport?.url) return;
-    window.open(linkedReport.url, "_blank", "noopener,noreferrer");
+    void (async () => {
+      if (!linkedReport?.url) return;
+
+      try {
+        const accessUrl = await resolveLinkedReportUrl(linkedReport.url);
+
+        if (linkedReport.kind === "dof") {
+          const officePreviewUrl = `https://view.officeapps.live.com/op/view.aspx?src=${encodeURIComponent(accessUrl)}`;
+          window.open(officePreviewUrl, "_blank", "noopener,noreferrer");
+          return;
+        }
+
+        window.open(accessUrl, "_blank", "noopener,noreferrer");
+      } catch (error: any) {
+        toast.error(error?.message || "Rapor açilamadi");
+      }
+    })();
+  };
+
+  const resolveLinkedReportUrl = async (rawUrl: string) => {
+    const storageRef = extractStorageReference(rawUrl);
+    if (!storageRef) return rawUrl;
+
+    const { data, error } = await supabase.storage
+      .from(storageRef.bucket)
+      .createSignedUrl(storageRef.path, 60 * 60);
+
+    if (error || !data?.signedUrl) {
+      return rawUrl;
+    }
+
+    return data.signedUrl;
   };
 
   const downloadLinkedReport = async () => {
     if (!linkedReport?.url) return;
     try {
-      const response = await fetch(linkedReport.url);
+      const accessUrl = await resolveLinkedReportUrl(linkedReport.url);
+      const response = await fetch(accessUrl);
       if (!response.ok) throw new Error("Rapor indirilemedi");
       const blob = await response.blob();
       const ext = linkedReport.kind === "dof" ? "docx" : "pdf";
@@ -463,11 +541,61 @@ export default function Inspections() {
       toast.error(error?.message || "Rapor indirilemedi");
     }
   };
+
+  const handleDeleteLinkedReport = async () => {
+    if (!user || !linkedReport?.id) return;
+    if (!window.confirm("Bu raporu silmek istediğinize emin misiniz?")) return;
+
+    setDeletingLinkedReport(true);
+    try {
+      const storageRef = extractStorageReference(linkedReport.url);
+
+      if (storageRef) {
+        const { error: storageError } = await supabase.storage
+          .from(storageRef.bucket)
+          .remove([storageRef.path]);
+
+        if (storageError) {
+          console.warn("Linked report storage delete error:", storageError);
+        }
+      }
+
+      const { error: reportDeleteError } = await supabase
+        .from("reports")
+        .delete()
+        .eq("id", linkedReport.id)
+        .eq("user_id", user.id);
+
+      if (reportDeleteError) throw reportDeleteError;
+
+      setLinkedReport(null);
+      setReportEvents((prev) => prev.filter((event) => event.id !== linkedReport.id));
+      setInspectionReportIds((prev) => {
+        const inspectionId = selectedInspection?.id ?? inspectionDetail?.id;
+        if (!inspectionId) return prev;
+
+        return {
+          ...prev,
+          [inspectionId]: false,
+        };
+      });
+      setCurrentReportUrl("");
+      setCurrentReportFilename("");
+      toast.success("Rapor silindi");
+    } catch (error: any) {
+      console.error("Linked report delete error:", error);
+      toast.error(error?.message || "Rapor silinemedi");
+    } finally {
+      setDeletingLinkedReport(false);
+    }
+  };
+
   const handleOpenShareModal = async () => {
     if (!user || !activeInspection) return;
 
     if (linkedReport?.url) {
-      setCurrentReportUrl(linkedReport.url);
+      const accessUrl = await resolveLinkedReportUrl(linkedReport.url);
+      setCurrentReportUrl(accessUrl);
       setCurrentReportFilename(linkedReport.filename);
       setSendModalOpen(true);
       return;
@@ -1027,7 +1155,10 @@ export default function Inspections() {
         </div>
       ) : inspections.length > 0 ? (
         <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
-          {inspections.map((inspection) => (
+          {inspections.map((inspection) => {
+            const hasLinkedReport = Boolean(inspectionReportIds[inspection.id]);
+
+            return (
             <div
               key={inspection.id}
               onClick={() => {
@@ -1104,7 +1235,7 @@ export default function Inspections() {
                   <div className="rounded-xl border border-white/8 bg-white/[0.03] p-3">
                     <p className="text-[10px] uppercase tracking-[0.2em] text-slate-500">Rapor</p>
                     <p className="mt-2 text-sm font-semibold text-slate-100">
-                      {inspection.notes ? "Hazır veri" : "Temel kayıt"}
+                      {hasLinkedReport ? "Arşivlendi" : inspection.notes ? "Hazır veri" : "Temel kayıt"}
                     </p>
                   </div>
                 </div>
@@ -1148,7 +1279,7 @@ export default function Inspections() {
                   >
                     {getNextActionButtonLabel(inspection)}
                   </Button>
-                  {inspection.status === "completed" ? (
+                  {hasLinkedReport ? (
                     <Button
                       variant="outline"
                       className="h-10 rounded-2xl border-white/10 bg-white/[0.04] px-4 text-slate-100 hover:bg-white/[0.08]"
@@ -1174,7 +1305,8 @@ export default function Inspections() {
                 </Button>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       ) : (
         <div className="rounded-[24px] border border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.96),rgba(10,17,30,0.96))] p-12 text-center shadow-[0_18px_60px_rgba(2,8,23,0.24)]">
@@ -1362,67 +1494,68 @@ export default function Inspections() {
                     </Button>
                   </div>
 
-                  <div className="rounded-2xl border border-cyan-400/20 bg-cyan-500/10 p-4">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-cyan-200">Rapor durumu</p>
+                  <div className="rounded-2xl border border-cyan-400/20 bg-[linear-gradient(180deg,rgba(34,211,238,0.12),rgba(15,23,42,0.55))] p-5 shadow-[0_18px_40px_rgba(8,145,178,0.12)]">
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-cyan-200">Rapor Merkezi</p>
+                        <p className="mt-2 text-base font-semibold text-white">Rapor işlemleri</p>
+                      </div>
+                      <span className="rounded-full border border-cyan-300/20 bg-cyan-400/10 px-3 py-1 text-[11px] font-medium text-cyan-100">
+                        {linkedReport?.url ? "Hazır" : "Beklemede"}
+                      </span>
+                    </div>
                     {loadingLinkedReport ? (
-                      <p className="mt-3 text-sm text-slate-300">Rapor bağlantısı kontrol ediliyor...</p>
+                      <p className="mt-4 text-sm text-slate-300">Rapor bağlantısı kontrol ediliyor...</p>
                     ) : linkedReport?.url ? (
                       <>
-                        <p className="mt-3 text-sm font-semibold text-white">{linkedReport.filename}</p>
-                        <p className="mt-2 text-xs leading-6 text-slate-300">
-                          Bu kayıt için daha önce oluşturulmuş rapor bulundu. Buradan açabilir, indirebilir veya paylaşabilirsiniz.
+                        <p className="mt-4 text-sm font-semibold text-white">{linkedReport.filename}</p>
+                        <p className="mt-2 text-sm leading-6 text-slate-300">
+                          Bu denetime bağlı rapor arşivde hazır. Önizleyebilir, cihazınıza indirebilir, paylaşabilir veya gerekli durumda arşivden kaldırabilirsiniz.
                         </p>
-                        <div className="mt-4 grid gap-2">
+                        <div className="mt-5 grid gap-2">
                           <Button size="sm" variant="outline" onClick={openLinkedReport} className="justify-start rounded-xl border-white/10 bg-white/[0.04] text-slate-100 hover:bg-white/[0.08]">
-                            Raporu Aç
+                            <Eye className="mr-2 h-4 w-4" />
+                            Rapor Önizleme
                           </Button>
                           <Button size="sm" onClick={downloadLinkedReport} className="justify-start rounded-xl border-0 bg-gradient-to-r from-cyan-400 via-sky-400 to-violet-400 text-slate-950">
-                            <Download className="mr-1 h-4 w-4" /> Raporu İndir
+                            <Download className="mr-2 h-4 w-4" />
+                            Word Dosyasını İndir
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="justify-start rounded-xl border-white/10 bg-white/[0.04] text-slate-100 hover:bg-white/[0.08]"
+                            onClick={handleOpenShareModal}
+                            disabled={sharePreparing}
+                          >
+                            {sharePreparing ? (
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            ) : (
+                              <Share2 className="mr-2 h-4 w-4" />
+                            )}
+                            E-posta ile Paylaş
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={handleDeleteLinkedReport}
+                            disabled={deletingLinkedReport}
+                            className="justify-start rounded-xl border-destructive/30 bg-destructive/10 text-destructive hover:bg-destructive/20 hover:text-destructive"
+                          >
+                            {deletingLinkedReport ? (
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            ) : (
+                              <Trash2 className="mr-2 h-4 w-4" />
+                            )}
+                            Raporu Arşivden Kaldır
                           </Button>
                         </div>
                       </>
                     ) : (
-                      <p className="mt-3 text-sm leading-6 text-slate-300">
-                        Bu denetime bağlı rapor bulunamadı. E-posta gönderimi için sistem gerektiğinde yeni rapor bağlantısı hazırlayabilir.
+                      <p className="mt-4 text-sm leading-6 text-slate-300">
+                        Bu denetime bağlı arşivlenmiş bir rapor bulunmuyor. Rapor oluşturulduktan sonra önizleme, indirme ve paylaşım işlemleri burada görüntülenir.
                       </p>
                     )}
-                  </div>
-
-                  <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-slate-500">Kurumsal aksiyonlar</p>
-                    <div className="mt-4 grid gap-2">
-                      <Button
-                        variant="outline"
-                        className="justify-start rounded-xl border-white/10 bg-white/[0.03] text-slate-100 hover:bg-white/[0.08]"
-                        onClick={openLinkedReport}
-                        disabled={!linkedReport?.url}
-                      >
-                        <Eye className="mr-2 h-4 w-4" />
-                        Raporu Aç
-                      </Button>
-                      <Button
-                        variant="outline"
-                        className="justify-start rounded-xl border-white/10 bg-white/[0.03] text-slate-100 hover:bg-white/[0.08]"
-                        onClick={downloadLinkedReport}
-                        disabled={!linkedReport?.url}
-                      >
-                        <Download className="mr-2 h-4 w-4" />
-                        Raporu İndir
-                      </Button>
-                      <Button
-                        variant="outline"
-                        className="justify-start rounded-xl border-white/10 bg-white/[0.03] text-slate-100 hover:bg-white/[0.08]"
-                        onClick={handleOpenShareModal}
-                        disabled={sharePreparing}
-                      >
-                        {sharePreparing ? (
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        ) : (
-                          <Share2 className="mr-2 h-4 w-4" />
-                        )}
-                        E-posta Gönder
-                      </Button>
-                    </div>
                   </div>
 
                   <div className="rounded-2xl border border-blue-400/20 bg-blue-500/10 p-4">

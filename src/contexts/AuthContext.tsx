@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/integrations/supabase/client";
 import type { Database } from "@/integrations/supabase/types";
@@ -33,8 +33,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<AuthProfile | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const fetchProfile = useCallback(async (userId: string | null) => {
+    if (!userId) {
+      setProfile(null);
+      return;
+    }
+
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("id", userId)
+      .maybeSingle();
+
+    if (error) {
+      console.error("Failed to get profile:", error);
+      setProfile(null);
+      return;
+    }
+
+    setProfile(data ?? null);
+  }, []);
+
   useEffect(() => {
     let mounted = true;
+    let initialSessionResolved = false;
 
     const hasAuthParams =
       window.location.search.includes("code=") ||
@@ -42,43 +64,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       window.location.hash.includes("access_token=") ||
       window.location.pathname === "/auth/callback";
 
-    const fetchProfile = async (userId: string | null) => {
-      if (!userId) {
-        if (mounted) setProfile(null);
-        return;
-      }
-
-      const { data, error } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", userId)
-        .maybeSingle();
-
+    const applySession = async (nextSession: Session | null, finishLoading = false) => {
       if (!mounted) return;
-
-      if (error) {
-        console.error("Failed to get profile:", error);
-        setProfile(null);
-        return;
+      setSession(nextSession);
+      Sentry.setUser(
+        nextSession?.user
+          ? {
+              id: nextSession.user.id,
+              email: nextSession.user.email,
+            }
+          : null,
+      );
+      await fetchProfile(nextSession?.user?.id ?? null);
+      if (mounted && finishLoading) {
+        setLoading(false);
       }
-
-      setProfile(data ?? null);
     };
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        if (!mounted) return;
-        setSession(session);
-        Sentry.setUser(
-          session?.user
-            ? {
-                id: session.user.id,
-                email: session.user.email,
-              }
-            : null,
-        );
-        void fetchProfile(session?.user?.id ?? null);
-        setLoading(false);
+      (_event, nextSession) => {
+        void applySession(nextSession, initialSessionResolved);
       }
     );
 
@@ -96,13 +101,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
           if (data.session) {
             if (!mounted) return;
-            setSession(data.session);
-            Sentry.setUser({
-              id: data.session.user.id,
-              email: data.session.user.email,
-            });
-            await fetchProfile(data.session.user.id);
-            setLoading(false);
+            initialSessionResolved = true;
+            await applySession(data.session, true);
             return;
           }
 
@@ -118,17 +118,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.error("Failed to get session:", error);
       }
 
-      setSession(data.session);
-      Sentry.setUser(
-        data.session?.user
-          ? {
-              id: data.session.user.id,
-              email: data.session.user.email,
-            }
-          : null,
-      );
-      await fetchProfile(data.session?.user?.id ?? null);
-      setLoading(false);
+      initialSessionResolved = true;
+      await applySession(data.session, true);
     };
 
     void initializeSession();
@@ -137,7 +128,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, []);
+  }, [fetchProfile]);
 
   const signOut = async () => {
     await supabase.auth.signOut();

@@ -66,6 +66,35 @@ export interface RiskAssessment {
   version: number;
   is_deleted: boolean;
   notes?: string;
+  workplace_title?: string;
+  workplace_address?: string;
+  employer_name?: string;
+  employer_representative_name?: string;
+  occupational_safety_specialist_name?: string;
+  workplace_doctor_name?: string;
+  employee_representative_name?: string;
+  support_personnel_name?: string;
+  employer_representative_signature_url?: string;
+  occupational_safety_specialist_signature_url?: string;
+  workplace_doctor_signature_url?: string;
+  employee_representative_signature_url?: string;
+  support_personnel_signature_url?: string;
+  employer_representative_signed_at?: string;
+  occupational_safety_specialist_signed_at?: string;
+  workplace_doctor_signed_at?: string;
+  employee_representative_signed_at?: string;
+  support_personnel_signed_at?: string;
+  employer_representative_approval_status?: string;
+  occupational_safety_specialist_approval_status?: string;
+  workplace_doctor_approval_status?: string;
+  employee_representative_approval_status?: string;
+  support_personnel_approval_status?: string;
+  hazard_sources?: string;
+  identified_risks?: string;
+  control_measures?: string;
+  responsible_persons?: string;
+  legislation_notes?: string;
+  renewal_triggers_note?: string;
 }
 
 export interface RiskLibraryItem {

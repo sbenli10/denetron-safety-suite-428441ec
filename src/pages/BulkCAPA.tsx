@@ -38,6 +38,7 @@ import {
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -413,6 +414,71 @@ const DATE_PRESETS = [
   { label: "30 gün", value: 30 },
 ] as const;
 
+const normalizeJsonStringContent = (value: string) => {
+  let result = "";
+  let inString = false;
+  let escaping = false;
+
+  for (const char of value) {
+    if (escaping) {
+      result += char;
+      escaping = false;
+      continue;
+    }
+
+    if (char === "\\") {
+      result += char;
+      escaping = true;
+      continue;
+    }
+
+    if (char === '"') {
+      result += char;
+      inString = !inString;
+      continue;
+    }
+
+    if (inString && (char === "\n" || char === "\r" || char === "\t")) {
+      result += " ";
+      continue;
+    }
+
+    result += char;
+  }
+
+  if (inString) {
+    result += '"';
+  }
+
+  return result;
+};
+
+const tryParseAnalysisFromFields = (value: string): AIAnalysisResult | null => {
+  const extractField = (fieldName: string) => {
+    const regex = new RegExp(`"${fieldName}"\\s*:\\s*"([\\s\\S]*?)(?<!\\\\)"`, "i");
+    const match = value.match(regex);
+    return match?.[1]?.replace(/\\"/g, '"').trim() || "";
+  };
+
+  const description = extractField("description");
+  const riskDefinition = extractField("riskDefinition");
+  const correctiveAction = extractField("correctiveAction");
+  const preventiveAction = extractField("preventiveAction");
+  const importanceLevel = extractField("importance_level");
+
+  if (!description && !riskDefinition && !correctiveAction && !preventiveAction) {
+    return null;
+  }
+
+  return {
+    description: description || "Açiklama alinamadi",
+    riskDefinition: riskDefinition || "Risk tanimi alinamadi",
+    correctiveAction: correctiveAction || "- Islem belirtilmedi",
+    preventiveAction: preventiveAction || "- Önlem belirtilmedi",
+    importance_level: (importanceLevel as AIAnalysisResult["importance_level"]) || "Orta",
+  };
+};
+
 const safeJsonParse = (jsonText: string): AIAnalysisResult | null => {
   try {
     if (!jsonText || jsonText.trim().length === 0) {
@@ -424,6 +490,13 @@ const safeJsonParse = (jsonText: string): AIAnalysisResult | null => {
     // ? ```json``` markdowni kaldir
     cleaned = cleaned.replace(/^```json\n?/i, "").replace(/\n?```$/i, "");
     cleaned = cleaned.replace(/^```\n?/i, "").replace(/\n?```$/i, "");
+    cleaned = normalizeJsonStringContent(cleaned);
+
+    const firstBraceIndex = cleaned.indexOf("{");
+    const lastBraceIndex = cleaned.lastIndexOf("}");
+    if (firstBraceIndex >= 0 && lastBraceIndex > firstBraceIndex) {
+      cleaned = cleaned.slice(firstBraceIndex, lastBraceIndex + 1);
+    }
 
     // ? KESIK STRING'I KONTROL ET
     // Eger son karakter tirnak degilse (kesik string), tirnak ekle
@@ -468,7 +541,7 @@ const safeJsonParse = (jsonText: string): AIAnalysisResult | null => {
   } catch (error) {
     console.error("JSON Parse Error:", error);
     console.error("Raw text:", jsonText.substring(0, 300));
-    return null;
+    return tryParseAnalysisFromFields(normalizeJsonStringContent(jsonText));
   }
 };
 
@@ -549,10 +622,10 @@ const generateWordDocument = async (
   entries: HazardEntry[],
   locationName: string,
   reportCompanyName: string,
-  orgData: OrganizationData,
+  orgData: OrganizationData | null,
   selectedCompany: CompanyOption | null,
   user: any,
-  orgId: string,
+  orgId: string | null,
   overallAnalysis: string,
   profileContext: ProfileContext | null,
   generalInfo: BulkCAPAGeneralInfo,
@@ -1195,6 +1268,7 @@ const generateWordDocument = async (
           try {
             const imageUrl = entry.media_urls[imgIdx];
             const uint8Array = dataUrlToBuffer(imageUrl);
+            const imageType = inferDocxImageType(imageUrl);
 
             findingTableRows.push(
               new TableRow({
@@ -1206,7 +1280,7 @@ const generateWordDocument = async (
                         children: [
                           new ImageRun({
                             data: uint8Array as any,
-                            type: "jpg",
+                            type: imageType,
                             transformation: {
                               width: mediaWidth,
                               height: mediaHeight,
@@ -1632,6 +1706,33 @@ function BulkCAPAContent() {
   const [suggestedTemplateReason, setSuggestedTemplateReason] = useState("");
   const [recentHeaderSuggestion, setRecentHeaderSuggestion] = useState<BulkCAPAGeneralInfo | null>(null);
   const [recentHeaderSuggestionReason, setRecentHeaderSuggestionReason] = useState("");
+
+  const loadCompanyOptions = async (userId: string) => {
+    const { data, error } = await supabase
+      .from("companies")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("is_active", true)
+      .order("created_at", { ascending: false });
+
+    if (error) {
+      throw error;
+    }
+
+    const rows = data || [];
+    const withSignedUrls = await Promise.all(
+      rows.map(async (company) => ({
+        id: company.id,
+        name: company.name,
+        industry: company.industry,
+        employee_count: company.employee_count,
+        notes: company.notes,
+        logo_url: await resolveMaybeSignedUrl("company-logos", (company as { logo_url?: string | null }).logo_url),
+      }))
+    );
+
+    setCompanies(withSignedUrls);
+  };
   const [itemTemplateTags, setItemTemplateTags] = useState<string[]>([]);
   const [generalInfo, setGeneralInfo] = useState<BulkCAPAGeneralInfo>({
     company_name: "",
@@ -1681,6 +1782,9 @@ function BulkCAPAContent() {
     { label: "Termin tarihi", ready: newEntry.termin_date.trim().length > 0 },
     { label: "Sorumlu kisi", ready: newEntry.responsible_name.trim().length > 0 },
   ];
+  const missingRequiredFields = requiredFieldChecks
+    .filter((field) => !field.ready)
+    .map((field) => field.label);
   const completedFieldCount = requiredFieldChecks.filter((field) => field.ready).length;
   const formReady = completedFieldCount === requiredFieldChecks.length;
   const aiEntryCount = entries.filter((entry) => entry.ai_analyzed).length;
@@ -1696,6 +1800,11 @@ function BulkCAPAContent() {
     companyInputMode === "manual"
       ? manualCompanyName.trim()
       : selectedCompany?.name || "";
+  const itemStepGuidance = !formReady
+    ? `Bu maddeyi listeye eklemek için şu alanlari tamamlayin: ${missingRequiredFields.join(", ")}.`
+    : entries.length > 0
+    ? "Bu madde hazir. Isterseniz Bulguyu Ekle ile listeye alin, isiniz bittiyse Önizlemeye Geç ile raporu kontrol edin."
+    : "Bu madde hazir. Bulguyu Ekle ile ilk maddeyi listeye alin, sonra yeni madde ekleyebilir veya önizlemeye geçebilirsiniz.";
   const reportCompanyName = generalInfo.company_name || selectedCompanyName || "";
   const effectiveLocation = generalInfo.area_region || reportCompanyName;
   const filteredCompanies = useMemo(() => {
@@ -1897,7 +2006,12 @@ function BulkCAPAContent() {
       importance_level: payload.importance_level || prev.importance_level,
       related_department: payload.related_department || prev.related_department,
       notification_method: payload.notification_method || prev.notification_method,
+      responsible_name: payload.responsible_name || prev.responsible_name,
       responsible_role: payload.responsible_role || prev.responsible_role,
+      approver_name: payload.approver_name || prev.approver_name,
+      approver_title: payload.approver_title || prev.approver_title,
+      media_urls: Array.isArray(payload.media_urls) ? payload.media_urls : prev.media_urls,
+      ai_analyzed: Boolean(payload.ai_analyzed) || prev.ai_analyzed,
       termin_date: dueDate,
     }));
     setItemTemplateTags(Array.isArray(payload.tags) ? payload.tags : []);
@@ -1970,8 +2084,13 @@ function BulkCAPAContent() {
         importance_level: newEntry.importance_level,
         related_department: newEntry.related_department,
         notification_method: newEntry.notification_method,
+        responsible_name: newEntry.responsible_name,
         responsible_role: newEntry.responsible_role,
+        approver_name: newEntry.approver_name,
+        approver_title: newEntry.approver_title,
         termin_date: newEntry.termin_date,
+        media_urls: newEntry.media_urls,
+        ai_analyzed: newEntry.ai_analyzed,
         tags: itemTemplateTags,
       };
 
@@ -2009,34 +2128,8 @@ function BulkCAPAContent() {
     }
 
     try {
-      if (key === "company_logo_url" && companyInputMode === "existing" && selectedCompanyId && orgData?.id) {
-        const sanitizedName = file.name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-zA-Z0-9._-]/g, "_");
-        const filePath = `${orgData.id}/${selectedCompanyId}/${Date.now()}-${sanitizedName}`;
-        const { error: uploadError } = await supabase.storage.from("company-logos").upload(filePath, file, {
-          upsert: true,
-          contentType: file.type,
-        });
-
-        if (uploadError) throw uploadError;
-
-        const { error: updateError } = await (supabase as any)
-          .from("companies")
-          .update({ logo_url: filePath })
-          .eq("id", selectedCompanyId);
-
-        if (updateError) throw updateError;
-
-        const signedUrl = await resolveMaybeSignedUrl("company-logos", filePath);
-        handleGeneralInfoChange(key, signedUrl || filePath);
-        setCompanies((prev) =>
-          prev.map((company) =>
-            company.id === selectedCompanyId ? { ...company, logo_url: signedUrl || filePath } : company
-          )
-        );
-      } else {
-        const dataUrl = await fileToDataUrl(file);
-        handleGeneralInfoChange(key, dataUrl);
-      }
+      const dataUrl = await fileToDataUrl(file);
+      handleGeneralInfoChange(key, dataUrl);
       toast.success(key === "company_logo_url" ? "Hizmet alan firma logosu yüklendi" : "Hizmet veren firma logosu hazırlandı");
     } catch (error) {
       toast.error(getUserFriendlyErrorMessage(error, "export"));
@@ -2044,6 +2137,12 @@ function BulkCAPAContent() {
       event.target.value = "";
     }
   };
+
+  const generalInfoStepReady = Boolean(
+    reportCompanyName.trim() &&
+      generalInfo.report_date &&
+      generalInfo.observer_name.trim()
+  );
 
   const generalInfoReady = Boolean(
     reportCompanyName.trim() &&
@@ -2485,14 +2584,24 @@ Birden fazla risk varsa importance_level en tehlikeli riske göre belirlenmelidi
   // ? FETCH ORGANIZATION DATA
   useEffect(() => {
     const fetchOrgData = async () => {
-      if (!user) return;
+      if (!user) {
+        setCompanies([]);
+        setLoading(false);
+        return;
+      }
 
       try {
-        const { data: profile } = await supabase
+        await loadCompanyOptions(user.id);
+
+        const { data: profile, error: profileError } = await supabase
           .from("profiles")
           .select("organization_id, full_name, position, avatar_url, stamp_url")
           .eq("id", user.id)
-          .single();
+          .maybeSingle();
+
+        if (profileError) {
+          console.warn("Profile context could not be loaded:", profileError);
+        }
 
         setProfileContext({
           full_name: profile?.full_name ?? null,
@@ -2521,27 +2630,7 @@ Birden fazla risk varsa importance_level en tehlikeli riske göre belirlenmelidi
             .single();
 
           if (org) {
-            setOrgData(org); // ? Artik id var
-          }
-
-          const { data: companyRows, error: companyError } = await (supabase as any)
-            .from("companies")
-            .select("id, name, industry, employee_count, notes, logo_url")
-            .eq("user_id", user.id)
-            .eq("is_active", true)
-            .order("name", { ascending: true });
-
-          if (companyError) {
-            console.warn("Companies could not be loaded:", companyError);
-          } else {
-            const rows = companyRows || [];
-            const withSignedUrls = await Promise.all(
-              rows.map(async (company: CompanyOption) => ({
-                ...company,
-                logo_url: await resolveMaybeSignedUrl("company-logos", company.logo_url),
-              }))
-            );
-            setCompanies(withSignedUrls);
+            setOrgData(org);
           }
 
           await loadSavedTemplates(profile.organization_id);
@@ -2994,28 +3083,16 @@ ${entries
       approver_title: coerceText(newEntry.approver_title),
     };
 
-    if (!normalizedEntry.description.trim()) {
-      toast.error("Lütfen bulgu açiklamasi girin");
-      return null;
-    }
+    const missingFields = [
+      !normalizedEntry.description.trim() ? "Bulgu açiklamasi" : null,
+      !normalizedEntry.riskDefinition.trim() ? "Risk tanimi" : null,
+      !normalizedEntry.correctiveAction.trim() ? "Düzeltici faaliyet" : null,
+      !newEntry.termin_date ? "Termin tarihi" : null,
+      !normalizedEntry.responsible_name.trim() ? "Sorumlu kisi" : null,
+    ].filter(Boolean) as string[];
 
-    if (!normalizedEntry.riskDefinition.trim()) {
-      toast.error("Lütfen risk tanimini girin");
-      return null;
-    }
-
-    if (!normalizedEntry.correctiveAction.trim()) {
-      toast.error("Lütfen düzeltici faaliyeti girin");
-      return null;
-    }
-
-    if (!newEntry.termin_date) {
-      toast.error("Lütfen termin tarihini seçin");
-      return null;
-    }
-
-    if (!normalizedEntry.responsible_name.trim()) {
-      toast.error("Lütfen sorumlu kisiyi girin");
+    if (missingFields.length > 0) {
+      toast.error(`Eksik alanlar: ${missingFields.join(", ")}`);
       return null;
     }
 
@@ -3034,6 +3111,22 @@ ${entries
     setCreateStep("items");
     toast.success(editingEntryId ? "Tekli DÖF güncellendi." : "Bulgu eklendi. Yeni madde eklemeye devam edebilirsiniz.");
     return entry;
+  };
+
+  const handleOpenBulkPreview = () => {
+    if (!generalInfoStepReady) {
+      toast.error("Önizleme için önce firma, rapor tarihi ve gözlem yapan bilgisini girin");
+      setCreateStep("general");
+      return;
+    }
+
+    if (entries.length === 0) {
+      toast.error("Önizleme için önce en az bir bulgu ekleyin");
+      return;
+    }
+
+    setPreviewFocusEntryId(null);
+    setPreviewOpen(true);
   };
 
   const handleCreateSingleDOF = () => {
@@ -3153,7 +3246,7 @@ ${entries
         orgData,
         selectedCompany,
         user,
-        orgData.id,
+        orgData?.id || user?.id || null,
         focusedPreviewEntry.preventiveAction || overallAnalysis,
         profileContext,
         generalInfo,
@@ -3169,55 +3262,62 @@ ${entries
         .replace(/\s+/g, "_")
         .slice(0, 80) || "firma";
       const singleFileName = `Tekli_DOF_${safeCompanyName}_${today.toISOString().split("T")[0]}.docx`;
-
-      const storagePath = `${orgData.id}/${singleFileName}`;
-      const { data: uploadData, error: uploadError } = await supabase.storage
-        .from("dof-reports")
-        .upload(storagePath, compactWordBlob, {
-          contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-          upsert: true,
-        });
-
       let savedReportUrl: string | null = null;
-      if (uploadError) {
-        console.warn("Single DOF storage upload failed:", uploadError);
-        toast.warning("Arşiv yüklemesi başarısız oldu, dosya yine de indirilecek.");
-      } else if (uploadData?.path) {
-        const { data: publicUrlData } = supabase.storage.from("dof-reports").getPublicUrl(uploadData.path);
-        savedReportUrl = publicUrlData.publicUrl;
+      let uploadError: { message?: string } | null = null;
+      const reportStorageOwnerId = orgData?.id || user?.id || null;
+
+      if (reportStorageOwnerId) {
+        const storagePath = `${reportStorageOwnerId}/${singleFileName}`;
+        const { data: uploadData, error } = await supabase.storage
+          .from("dof-reports")
+          .upload(storagePath, compactWordBlob, {
+            contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            upsert: true,
+          });
+
+        uploadError = error;
+        if (error) {
+          console.warn("Single DOF storage upload failed:", error);
+          toast.warning("Arşiv yüklemesi başarısız oldu, dosya yine de indirilecek.");
+        } else if (uploadData?.path) {
+          const { data: publicUrlData } = supabase.storage.from("dof-reports").getPublicUrl(uploadData.path);
+          savedReportUrl = publicUrlData.publicUrl;
+        }
       }
 
-      const { error: reportError } = await supabase.from("reports").insert({
-        org_id: orgData.id,
-        user_id: user?.id,
-        title: `Tekli DÖF - ${reportCompanyName}`,
-        report_type: "inspection",
-        generated_at: today.toISOString(),
-        export_format: "docx",
-        file_url: savedReportUrl,
-        content: {
-          report_kind: "single_dof",
-          company_name: reportCompanyName,
-          location: effectiveLocation,
-          report_no: generalInfo.report_no || null,
-          report_date: generalInfo.report_date || null,
-          observer_name: generalInfo.observer_name || null,
-          observer_certificate_no: generalInfo.observer_certificate_no || null,
-          entry_id: focusedPreviewEntry.id,
-          description: focusedPreviewEntry.description,
-          importance_level: focusedPreviewEntry.importance_level,
-          due_date: focusedPreviewEntry.termin_date,
-          responsible_name: focusedPreviewEntry.responsible_name || null,
-          responsible_role: focusedPreviewEntry.responsible_role || null,
-          ai_analyzed: focusedPreviewEntry.ai_analyzed,
-          inspection_id: createdInspectionId,
-          storage_upload_ok: !uploadError,
-          storage_error: uploadError?.message ?? null,
-        },
-      });
+      if (user?.id) {
+        const { error: reportError } = await supabase.from("reports").insert({
+          org_id: orgData?.id || null,
+          user_id: user.id,
+          title: `Tekli DÖF - ${reportCompanyName}`,
+          report_type: "inspection",
+          generated_at: today.toISOString(),
+          export_format: "docx",
+          file_url: savedReportUrl,
+          content: {
+            report_kind: "single_dof",
+            company_name: reportCompanyName,
+            location: effectiveLocation,
+            report_no: generalInfo.report_no || null,
+            report_date: generalInfo.report_date || null,
+            observer_name: generalInfo.observer_name || null,
+            observer_certificate_no: generalInfo.observer_certificate_no || null,
+            entry_id: focusedPreviewEntry.id,
+            description: focusedPreviewEntry.description,
+            importance_level: focusedPreviewEntry.importance_level,
+            due_date: focusedPreviewEntry.termin_date,
+            responsible_name: focusedPreviewEntry.responsible_name || null,
+            responsible_role: focusedPreviewEntry.responsible_role || null,
+            ai_analyzed: focusedPreviewEntry.ai_analyzed,
+            inspection_id: createdInspectionId,
+            storage_upload_ok: !uploadError,
+            storage_error: uploadError?.message ?? null,
+          },
+        });
 
-      if (reportError) {
-        console.warn("Single DOF report archive failed:", reportError);
+        if (reportError) {
+          console.warn("Single DOF report archive failed:", reportError);
+        }
       }
 
       saveAs(compactWordBlob, singleFileName);
@@ -3246,8 +3346,8 @@ const handleSaveAndExport = async () => {
     toast.error("Lütfen firma seçin veya manuel firma adi girin");
     return;
   }
-  if (!generalInfoReady) {
-    toast.error("Lütfen önce genel bilgileri eksiksiz doldurun");
+  if (!generalInfoStepReady) {
+    toast.error("Lütfen önce firma, rapor tarihi ve gözlem yapan bilgisini girin");
     setCreateDialogOpen(true);
     setCreateStep("general");
     return;
@@ -3391,60 +3491,61 @@ const handleSaveAndExport = async () => {
     }
 
     // ? 2. WORD DOKÜMANI OLUSTUR
-    if (orgData && orgData.id) {
-      toast.info("Word raporu olusturuluyor");
-      
-      // ? await ile blob al
-      const wordBlob = await generateWordDocument(
-        entries,
-        effectiveLocation,
-        reportCompanyName,
-        orgData,
-        selectedCompany,
-        user,
-        orgData.id,
-        overallAnalysis,
-        profileContext,
-        generalInfo
-      );
+    toast.info("Word raporu olusturuluyor");
 
-      // ? 3. DOSYA ADI (Supabase object key için güvenli)
-      const today = new Date();
-      const safeSiteName = (effectiveLocation || "firma")
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .replace(/[^a-zA-Z0-9 _-]/g, "")
-        .trim()
-        .replace(/\s+/g, "_")
-        .slice(0, 80) || "saha";
-      reportFileName = `DOF_Raporu_${safeSiteName}_${today.toISOString().split("T")[0]}.docx`;
+    const wordBlob = await generateWordDocument(
+      entries,
+      effectiveLocation,
+      reportCompanyName,
+      orgData,
+      selectedCompany,
+      user,
+      orgData?.id || null,
+      overallAnalysis,
+      profileContext,
+      generalInfo
+    );
 
-      // ? 4. SUPABASE STORAGE'A YÜKLE
-      const storagePath = `${orgData.id}/${reportFileName}`;
+    const today = new Date();
+    const safeSiteName = (effectiveLocation || "firma")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-zA-Z0-9 _-]/g, "")
+      .trim()
+      .replace(/\s+/g, "_")
+      .slice(0, 80) || "saha";
+    reportFileName = `DOF_Raporu_${safeSiteName}_${today.toISOString().split("T")[0]}.docx`;
 
-      const { data: uploadData, error: uploadError } = await supabase.storage
+    let uploadError: { message?: string } | null = null;
+    const reportStorageOwnerId = orgData?.id || user?.id || null;
+
+    if (reportStorageOwnerId) {
+      const storagePath = `${reportStorageOwnerId}/${reportFileName}`;
+
+      const { data: uploadData, error } = await supabase.storage
         .from("dof-reports")
         .upload(storagePath, wordBlob, {
           contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
           upsert: true,
         });
 
-      if (uploadError) {
-        console.error("Storage upload error:", uploadError);
-          toast.error(getUserFriendlyErrorMessage(`storage upload: ${uploadError.message}`, "export"));
+      uploadError = error;
+      if (error) {
+        console.error("Storage upload error:", error);
+        toast.error(getUserFriendlyErrorMessage(`storage upload: ${error.message}`, "export"));
       } else {
-        // ? 5. PUBLIC URL AL
         const { data: publicUrlData } = supabase.storage
           .from("dof-reports")
           .getPublicUrl(uploadData.path);
 
         savedReportUrl = publicUrlData.publicUrl;
       }
+    }
 
-      // ? 6. REPORTS TABLOSUNA KAYDET (upload basariliysa file_url dolu gelir)
+    if (user?.id) {
       const { error: dbError } = await supabase.from("reports").insert({
-        org_id: orgData.id,
-        user_id: user?.id,
+        org_id: orgData?.id || null,
+        user_id: user.id,
         title: `DÖF Raporu - ${effectiveLocation}`,
         report_type: "inspection",
         generated_at: today.toISOString(),
@@ -3476,67 +3577,61 @@ const handleSaveAndExport = async () => {
 
       if (dbError) {
         console.error("Reports insert error:", dbError);
-         toast.error(`Rapor kaydi olusturulamadi: ${dbError.message}`);
+        toast.error(`Rapor kaydi olusturulamadi: ${dbError.message}`);
       } else {
         toast.success("Rapor arsivlendi");
       }
-
-      // ? 7. DOSYAYI INDIR
-      
-      saveAs(wordBlob, reportFileName);
-      
-      // ? 8. E-POSTA GÖNDERIM SEÇENEGI
-      toast.info("E-posta için: Denetimler > Detay > E-posta Gönder");
-
-      // ? 9. FORMU TEMIZLE
-      setEntries([]);
-      setSelectedCompanyId("");
-      setManualCompanyName("");
-      setCompanyInputMode("existing");
-      setOverallAnalysis("");
-      setGeneralInfo({
-        company_name: "",
-        company_logo_url: null,
-        provider_logo_url: null,
-        area_region: "",
-        observation_range: "",
-        report_date: new Date().toISOString().split("T")[0],
-        observer_name: profileContext?.full_name || "",
-        observer_certificate_no: "",
-        responsible_person: "İŞVEREN / İŞVEREN VEKİLİ",
-        employer_representative_title: "İşveren / İşveren Vekili",
-        employer_representative_name: "",
-        report_no: "",
-      });
-      setCreateStep("general");
-      setNewEntry({
-        id: "",
-        description: "",
-        riskDefinition: "",
-        correctiveAction: "",
-        preventiveAction: "",
-        importance_level: "Orta",
-        termin_date: "",
-        related_department: "Diger",
-        notification_method: "E-mail",
-        responsible_name: "",
-        responsible_role: "",
-        approver_name: generalInfo.observer_name || profileContext?.full_name || "",
-        approver_title: profileContext?.position || "İş Güvenliği Uzmanı",
-        include_stamp: true,
-        media_urls: [],
-        ai_analyzed: false,
-      });
-
-      toast.success("DÖF raporu olusturuldu");
-
-      // ? 10. YÖNLENDIR
-      setTimeout(() => {
-        navigate("/inspections");
-      }, 3000);
     } else {
-      toast.error("Kurulus bilgisi bulunamadi");
+      toast.info("Kullanıcı kaydı olmadan arşiv bağlantısı oluşturulamadı, Word dosyası indiriliyor.");
     }
+
+    saveAs(wordBlob, reportFileName);
+    toast.info("E-posta için: Denetimler > Detay > E-posta Gönder");
+
+    setEntries([]);
+    setSelectedCompanyId("");
+    setManualCompanyName("");
+    setCompanyInputMode("existing");
+    setOverallAnalysis("");
+    setGeneralInfo({
+      company_name: "",
+      company_logo_url: null,
+      provider_logo_url: null,
+      area_region: "",
+      observation_range: "",
+      report_date: new Date().toISOString().split("T")[0],
+      observer_name: profileContext?.full_name || "",
+      observer_certificate_no: "",
+      responsible_person: "İŞVEREN / İŞVEREN VEKİLİ",
+      employer_representative_title: "İşveren / İşveren Vekili",
+      employer_representative_name: "",
+      report_no: "",
+    });
+    setCreateStep("general");
+    setNewEntry({
+      id: "",
+      description: "",
+      riskDefinition: "",
+      correctiveAction: "",
+      preventiveAction: "",
+      importance_level: "Orta",
+      termin_date: "",
+      related_department: "Diger",
+      notification_method: "E-mail",
+      responsible_name: "",
+      responsible_role: "",
+      approver_name: generalInfo.observer_name || profileContext?.full_name || "",
+      approver_title: profileContext?.position || "İş Güvenliği Uzmanı",
+      include_stamp: true,
+      media_urls: [],
+      ai_analyzed: false,
+    });
+
+    toast.success("DÖF raporu olusturuldu");
+
+    setTimeout(() => {
+      navigate("/inspections");
+    }, 3000);
   } catch (error: any) {
     console.error("Error:", error);
     toast.error(getUserFriendlyErrorMessage(error, "export"));
@@ -3714,7 +3809,7 @@ const handleSaveAndExport = async () => {
             if (!open) setCreateStep(createMode === "bulk" ? "general" : "items");
           }}
         >
-          <DialogContent className={cn("overflow-hidden border-primary/20 bg-slate-950/95 p-0 text-slate-100", createMode === "single" ? "max-h-[84vh] sm:max-w-xl lg:max-w-[860px]" : "max-h-[88vh] sm:max-w-2xl lg:max-w-3xl")}>
+          <DialogContent className={cn("flex flex-col overflow-hidden border-primary/20 bg-slate-950/95 p-0 text-slate-100", createMode === "single" ? "max-h-[84vh] sm:max-w-xl lg:max-w-[860px]" : "max-h-[88vh] sm:max-w-2xl lg:max-w-3xl")}>
             <DialogHeader className={cn("border-b border-white/10 text-left", createMode === "single" ? "bg-[linear-gradient(135deg,rgba(8,145,178,0.92),rgba(16,185,129,0.86))] px-5 py-3.5" : "bg-[linear-gradient(135deg,rgba(124,58,237,0.92),rgba(168,85,247,0.86))] px-6 py-4")}>
               <div className="flex items-start justify-between gap-4">
                 <div>
@@ -3736,11 +3831,11 @@ const handleSaveAndExport = async () => {
                     {createMode === "single" ? <CheckCircle2 className="h-5 w-5" /> : <Sparkles className="h-5 w-5" />}
                     {createMode === "single" ? "Tekli DÖF Akışı" : "Çoklu DÖF Akışı"}
                   </DialogTitle>
-                  <p className={cn("text-white/80", createMode === "single" ? "mt-1 text-[13px] leading-5" : "mt-2 text-sm")}>
+                  <DialogDescription className={cn("text-white/80", createMode === "single" ? "mt-1 text-[13px] leading-5" : "mt-2 text-sm")}>
                     {createMode === "single"
                       ? "Tek bir uygunsuzluğu hızlıca hazırlayın, yapay zekâ ile destekleyin ve tek kayıt olarak ekleyin."
                       : "Önce rapor üst bilgisini oluşturun, ardından maddeleri kontrollü şekilde ekleyin."}
-                  </p>
+                  </DialogDescription>
                 </div>
                 <div className={cn("hidden rounded-2xl border border-white/15 bg-white/10 text-right text-xs text-white/80 sm:block", createMode === "single" ? "px-3 py-2.5" : "px-4 py-3")}>
                   <p className="font-semibold text-white">Aktif firma</p>
@@ -3758,16 +3853,43 @@ const handleSaveAndExport = async () => {
                     { key: "preview", label: "Önizleme" },
                   ].map((step, index) => (
                     <div key={step.key} className="flex items-center gap-2">
-                      <span
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (step.key === "general") {
+                            setPreviewOpen(false);
+                            setCreateStep("general");
+                            return;
+                          }
+                          if (step.key === "items") {
+                            if (!generalInfoStepReady) {
+                              toast.error("Önce firma, rapor tarihi ve gözlem yapan bilgisini girin");
+                              return;
+                            }
+                            setPreviewOpen(false);
+                            setCreateStep("items");
+                            return;
+                          }
+                          if (entries.length === 0) {
+                            toast.error("Önizleme için önce en az bir bulgu ekleyin");
+                            return;
+                          }
+                          if (!generalInfoStepReady) {
+                            toast.error("Önizleme için önce firma, rapor tarihi ve gözlem yapan bilgisini girin");
+                            return;
+                          }
+                          setPreviewFocusEntryId(null);
+                          setPreviewOpen(true);
+                        }}
                         className={cn(
-                          "rounded-full px-3 py-1.5",
+                          "rounded-full px-3 py-1.5 transition-colors",
                           (createStep === step.key || (step.key === "preview" && previewOpen))
                             ? "bg-emerald-500/15 text-emerald-300"
-                            : "bg-white/5 text-slate-400"
+                            : "bg-white/5 text-slate-400 hover:bg-white/10"
                         )}
                       >
                         {step.label}
-                      </span>
+                      </button>
                       {index < 2 ? <ChevronRight className="h-3.5 w-3.5 text-slate-600" /> : null}
                     </div>
                   ))}
@@ -3775,7 +3897,7 @@ const handleSaveAndExport = async () => {
               </div>
             ) : null}
 
-            <div className={cn("overflow-y-auto px-4 sm:px-6", createMode === "single" ? "max-h-[calc(84vh-96px)] py-3.5 sm:py-4" : "max-h-[calc(88vh-128px)] py-4 sm:py-5")}>
+            <div className={cn("min-h-0 flex-1 overflow-y-auto px-4 sm:px-6", createMode === "single" ? "py-3.5 sm:py-4" : "py-4 sm:py-5")}>
               {createMode === "bulk" && createStep === "general" ? (
                 <div className="space-y-5">
                   <div className="rounded-[24px] border border-emerald-400/20 bg-emerald-400/10 p-4 text-sm leading-6 text-emerald-100">
@@ -3854,19 +3976,119 @@ const handleSaveAndExport = async () => {
                   </div>
 
                   <div className="grid gap-4 lg:grid-cols-2">
+                    {/* Hizmet Alan Firma Logosu */}
                     <div className="space-y-2">
                       <Label className="text-sm font-semibold text-white">Hizmet Alan Firma Logosu</Label>
-                      <button type="button" onClick={() => clientLogoInputRef.current?.click()} className="flex h-[84px] w-full items-center justify-center rounded-[20px] border border-dashed border-white/15 bg-white/5 text-sm text-slate-300 transition hover:border-primary/40 hover:bg-primary/10">
-                        {generalInfo.company_logo_url || selectedCompany?.logo_url ? "Logo Güncelle" : "Logo Yükle (max 2MB)"}
-                      </button>
-                      <input ref={clientLogoInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => void handleLogoUpload(e, "company_logo_url")} />
+
+                      {(() => {
+                        const src = generalInfo.company_logo_url ?? selectedCompany?.logo_url ?? "";
+                        const hasLogo = Boolean(src);
+
+                        return (
+                          <div className="flex items-center gap-3">
+                            <button
+                              type="button"
+                              onClick={() => clientLogoInputRef.current?.click()}
+                              className="relative flex h-[84px] w-full items-center justify-center overflow-hidden rounded-[20px] border border-dashed border-white/15 bg-white/5 text-sm text-slate-300 transition hover:border-primary/40 hover:bg-primary/10"
+                            >
+                              {hasLogo ? (
+                                <>
+                                  <img
+                                    src={src}
+                                    alt="Hizmet alan firma logosu"
+                                    className="absolute inset-0 h-full w-full object-contain p-3"
+                                  />
+                                  <div className="absolute inset-0 bg-black/30" />
+                                  <span className="relative z-10 text-sm font-semibold text-white">
+                                    Logo Güncelle
+                                  </span>
+                                </>
+                              ) : (
+                                "Logo Yükle (max 2MB)"
+                              )}
+                            </button>
+
+                            {hasLogo && (
+                              <button
+                                type="button"
+                                className="shrink-0 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:border-red-500/40 hover:bg-red-500/15"
+                                onClick={() => {
+                                  setGeneralInfo((prev) => ({ ...prev, company_logo_url: "" }));
+                                  if (clientLogoInputRef.current) clientLogoInputRef.current.value = "";
+                                }}
+                              >
+                                Sil
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })()}
+
+                      <input
+                        ref={clientLogoInputRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => void handleLogoUpload(e, "company_logo_url")}
+                      />
                     </div>
+
+                    {/* Hizmet Veren Firma Logosu */}
                     <div className="space-y-2">
                       <Label className="text-sm font-semibold text-white">Hizmet Veren Firma Logosu</Label>
-                      <button type="button" onClick={() => providerLogoInputRef.current?.click()} className="flex h-[84px] w-full items-center justify-center rounded-[20px] border border-dashed border-white/15 bg-white/5 text-sm text-slate-300 transition hover:border-primary/40 hover:bg-primary/10">
-                        {generalInfo.provider_logo_url ? "Logo Güncelle" : "Logo Yükle (opsiyonel)"}
-                      </button>
-                      <input ref={providerLogoInputRef} type="file" accept="image/*" className="hidden" onChange={(e) => void handleLogoUpload(e, "provider_logo_url")} />
+
+                      {(() => {
+                        const src = generalInfo.provider_logo_url ?? "";
+                        const hasLogo = Boolean(src);
+
+                        return (
+                          <div className="flex items-center gap-3">
+                            <button
+                              type="button"
+                              onClick={() => providerLogoInputRef.current?.click()}
+                              className="relative flex h-[84px] w-full items-center justify-center overflow-hidden rounded-[20px] border border-dashed border-white/15 bg-white/5 text-sm text-slate-300 transition hover:border-primary/40 hover:bg-primary/10"
+                            >
+                              {hasLogo ? (
+                                <>
+                                  <img
+                                    src={src}
+                                    alt="Hizmet veren firma logosu"
+                                    className="absolute inset-0 h-full w-full object-contain p-3"
+                                  />
+                                  <div className="absolute inset-0 bg-black/30" />
+                                  <span className="relative z-10 text-sm font-semibold text-white">
+                                    Logo Güncelle
+                                  </span>
+                                </>
+                              ) : (
+                                "Logo Yükle (opsiyonel)"
+                              )}
+                            </button>
+
+                            {hasLogo && (
+                              <button
+                                type="button"
+                                className="shrink-0 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:border-red-500/40 hover:bg-red-500/15"
+                                onClick={() => {
+                                  setGeneralInfo((prev) => ({ ...prev, provider_logo_url: "" }));
+                                  if (providerLogoInputRef.current) providerLogoInputRef.current.value = "";
+                                }}
+                              >
+                                Sil
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })()}
+
+                      <input
+                        ref={providerLogoInputRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => void handleLogoUpload(e, "provider_logo_url")}
+                      />
+
                       <p className="text-xs text-slate-400">Sadece PDF çıktısında gösterilir, kaydedilmez.</p>
                     </div>
                   </div>
@@ -3947,10 +4169,10 @@ const handleSaveAndExport = async () => {
                   </div>
 
                   <div className="flex items-center justify-between gap-4 border-t border-white/10 pt-4">
-                    <span className={`rounded-full px-3 py-1.5 text-xs font-semibold ${generalInfoReady ? "bg-emerald-500/10 text-emerald-300" : "bg-amber-500/10 text-amber-300"}`}>
-                      {generalInfoReady ? "Genel bilgiler hazır" : "Eksik alan var"}
+                    <span className={`rounded-full px-3 py-1.5 text-xs font-semibold ${generalInfoStepReady ? "bg-emerald-500/10 text-emerald-300" : "bg-amber-500/10 text-amber-300"}`}>
+                      {generalInfoStepReady ? "Madde girişine hazır" : "Zorunlu başlangıç alanları eksik"}
                     </span>
-                    <Button type="button" disabled={!generalInfoReady} onClick={() => setCreateStep("items")} className="h-12 rounded-2xl bg-emerald-500 px-6 font-semibold text-white hover:bg-emerald-400">
+                    <Button type="button" disabled={!generalInfoStepReady} onClick={() => setCreateStep("items")} className="h-12 rounded-2xl bg-emerald-500 px-6 font-semibold text-white hover:bg-emerald-400">
                       Madde Eklemeye Geç
                     </Button>
                   </div>
@@ -4262,26 +4484,57 @@ const handleSaveAndExport = async () => {
                   </div>
                 </div>
 
-                <div className="flex flex-col gap-3 border-t border-white/10 pt-2 sm:flex-row sm:items-center sm:justify-between">
-                  <div className="flex flex-wrap gap-2">
-                    <span className={`rounded-full px-3 py-1.5 text-xs font-semibold ${newEntry.ai_analyzed ? "bg-primary/15 text-primary" : "bg-secondary/50 text-muted-foreground"}`}>{newEntry.ai_analyzed ? "AI ile hazırlandı" : "Manuel giriş"}</span>
-                    <span className={`rounded-full px-3 py-1.5 text-xs font-semibold ${formReady ? "bg-emerald-500/10 text-emerald-300" : "bg-amber-500/10 text-amber-300"}`}>{formReady ? "Kayda hazır" : "Eksik alan var"}</span>
+              </div>
+              )}
+            </div>
+            {(createMode === "single" || createStep === "items") ? (
+              <div className="border-t border-white/10 bg-slate-950/95 px-4 py-3 backdrop-blur sm:px-6">
+                <div className="flex flex-col gap-3">
+                  <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap gap-2">
+                        <span className={`rounded-full px-3 py-1.5 text-xs font-semibold ${newEntry.ai_analyzed ? "bg-primary/15 text-primary" : "bg-secondary/50 text-muted-foreground"}`}>{newEntry.ai_analyzed ? "AI ile hazırlandı" : "Manuel giriş"}</span>
+                        <span className={`rounded-full px-3 py-1.5 text-xs font-semibold ${formReady ? "bg-emerald-500/10 text-emerald-300" : "bg-amber-500/10 text-amber-300"}`}>{formReady ? "Kayda hazır" : "Eksik alanlar var"}</span>
+                        {createMode === "bulk" ? (
+                          <span className="rounded-full bg-cyan-500/10 px-3 py-1.5 text-xs font-semibold text-cyan-300">
+                            {entries.length > 0 ? `${entries.length} madde listede` : "Henüz listeye eklenen madde yok"}
+                          </span>
+                        ) : null}
+                      </div>
+                      <p className="text-xs leading-6 text-slate-300">
+                        {itemStepGuidance}
+                      </p>
+                      {!formReady ? (
+                        <div className="flex flex-wrap gap-2">
+                          {missingRequiredFields.map((field) => (
+                            <span key={field} className="rounded-full border border-amber-400/20 bg-amber-500/10 px-3 py-1 text-[11px] font-medium text-amber-300">
+                              Eksik: {field}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
                   </div>
-                  <div className="flex flex-col gap-3 sm:flex-row">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
                     {createMode === "bulk" ? (
                       <Button type="button" variant="outline" onClick={() => setCreateStep("general")} className="h-12 rounded-2xl border-white/10 bg-white/5 text-slate-200 hover:bg-white/10">
                         Genel Bilgilere Dön
                       </Button>
                     ) : null}
+                    {createMode === "bulk" && entries.length > 0 ? (
+                      <Button type="button" variant="outline" onClick={handleOpenBulkPreview} className="h-12 rounded-2xl border-primary/30 bg-primary/10 text-primary hover:bg-primary/15">
+                        <Eye className="mr-2 h-5 w-5" />
+                        Önizlemeye Geç
+                      </Button>
+                    ) : null}
                     <Button onClick={createMode === "single" ? handleCreateSingleDOF : handleAddEntry} className="h-12 min-w-[220px] rounded-2xl border-0 bg-emerald-500 font-semibold text-white shadow-[0_18px_40px_rgba(16,185,129,0.25)] hover:bg-emerald-400">
                       <CheckCircle2 className="mr-2 h-5 w-5" />
-                      {createMode === "single" ? (editingEntryId ? "Değişiklikleri Kaydet" : "Tekli DÖF Oluştur") : "DÖF Oluştur"}
+                      {createMode === "single" ? (editingEntryId ? "Değişiklikleri Kaydet" : "Tekli DÖF Oluştur") : (editingEntryId ? "Maddeleri Güncelle" : "Bulguyu Ekle")}
                     </Button>
                   </div>
                 </div>
               </div>
-              )}
-            </div>
+            ) : null}
           </DialogContent>
         </Dialog>
 
@@ -4291,11 +4544,11 @@ const handleSaveAndExport = async () => {
               <DialogTitle className="text-xl font-bold text-white">
                 {templateDialogMode === "general" ? "DÖF Genel Bilgi Şablonları" : "DÖF Madde Şablonları"}
               </DialogTitle>
-              <p className="text-sm text-slate-300">
+              <DialogDescription className="text-sm text-slate-300">
                 {templateDialogMode === "general"
                   ? "Genel bilgiler adımını tekrar tekrar doldurmamak için şablon seçebilir veya mevcut alanları şablon olarak kaydedebilirsiniz."
                   : "Sık kullandığınız bulgu ve faaliyet yapısını şablon olarak kaydedip tek tıkla yeni maddeye uygulayabilirsiniz."}
-              </p>
+              </DialogDescription>
             </DialogHeader>
 
             <div className="space-y-5 pt-2">
@@ -4341,6 +4594,11 @@ const handleSaveAndExport = async () => {
                                   {tag}
                                 </span>
                               ))}
+                              {Array.isArray(template.payload.media_urls) && template.payload.media_urls.length > 0 ? (
+                                <span className="rounded-full border border-emerald-400/20 bg-emerald-400/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-100">
+                                  {template.payload.media_urls.length} fotoğraf kayıtlı
+                                </span>
+                              ) : null}
                             </div>
                           ) : null}
                         </div>
@@ -4498,12 +4756,23 @@ const handleSaveAndExport = async () => {
           <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
             <div className="rounded-[24px] border border-border/60 bg-background/60 p-6">
               <div className="flex items-center justify-between gap-3">
-                <h3 className="text-lg font-bold text-foreground">
-                  Eklenen Bulgular ({entries.length})
-                </h3>
-                <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
-                  Liste hazir
-                </span>
+                <div>
+                  <h3 className="text-lg font-bold text-foreground">
+                    Eklenen Bulgular ({entries.length})
+                  </h3>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Her maddeyi `Bulguyu Ekle` ile listeye alın. Tüm maddeler tamamlanınca önizlemeye geçin.
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+                    Liste hazir
+                  </span>
+                  <Button type="button" onClick={handleOpenBulkPreview} className="h-10 rounded-2xl border-0 gradient-primary text-foreground font-semibold">
+                    <Eye className="mr-2 h-4 w-4" />
+                    Önizlemeye Geç
+                  </Button>
+                </div>
               </div>
 
               <div className="mt-4 space-y-3">
@@ -4623,6 +4892,11 @@ const handleSaveAndExport = async () => {
                     variant="outline"
                     className="gap-2 flex-1 h-11"
                     onClick={() => {
+                      if (!generalInfoStepReady) {
+                        toast.error("Önizleme için önce firma, rapor tarihi ve gözlem yapan bilgisini girin");
+                        setCreateStep("general");
+                        return;
+                      }
                       setPreviewFocusEntryId(null);
                       setPreviewOpen(true);
                     }}
@@ -4633,9 +4907,9 @@ const handleSaveAndExport = async () => {
                   </Button>
                   <Button
                     onClick={handleSaveAndExport}
-                    disabled={saving || entries.length === 0 || !reportCompanyName.trim() || !generalInfoReady}
+                    disabled={saving || entries.length === 0 || !reportCompanyName.trim() || !generalInfoStepReady}
                     className={`gap-2 flex-1 border-0 text-foreground font-semibold h-11 ${
-                      saving || entries.length === 0 || !reportCompanyName.trim() || !generalInfoReady
+                      saving || entries.length === 0 || !reportCompanyName.trim() || !generalInfoStepReady
                         ? "bg-gray-500 cursor-not-allowed opacity-50"
                         : "gradient-primary"
                     }`}
@@ -4674,6 +4948,9 @@ const handleSaveAndExport = async () => {
               {previewFocusEntryId ? "Tekli DÖF Önizlemesi" : "Rapor Önizlemesi"}
               {previewFocusEntryId ? <CheckCircle2 className="h-5 w-5 text-emerald-500" /> : <Sparkles className="h-5 w-5 text-yellow-500" />}
             </DialogTitle>
+            <DialogDescription className="sr-only">
+              Oluşturulan DÖF raporunu inceleyin, düzenlemeye dönün veya Word çıktısını indirin.
+            </DialogDescription>
           </DialogHeader>
 
           <div className="max-h-[calc(92vh-76px)] overflow-y-auto bg-slate-200 px-4 py-6 md:px-8">
@@ -5133,7 +5410,3 @@ export default function BulkCAPA() {
     </BulkCAPAErrorBoundary>
   );
 }
-
-
-
-

@@ -1,4 +1,5 @@
-﻿import { useState, useEffect, useCallback, useRef, useLayoutEffect,useMemo} from "react";
+﻿import { useState, useEffect, useCallback, useRef, useLayoutEffect, useMemo } from "react";
+import { useLocation } from "react-router-dom";
 import { useAuth } from "@/contexts/AuthContext";
 import { debounce } from "lodash";
 import { supabase } from "@/integrations/supabase/client";
@@ -216,6 +217,8 @@ const COMMON_TEMPLATE_RISKS = [
 
 export default function RiskAssessmentEditor() {
   const { user } = useAuth();
+  const location = useLocation();
+  const createdFromWizard = Boolean((location.state as { createdFromWizard?: boolean } | null)?.createdFromWizard);
   const riskPhotoInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
   // E-posta modal için state'ler
   const [sendModalOpen, setSendModalOpen] = useState(false);
@@ -227,6 +230,7 @@ export default function RiskAssessmentEditor() {
   const [companies, setCompanies] = useState<any[]>([]);
   const [selectedCompany, setSelectedCompany] = useState<string>("");
   const [assessment, setAssessment] = useState<RiskAssessment | null>(null);
+  const bridgedAssessmentId = (location.state as { assessmentId?: string } | null)?.assessmentId || assessment?.id || "-";
   const [riskItems, setRiskItems] = useState<RiskItem[]>([]);
   const [library, setLibrary] = useState<RiskLibraryItem[]>([]);
   const [riskPackages, setRiskPackages] = useState<RiskPackage[]>([]);
@@ -336,6 +340,27 @@ useEffect(() => {
   }
   // eslint-disable-next-line react-hooks/exhaustive-deps
 }, []); // Burayı boş dizi yap, user değişimini AuthContext hallediyor zaten
+
+useEffect(() => {
+  const stateAssessmentId = (location.state as { assessmentId?: string } | null)?.assessmentId;
+  if (stateAssessmentId) {
+    fetchAssessmentById(stateAssessmentId);
+    return;
+  }
+  const rawBridge = sessionStorage.getItem("risk-editor-bridge");
+  if (!rawBridge) return;
+  try {
+    const bridge = JSON.parse(rawBridge) as { assessmentId?: string; createdAt?: number };
+    if (bridge?.assessmentId && (!bridge.createdAt || Date.now() - bridge.createdAt < 5 * 60 * 1000)) {
+      fetchAssessmentById(bridge.assessmentId);
+    }
+  } catch (error) {
+    console.warn("risk-editor-bridge parse error", error);
+  } finally {
+    sessionStorage.removeItem("risk-editor-bridge");
+  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [location.state])
 
   // Bileşen gövdesine ekle
 useEffect(() => {
@@ -482,6 +507,24 @@ useLayoutEffect(() => {
     }
   };
 
+  const fetchAssessmentById = async (assessmentId: string) => {
+    try {
+      const { data, error } = await supabase.from("risk_assessments").select("*").eq("id", assessmentId).maybeSingle();
+      if (error) throw error;
+      if (!data) return;
+      setAssessment(data as RiskAssessment);
+      if (data.company_id) {
+        setSelectedCompany(data.company_id);
+      }
+      await fetchRiskItems(data.id);
+      toast.success("Risk değerlendirme editöre taşındı.", {
+        description: "Sihirbazdan gelen kayıt detaylı madde yönetimi için açıldı.",
+      });
+    } catch (error: any) {
+      console.error("Fetch assessment by id error:", error);
+      toast.error("Risk değerlendirme kaydı açılamadı", { description: error.message });
+    }
+  };
   const fetchRiskItems = async (assessmentId: string) => {
     try {
       console.log("Fetching risk items for assessment:", assessmentId);
@@ -3432,6 +3475,27 @@ const exportToPDFAndShare = async () => {
           </div>
         </div>
 
+        {createdFromWizard && (
+          <div className="mt-4 rounded-2xl border border-cyan-400/20 bg-cyan-500/10 px-4 py-3 shadow-[0_12px_32px_rgba(34,211,238,0.12)]">
+            <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-cyan-200/80">Sihirbazdan Taşındı</p>
+                <p className="mt-1 text-sm text-cyan-50">Risk değerlendirme sihirbazında oluşturulan kayıt detaylı madde yönetimi için editöre aktarıldı.</p>
+                <p className="mt-2 text-xs text-cyan-100/80">
+                  Açan kullanıcı: {user?.email || "Bilinmiyor"} · Oluşturulma: {assessment?.created_at ? format(new Date(assessment.created_at), "dd.MM.yyyy HH:mm", { locale: tr }) : "-"}
+                </p>
+                <p className="mt-1 text-xs text-cyan-100/70">
+                  Wizard ID / Kayıt No: {bridgedAssessmentId !== "-" ? bridgedAssessmentId.toString().substring(0, 8).toUpperCase() : "-"}
+                </p>
+                <p className="mt-1 text-xs text-cyan-100/70">
+                  Firmaya bağlı kayıt: {activeCompanyName || "Firma eşleşmedi"} · İşyeri: {assessment?.workplace_title || "-"} · Tehlike sınıfı: {assessment?.sector || "-"}
+                </p>
+              </div>
+              <Badge className="w-fit border-cyan-400/20 bg-cyan-500/15 text-cyan-100">Köprü Akışı Aktif</Badge>
+            </div>
+          </div>
+        )}
+
         <div className="mt-4 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
           <div className="flex flex-wrap items-center gap-2">
             <Button
@@ -3739,3 +3803,9 @@ const exportToPDFAndShare = async () => {
     </div>
   );
 }
+
+
+
+
+
+

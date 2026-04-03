@@ -63,6 +63,7 @@ import { parseEmployeeExcel, downloadEmployeeTemplate, type ParsedEmployee } fro
 import { NACE_DATABASE, searchNACE, type NACECode } from "@/utils/naceDatabase";
 import type { Company, Employee, RiskTemplate } from "@/types/companies";
 import { cn } from "@/lib/utils";
+import { createAutomationEventSafe } from "@/lib/automationEvents";
 
 interface NACEVirtualListProps {
   items: NACECode[];
@@ -834,6 +835,25 @@ export default function CompanyManager() {
 
       toast.success("🎉 Firma başarıyla kaydedildi!", {
         description: `${result.inserted_risks || 0} risk, ${result.inserted_employees || 0} çalışan eklendi`,
+      });
+
+      await createAutomationEventSafe({
+        eventName: "company.created",
+        organizationId: null,
+        userId: user?.id || null,
+        entityType: "company",
+        entityId: result.company_id || null,
+        source: "company_manager",
+        payload: {
+          company_name: formData.company_name,
+          tax_number: formData.tax_number || null,
+          nace_code: formData.nace_code || null,
+          hazard_class: formData.hazard_class || null,
+          industry_sector: formData.industry_sector || null,
+          employee_count: employeesJson.length || formData.employee_count || 0,
+          inserted_risks: result.inserted_risks || 0,
+          inserted_employees: result.inserted_employees || 0,
+        },
       });
 
       setWizardOpen(false);

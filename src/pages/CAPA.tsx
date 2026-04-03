@@ -49,6 +49,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 import { differenceInCalendarDays, format, isPast, parseISO } from "date-fns";
+import { createAutomationEventSafe } from "@/lib/automationEvents";
 
 type CAPAStatus = "Açık" | "Devam Ediyor" | "Tamamlandı";
 type CAPAPriority = "Düşük" | "Orta" | "Yüksek" | "Kritik";
@@ -1238,6 +1239,27 @@ export default function CAPA() {
           nextPriority: priority,
           nextStatus: "Açık",
           nextDeadline: deadline,
+        });
+        await createAutomationEventSafe({
+          eventName: "capa.created",
+          organizationId: orgId || null,
+          userId: user?.id || null,
+          entityType: "capa",
+          entityId: createdRecord.id,
+          source: "capa",
+          payload: {
+            non_conformity: nonConformity,
+            root_cause: rootCause || null,
+            corrective_action: correctiveAction || null,
+            assigned_person: assignedPerson || null,
+            deadline,
+            priority,
+            status: "Açık",
+            notes: notes || null,
+            media_count: uploadedEvidence.mediaUrls.length,
+            document_count: uploadedEvidence.documentUrls.length,
+            file_count: uploadedEvidence.fileUrls.length,
+          },
         });
         toast.success("Yeni DÖF kaydı oluşturuldu.");
       }

@@ -69,6 +69,7 @@ import {
 } from "docx";
 import { saveAs } from "file-saver";
 import { cn } from "@/lib/utils";
+import { createAutomationEventSafe } from "@/lib/automationEvents";
 
 // ? INTERFACE DEFINITIONS
 // HazardEntry interface'ine ekle:
@@ -3422,7 +3423,7 @@ ${entries
       }
 
       if (user?.id) {
-        const { error: reportError } = await supabase.from("reports").insert({
+        const { data: reportRecord, error: reportError } = await supabase.from("reports").insert({
           org_id: orgData?.id || null,
           user_id: user.id,
           title: `Tekli DÖF - ${reportCompanyName}`,
@@ -3449,10 +3450,31 @@ ${entries
             storage_upload_ok: !uploadError,
             storage_error: uploadError?.message ?? null,
           },
-        });
+        }).select("id").single();
 
         if (reportError) {
           console.warn("Single DOF report archive failed:", reportError);
+        } else {
+          await createAutomationEventSafe({
+            eventName: "report.created",
+            organizationId: orgData?.id || null,
+            userId: user.id,
+            entityType: "report",
+            entityId: reportRecord?.id || null,
+            source: "bulk_capa_single",
+            payload: {
+              report_title: `Tekli DÖF - ${reportCompanyName}`,
+              report_kind: "single_dof",
+              company_name: reportCompanyName,
+              location: effectiveLocation,
+              inspection_id: createdInspectionId,
+              report_date: generalInfo.report_date || null,
+              export_format: "docx",
+              file_url: savedReportUrl,
+              entry_id: focusedPreviewEntry.id,
+              importance_level: focusedPreviewEntry.importance_level,
+            },
+          });
         }
       }
 
@@ -3679,7 +3701,7 @@ const handleSaveAndExport = async () => {
     }
 
     if (user?.id) {
-      const { error: dbError } = await supabase.from("reports").insert({
+      const { data: reportRecord, error: dbError } = await supabase.from("reports").insert({
         org_id: orgData?.id || null,
         user_id: user.id,
         title: `DÖF Raporu - ${effectiveLocation}`,
@@ -3709,12 +3731,33 @@ const handleSaveAndExport = async () => {
           storage_upload_ok: !uploadError,
           storage_error: uploadError?.message ?? null,
         },
-      });
+      }).select("id").single();
 
       if (dbError) {
         console.error("Reports insert error:", dbError);
         toast.error(`Rapor kaydi olusturulamadi: ${dbError.message}`);
       } else {
+        await createAutomationEventSafe({
+          eventName: "report.created",
+          organizationId: orgData?.id || null,
+          userId: user.id,
+          entityType: "report",
+          entityId: reportRecord?.id || null,
+          source: "bulk_capa_multi",
+          payload: {
+            report_title: `DÖF Raporu - ${effectiveLocation}`,
+            report_kind: "dof",
+            company_name: reportCompanyName,
+            location: effectiveLocation,
+            inspection_id: createdInspectionId,
+            report_date: generalInfo.report_date || null,
+            report_no: generalInfo.report_no || null,
+            entries_count: entries.length,
+            ai_analyzed_count: entries.filter((e) => e.ai_analyzed).length,
+            export_format: "docx",
+            file_url: savedReportUrl,
+          },
+        });
         toast.success("Rapor arsivlendi");
       }
     } else {

@@ -657,7 +657,7 @@ export default function CompanyManager() {
       const existingCompany = companies.find((company) => company.id === companyId);
       const { error } = await supabase
         .from("companies")
-        .delete()
+        .update({ is_active: false })
         .eq("id", companyId);
 
       if (error) throw error;
@@ -666,8 +666,10 @@ export default function CompanyManager() {
         await supabase.storage.from("company-logos").remove([existingCompany.logo_url]);
       }
 
+      setCompanies((prev) => prev.filter((company) => company.id !== companyId));
+      setViewingCompany((prev) => (prev?.id === companyId ? null : prev));
+
       toast.success(`✅ "${companyName}" firması silindi`);
-      loadCompanies();
     } catch (error: any) {
       console.error("Delete company error:", error);
       toast.error(`❌ Firma silinemedi: ${error.message}`);

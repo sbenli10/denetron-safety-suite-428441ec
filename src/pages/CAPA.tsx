@@ -133,19 +133,65 @@ const priorityWeight: Record<CAPAPriority, number> = {
 };
 
 const getCapaCacheKey = (userId: string) => `denetron:capa:${userId}`;
-const CAPA_CACHE_LIMIT = 100;
-const CAPA_NOTES_PREVIEW_LIMIT = 400;
+const CAPA_CACHE_LIMIT = 24;
+const CAPA_CACHE_FALLBACK_LIMIT = 8;
+const CAPA_NOTES_PREVIEW_LIMIT = 180;
+let capaActivityLogsFeatureAvailable: boolean | null = null;
 
 const compactCapaRecord = (record: CAPARecord): CAPARecord => ({
-  ...record,
-  non_conformity: (record.non_conformity || "").slice(0, 600),
-  root_cause: (record.root_cause || "").slice(0, 500),
-  corrective_action: (record.corrective_action || "").slice(0, 500),
+  id: record.id,
+  org_id: record.org_id,
+  user_id: record.user_id,
+  non_conformity: (record.non_conformity || "").slice(0, 280),
+  root_cause: (record.root_cause || "").slice(0, 180),
+  corrective_action: (record.corrective_action || "").slice(0, 180),
+  assigned_person: (record.assigned_person || "").slice(0, 80),
+  deadline: record.deadline,
+  status: record.status,
+  priority: record.priority,
   notes: (record.notes || "").slice(0, CAPA_NOTES_PREVIEW_LIMIT),
-  document_urls: Array.isArray(record.document_urls) ? record.document_urls.slice(0, 2) : [],
-  file_urls: Array.isArray(record.file_urls) ? record.file_urls.slice(0, 2) : [],
-  media_urls: Array.isArray(record.media_urls) ? record.media_urls.slice(0, 1) : [],
+  document_urls: [],
+  file_urls: [],
+  media_urls: [],
+  source: record.source,
+  created_at: record.created_at,
+  updated_at: record.updated_at,
 });
+
+const isCapaActivityLogsMissingError = (error: any) => {
+  const message = `${error?.message || ""} ${error?.details || ""} ${error?.hint || ""}`.toLowerCase();
+  return error?.status === 404 || message.includes("capa_activity_logs") || message.includes("relation") || message.includes("schema cache");
+};
+
+const handleCapaActivityLogsError = (error: any, context: string) => {
+  if (isCapaActivityLogsMissingError(error)) {
+    if (capaActivityLogsFeatureAvailable !== false) {
+      console.warn(`CAPA activity logs unavailable during ${context}; continuing without activity history.`, error);
+    }
+    capaActivityLogsFeatureAvailable = false;
+    return true;
+  }
+
+  console.error(`CAPA activity logs error during ${context}:`, error);
+  return false;
+};
+
+const buildCapaCachePayload = (records: CAPARecord[], limit: number) =>
+  JSON.stringify(records.slice(0, limit).map(compactCapaRecord));
+
+const clearCapaCacheStorage = (cacheKey: string) => {
+  try {
+    sessionStorage.removeItem(cacheKey);
+  } catch {
+    // Ignore storage cleanup failures.
+  }
+
+  try {
+    localStorage.removeItem(cacheKey);
+  } catch {
+    // Ignore storage cleanup failures.
+  }
+};
 
 const loadCapaCache = (userId: string): CAPARecord[] | null => {
   const cacheKey = getCapaCacheKey(userId);
@@ -166,7 +212,7 @@ const loadCapaCache = (userId: string): CAPARecord[] | null => {
 
 const saveCapaCache = (userId: string, records: CAPARecord[]) => {
   const cacheKey = getCapaCacheKey(userId);
-  const payload = JSON.stringify(records.slice(0, CAPA_CACHE_LIMIT).map(compactCapaRecord));
+  const payload = buildCapaCachePayload(records, CAPA_CACHE_LIMIT);
 
   try {
     sessionStorage.setItem(cacheKey, payload);
@@ -177,8 +223,17 @@ const saveCapaCache = (userId: string, records: CAPARecord[]) => {
 
   try {
     localStorage.setItem(cacheKey, payload);
+    return;
   } catch (error) {
     console.warn("CAPA local cache write failed:", error);
+  }
+
+  clearCapaCacheStorage(cacheKey);
+
+  try {
+    sessionStorage.setItem(cacheKey, buildCapaCachePayload(records, CAPA_CACHE_FALLBACK_LIMIT));
+  } catch (error) {
+    console.warn("CAPA fallback cache write failed:", error);
   }
 };
 
@@ -560,6 +615,11 @@ export default function CAPA() {
         return;
       }
 
+      if (capaActivityLogsFeatureAvailable === false) {
+        setDetailActivityLogs([]);
+        return;
+      }
+
       const targetColumn = detailRecord.source === "findings" ? "finding_id" : "capa_record_id";
       const { data, error } = await supabase
         .from("capa_activity_logs")
@@ -569,11 +629,12 @@ export default function CAPA() {
         .order("created_at", { ascending: false });
 
       if (error) {
-        console.error("CAPA activity load error:", error);
+        handleCapaActivityLogsError(error, "detail activity load");
         setDetailActivityLogs([]);
         return;
       }
 
+      capaActivityLogsFeatureAvailable = true;
       setDetailActivityLogs((data || []) as CAPAActivityLogRow[]);
     };
 
@@ -676,23 +737,34 @@ export default function CAPA() {
         (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
       );
 
-      const { data: escalationLogs } = await supabase
-        .from("capa_activity_logs")
-        .select("id, action_type, title, description, created_at, metadata, capa_record_id, finding_id")
-        .eq("user_id", user.id)
-        .eq("action_type", "escalated")
-        .order("created_at", { ascending: false })
-        .limit(100);
+      let escalationLogs: CAPAActivityLogRow[] = [];
+
+      if (capaActivityLogsFeatureAvailable !== false) {
+        const { data, error } = await supabase
+          .from("capa_activity_logs")
+          .select("id, action_type, title, description, created_at, metadata, capa_record_id, finding_id")
+          .eq("user_id", user.id)
+          .eq("action_type", "escalated")
+          .order("created_at", { ascending: false })
+          .limit(100);
+
+        if (error) {
+          handleCapaActivityLogsError(error, "escalation fetch");
+        } else {
+          capaActivityLogsFeatureAvailable = true;
+          escalationLogs = (data || []) as CAPAActivityLogRow[];
+        }
+      }
 
       setRecords(allRecords);
-      const nextEscalationMap = (escalationLogs || []).reduce<Record<string, CAPAActivityLogRow>>((acc, log: any) => {
+      const nextEscalationMap = escalationLogs.reduce<Record<string, CAPAActivityLogRow>>((acc, log: any) => {
         const key = log.capa_record_id || log.finding_id;
         if (key && !acc[key]) {
           acc[key] = log as CAPAActivityLogRow;
         }
         return acc;
       }, {});
-      const nextEscalationCountMap = (escalationLogs || []).reduce<Record<string, number>>((acc, log: any) => {
+      const nextEscalationCountMap = escalationLogs.reduce<Record<string, number>>((acc, log: any) => {
         const key = log.capa_record_id || log.finding_id;
         if (key) acc[key] = (acc[key] || 0) + 1;
         return acc;
@@ -724,6 +796,7 @@ export default function CAPA() {
     metadata?: Record<string, any>;
   }) => {
     if (!user?.id) return;
+    if (capaActivityLogsFeatureAvailable === false) return null;
 
     const { data: profile } = await supabase
       .from("profiles")
@@ -731,7 +804,7 @@ export default function CAPA() {
       .eq("id", user.id)
       .maybeSingle();
 
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("capa_activity_logs")
       .insert({
       user_id: user.id,
@@ -749,6 +822,12 @@ export default function CAPA() {
       .select("id, action_type, title, description, created_at, metadata, capa_record_id, finding_id")
       .maybeSingle();
 
+    if (error) {
+      handleCapaActivityLogsError(error, "activity log write");
+      return null;
+    }
+
+    capaActivityLogsFeatureAvailable = true;
     return data as CAPAActivityLogRow | null;
   };
 

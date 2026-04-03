@@ -112,6 +112,8 @@ export default function EmailHistory() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<EmailStatus | "all">("all");
   const [typeFilter, setTypeFilter] = useState<ReportType | "all">("all");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
   const [page, setPage] = useState(1);
 
   useEffect(() => {
@@ -120,7 +122,7 @@ export default function EmailHistory() {
 
   useEffect(() => {
     setPage(1);
-  }, [search, statusFilter, typeFilter]);
+  }, [search, statusFilter, typeFilter, startDate, endDate]);
 
   const loadEmailLogs = async () => {
     if (!user?.id) {
@@ -170,10 +172,13 @@ export default function EmailHistory() {
 
       const matchesStatus = statusFilter === "all" || log.status === statusFilter;
       const matchesType = typeFilter === "all" || log.report_type === typeFilter;
+      const logDate = new Date(log.created_at);
+      const matchesStartDate = !startDate || logDate >= new Date(`${startDate}T00:00:00`);
+      const matchesEndDate = !endDate || logDate <= new Date(`${endDate}T23:59:59`);
 
-      return matchesSearch && matchesStatus && matchesType;
+      return matchesSearch && matchesStatus && matchesType && matchesStartDate && matchesEndDate;
     });
-  }, [logs, search, statusFilter, typeFilter]);
+  }, [logs, search, statusFilter, typeFilter, startDate, endDate]);
 
   const sentCount = useMemo(() => logs.filter((item) => item.status === "sent").length, [logs]);
   const failedCount = useMemo(() => logs.filter((item) => item.status === "failed").length, [logs]);
@@ -271,7 +276,7 @@ export default function EmailHistory() {
             </div>
           </div>
 
-          <div className="grid gap-3 lg:grid-cols-[1.2fr_0.45fr_0.45fr]">
+          <div className="grid gap-3 lg:grid-cols-[1.1fr_0.4fr_0.4fr_0.35fr_0.35fr]">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
               <Input
@@ -306,7 +311,43 @@ export default function EmailHistory() {
                 <SelectItem value="inspection">Denetim Raporu</SelectItem>
               </SelectContent>
             </Select>
+
+            <Input
+              type="date"
+              value={startDate}
+              onChange={(event) => setStartDate(event.target.value)}
+              className="h-11 rounded-2xl border-white/10 bg-white/[0.04] text-slate-100"
+            />
+
+            <Input
+              type="date"
+              value={endDate}
+              onChange={(event) => setEndDate(event.target.value)}
+              className="h-11 rounded-2xl border-white/10 bg-white/[0.04] text-slate-100"
+            />
           </div>
+
+          {(startDate || endDate) && (
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-cyan-400/15 bg-cyan-500/5 px-4 py-3 text-sm">
+              <div className="text-slate-300">
+                Tarih aralığı filtresi aktif:
+                <span className="ml-2 font-semibold text-cyan-100">
+                  {startDate || "Başlangıç yok"} - {endDate || "Bitiş yok"}
+                </span>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                className="rounded-xl border-white/10 bg-white/[0.03] text-slate-100 hover:bg-white/[0.08]"
+                onClick={() => {
+                  setStartDate("");
+                  setEndDate("");
+                }}
+              >
+                Tarih filtresini temizle
+              </Button>
+            </div>
+          )}
         </CardHeader>
 
         <CardContent className="space-y-4">

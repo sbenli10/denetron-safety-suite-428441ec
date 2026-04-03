@@ -36,6 +36,8 @@ interface FormData {
   orgName: string;
 }
 
+type OrgSlugStatus = "idle" | "checking" | "available" | "taken" | "invalid" | "error";
+
 export default function Auth() {
   const navigate = useNavigate();
   const [mode, setMode] = useState<AuthMode>("login");
@@ -43,6 +45,8 @@ export default function Auth() {
   const [showRegisterPassword, setShowRegisterPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [resendCountdown, setResendCountdown] = useState(0);
+  const [orgSlugStatus, setOrgSlugStatus] = useState<OrgSlugStatus>("idle");
+  const [orgSlugMessage, setOrgSlugMessage] = useState("Organizasyon adı yazıldığında sistem bir kurum kimliği oluşturur.");
 
   const [formData, setFormData] = useState<FormData>({
     email: "",
@@ -112,6 +116,120 @@ export default function Auth() {
     return password.length >= 8;
   };
 
+  const buildOrgSlug = (value: string) =>
+    value
+      .toLowerCase()
+      .trim()
+      .replace(/\s+/g, "-")
+      .replace(/[^a-z0-9-]/g, "");
+
+  const getFriendlyAuthError = (error: unknown, context: "login" | "register" | "bootstrap" | "resend" | "google") => {
+    const message =
+      error instanceof Error
+        ? error.message
+        : typeof error === "string"
+        ? error
+        : "Beklenmeyen bir hata oluştu";
+    const lower = message.toLowerCase();
+
+    if (context === "login") {
+      if (lower.includes("invalid login credentials")) return "Bu e-posta veya şifre hatalı.";
+      if (lower.includes("email not confirmed")) return "E-posta adresiniz doğrulanmamış. Lütfen gelen kutunuzu kontrol edin.";
+    }
+
+    if (context === "register") {
+      if (lower.includes("already registered") || lower.includes("already exists")) {
+        return "Bu e-posta ile zaten hesap var, giriş yapın.";
+      }
+      if (lower.includes("password")) {
+        return "Şifre kuralları sağlanmadı. En az 8 karakterli güçlü bir şifre girin.";
+      }
+    }
+
+    if (context === "bootstrap") {
+      if (lower.includes("profile is already linked to an organization")) {
+        return "Bu kullanıcı zaten bir organizasyona bağlı. Yeni kayıt yerine giriş yapın.";
+      }
+      if (lower.includes("organization slug is required")) {
+        return "Organizasyon adı geçersiz. Lütfen farklı bir şirket adı deneyin.";
+      }
+      if ((lower.includes("duplicate key") || lower.includes("unique")) && lower.includes("slug")) {
+        return "Bu organizasyon adı zaten kullanılıyor. Lütfen farklı bir şirket adı yazın.";
+      }
+      if (lower.includes("auth user not found")) {
+        return "Hesap oluşturuldu fakat organizasyon bağlanamadı. Lütfen tekrar deneyin.";
+      }
+    }
+
+    if (context === "resend" && lower.includes("email rate limit")) {
+      return "Çok sık deneme yapıldı. Lütfen biraz bekleyip tekrar deneyin.";
+    }
+
+    if (context === "google") {
+      return "Google ile giriş başlatılamadı. Tarayıcı engeli veya oturum problemi olabilir.";
+    }
+
+    return message;
+  };
+
+  const registerPasswordChecks = [
+    { label: "En az 8 karakter", ready: formData.password.length >= 8 },
+    { label: "Şifre tekrarı eşleşmeli", ready: Boolean(formData.password && formData.password === formData.passwordConfirm) },
+    { label: "Geçerli e-posta adresi", ready: validateEmail(formData.email) },
+  ];
+
+  const orgSlugPreview = buildOrgSlug(formData.orgName);
+
+  useEffect(() => {
+    const orgName = formData.orgName.trim();
+
+    if (!orgName) {
+      setOrgSlugStatus("idle");
+      setOrgSlugMessage("Organizasyon adı yazıldığında sistem bir kurum kimliği oluşturur.");
+      return;
+    }
+
+    if (!orgSlugPreview || orgSlugPreview.length < 3) {
+      setOrgSlugStatus("invalid");
+      setOrgSlugMessage("Organizasyon adı en az 3 karakterlik geçerli bir kurum bağlantısı üretmelidir.");
+      return;
+    }
+
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      setOrgSlugStatus("checking");
+      setOrgSlugMessage(`"${orgSlugPreview}" uygun mu kontrol ediliyor...`);
+
+      const { data, error } = await supabase
+        .from("organizations")
+        .select("id")
+        .eq("slug", orgSlugPreview)
+        .limit(1);
+
+      if (cancelled) return;
+
+      if (error) {
+        setOrgSlugStatus("error");
+        setOrgSlugMessage("Organizasyon adı şu anda doğrulanamadı. Yine de kayıt sırasında tekrar kontrol edilecektir.");
+        return;
+      }
+
+      if ((data?.length ?? 0) > 0) {
+        setOrgSlugStatus("taken");
+        setOrgSlugMessage(`"${orgSlugPreview}" zaten kullanılıyor. Lütfen farklı bir organizasyon adı deneyin.`);
+        return;
+      }
+
+      setOrgSlugStatus("available");
+      setOrgSlugMessage(`"${orgSlugPreview}" kullanılabilir görünüyor. Bu adla kurumsal alan açılacak.`);
+    }, 450);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [formData.orgName, orgSlugPreview]);
+
   const prefetchInitialData = async (userId: string) => {
     try {
       const snapshot = await fetchDashboardSnapshot(userId);
@@ -147,7 +265,9 @@ export default function Auth() {
       }
     } catch (error: any) {
       console.error("Google login error:", error);
-      toast.error(`❌ ${error.message || "Google ile giriş başlatılamadı"}`);
+      toast.error("Google ile giriş başlatılamadı", {
+        description: getFriendlyAuthError(error, "google"),
+      });
       setLoading(false);
     }
   };
@@ -186,16 +306,14 @@ const handleLogin = async (e: React.FormEvent) => {
     });
 
     if (authError) {
-      if (authError.message.includes("Invalid login credentials")) {
-        throw new Error("E-posta veya şifre hatalı");
-      }
-      if (authError.message.includes("Email not confirmed")) {
+      const loginMessage = getFriendlyAuthError(authError, "login");
+      if (loginMessage.includes("doğrulanmamış")) {
         setMode("wait");
         setVerifyEmail(formData.email);
         toast.info("📧 E-postanızı doğrulayın");
         return;
       }
-      throw new Error(authError.message);
+      throw new Error(loginMessage);
     }
 
     if (!authData?.user?.id) {
@@ -277,7 +395,9 @@ const handleLogin = async (e: React.FormEvent) => {
     }
   } catch (error: any) {
     console.error("❌ Login error:", error);
-    toast.error(`❌ ${error.message}`);
+    toast.error("Giriş başarısız", {
+      description: getFriendlyAuthError(error, "login"),
+    });
   } finally {
     setLoading(false);
   }
@@ -386,14 +506,31 @@ const handleVerify2FA = async (e: React.FormEvent) => {
     return;
   }
 
+  if (!orgSlugPreview || orgSlugStatus === "invalid") {
+    toast.error("❌ Organizasyon adı geçersiz", {
+      description: "Lütfen en az 3 karakterlik, daha açık bir şirket adı yazın.",
+    });
+    return;
+  }
+
+  if (orgSlugStatus === "checking") {
+    toast.info("Organizasyon adı kontrol ediliyor", {
+      description: "Lütfen bir saniye bekleyin ve tekrar deneyin.",
+    });
+    return;
+  }
+
+  if (orgSlugStatus === "taken") {
+    toast.error("❌ Bu organizasyon adı kullanılıyor", {
+      description: "Farklı bir şirket adı yazarak tekrar deneyin.",
+    });
+    return;
+  }
+
   setLoading(true);
 
   try {
-    const orgSlug = formData.orgName
-      .toLowerCase()
-      .trim()
-      .replace(/\s+/g, "-")
-      .replace(/[^a-z0-9-]/g, "");
+    const orgSlug = buildOrgSlug(formData.orgName);
 
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email: formData.email.trim(),
@@ -406,11 +543,15 @@ const handleVerify2FA = async (e: React.FormEvent) => {
     });
 
     if (authError) {
-      throw new Error(`Hesap oluşturulamadı: ${authError.message}`);
+      throw new Error(getFriendlyAuthError(authError, "register"));
     }
 
     if (!authData?.user?.id) {
       throw new Error("Kullanıcı oluşturulamadı");
+    }
+
+    if (Array.isArray(authData.user.identities) && authData.user.identities.length === 0) {
+      throw new Error("Bu e-posta ile zaten hesap var, giriş yapın.");
     }
 
     const { error: bootstrapError } = await supabase.rpc(
@@ -426,7 +567,7 @@ const handleVerify2FA = async (e: React.FormEvent) => {
     );
 
     if (bootstrapError) {
-      throw new Error(`Organizasyon oluşturulamadı: ${bootstrapError.message}`);
+      throw new Error(getFriendlyAuthError(bootstrapError, "bootstrap"));
     }
 
     setVerifyEmail(formData.email);
@@ -437,7 +578,9 @@ const handleVerify2FA = async (e: React.FormEvent) => {
     });
   } catch (error: any) {
     console.error("❌ Register error:", error);
-    toast.error(error.message || "Kayıt sırasında bir hata oluştu");
+    toast.error("Kayıt tamamlanamadı", {
+      description: getFriendlyAuthError(error, "register"),
+    });
   } finally {
     setLoading(false);
   }
@@ -452,52 +595,114 @@ const handleVerify2FA = async (e: React.FormEvent) => {
         email: verifyEmail,
       });
 
-      if (error) throw error;
+    if (error) throw error;
 
-      setResendCountdown(60);
-      toast.success("✅ E-posta yeniden gönderildi");
-    } catch (error: any) {
-      toast.error(`❌ ${error.message}`);
-    }
+    setResendCountdown(60);
+    toast.success("✅ E-posta yeniden gönderildi");
+  } catch (error: any) {
+      toast.error("E-posta yeniden gönderilemedi", {
+        description: getFriendlyAuthError(error, "resend"),
+      });
+  }
   };
 
   // ==================== RENDER ====================
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 flex items-center justify-center p-4">
-      <div className="w-full max-w-md space-y-6">
-        {/* Header */}
-        <div className="text-center space-y-3">
-          <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-purple-600 to-blue-600 mx-auto shadow-xl">
-            <Shield className="h-8 w-8 text-white" />
-          </div>
-          <div>
-            <h1 className="text-3xl font-bold text-white">İSGVİZYON</h1>
-            <p className="text-sm text-slate-400 mt-1">AI Destekli İSG Yönetim Sistemi</p>
-          </div>
-        </div>
+    <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[radial-gradient(circle_at_top,rgba(59,130,246,0.22),transparent_38%),radial-gradient(circle_at_bottom_right,rgba(168,85,247,0.18),transparent_32%),linear-gradient(160deg,#020617_0%,#0f172a_46%,#111827_100%)] p-4">
+      <div className="pointer-events-none absolute inset-0 opacity-40">
+        <div className="absolute left-[-10%] top-12 h-56 w-56 rounded-full bg-cyan-500/20 blur-3xl" />
+        <div className="absolute right-[-6%] top-24 h-64 w-64 rounded-full bg-fuchsia-500/20 blur-3xl" />
+        <div className="absolute bottom-[-8%] left-1/2 h-72 w-72 -translate-x-1/2 rounded-full bg-blue-600/10 blur-3xl" />
+      </div>
 
-        {/* Card */}
-        <div className="bg-slate-900/50 backdrop-blur border border-slate-800 rounded-xl p-6 shadow-2xl">
+      <div className="relative w-full max-w-[1100px]">
+        <div className="grid items-center gap-8 lg:grid-cols-[1.05fr_0.95fr]">
+          <div className="hidden lg:block">
+            <div className="max-w-xl space-y-6">
+              <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold uppercase tracking-[0.24em] text-cyan-100/90 backdrop-blur">
+                <Shield className="h-3.5 w-3.5 text-cyan-300" />
+                Kurumsal İSG Operasyon Merkezi
+              </div>
+              <div className="space-y-4">
+                <h1 className="text-5xl font-black tracking-tight text-white">
+                  İSGVİZYON
+                </h1>
+                <p className="max-w-lg text-base leading-8 text-slate-300">
+                  Denetim, DÖF, rapor ve kurumsal takip süreçlerini tek merkezden yönetin.
+                  Daha hızlı kayıt alın, daha profesyonel çıktılar üretin, ekip akışını kaybetmeyin.
+                </p>
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-3">
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
+                  <p className="text-xs uppercase tracking-[0.22em] text-slate-400">Operasyon</p>
+                  <p className="mt-2 text-lg font-semibold text-white">Denetim + DÖF</p>
+                  <p className="mt-2 text-sm leading-6 text-slate-400">Saha kaydından rapora giden çekirdek akış.</p>
+                </div>
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
+                  <p className="text-xs uppercase tracking-[0.22em] text-slate-400">Çıktı</p>
+                  <p className="mt-2 text-lg font-semibold text-white">Word Raporları</p>
+                  <p className="mt-2 text-sm leading-6 text-slate-400">Kurumsal görünümde arşivlenebilir ve paylaşılabilir belgeler.</p>
+                </div>
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-4 backdrop-blur">
+                  <p className="text-xs uppercase tracking-[0.22em] text-slate-400">Hafıza</p>
+                  <p className="mt-2 text-lg font-semibold text-white">Geçmiş Kayıtlar</p>
+                  <p className="mt-2 text-sm leading-6 text-slate-400">Benzer kayıtları ve tekrar eden riskleri görünür hale getirir.</p>
+                </div>
+              </div>
+
+              <div className="rounded-[28px] border border-cyan-400/15 bg-cyan-400/8 p-5 backdrop-blur">
+                <h2 className="text-sm font-semibold uppercase tracking-[0.24em] text-cyan-200">Güvenli erişim katmanı</h2>
+                <div className="mt-4 grid gap-3 text-sm text-slate-200">
+                  <div className="flex items-center gap-3">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                    Şüpheli cihazlarda ek doğrulama ve oturum kontrolü
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                    Organizasyon tabanlı çok kullanıcılı yapı
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                    Denetim ve rapor akışları için kurumsal kayıt merkezi
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="w-full max-w-md justify-self-center space-y-6">
+            <div className="text-center space-y-3 lg:hidden">
+              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-purple-600 to-blue-600 shadow-xl shadow-blue-950/60">
+                <Shield className="h-8 w-8 text-white" />
+              </div>
+              <div>
+                <h1 className="text-3xl font-bold text-white">İSGVİZYON</h1>
+                <p className="mt-1 text-sm text-slate-400">AI Destekli İSG Yönetim Sistemi</p>
+              </div>
+            </div>
+
+            <div className="rounded-[30px] border border-white/10 bg-slate-950/55 p-6 shadow-[0_24px_80px_rgba(2,6,23,0.55)] backdrop-blur-xl">
                     {/* LOGIN */}
           {mode === "login" && (
             <>
               <div className="flex gap-2 bg-slate-800/50 p-1 rounded-lg mb-6">
                 <button
                   onClick={() => setMode("login")}
-                  className="flex-1 py-2 rounded-md font-medium text-sm bg-gradient-to-r from-purple-600 to-blue-600 text-white"
+                  className="flex-1 rounded-xl py-2.5 text-sm font-semibold bg-gradient-to-r from-purple-600 to-blue-600 text-white shadow-lg shadow-purple-950/30"
                 >
                   Giriş Yap
                 </button>
                 <button
                   onClick={() => setMode("register")}
-                  className="flex-1 py-2 rounded-md font-medium text-sm text-slate-400 hover:text-white"
+                  className="flex-1 rounded-xl py-2.5 text-sm font-semibold text-slate-400 transition hover:text-white"
                 >
                   Kayıt Ol
                 </button>
               </div>
 
-              <div className="mb-4 rounded-xl border border-emerald-500/30 bg-gradient-to-r from-emerald-500/10 to-cyan-500/10 p-4">
+              <div className="mb-4 rounded-2xl border border-emerald-500/25 bg-gradient-to-r from-emerald-500/12 to-cyan-500/12 p-4">
                 <h3 className="text-white font-semibold text-base">Güvenli Giriş</h3>
                 <p className="text-slate-300 text-sm mt-1">
                   Hesabınıza güvenli şekilde erişin. Şüpheli cihazlarda ek doğrulama otomatik devreye girer.
@@ -516,7 +721,7 @@ const handleVerify2FA = async (e: React.FormEvent) => {
                     value={formData.email}
                     onChange={handleInputChange}
                     placeholder="ornek@firma.com"
-                    className="bg-slate-800/70 border-slate-700 text-white h-11"
+                    className="h-12 rounded-2xl border-white/10 bg-white/5 text-white placeholder:text-slate-500"
                     disabled={loading}
                     required
                   />
@@ -534,7 +739,7 @@ const handleVerify2FA = async (e: React.FormEvent) => {
                       value={formData.password}
                       onChange={handleInputChange}
                       placeholder="••••••••"
-                      className="bg-slate-800/70 border-slate-700 text-white pr-10 h-11"
+                      className="h-12 rounded-2xl border-white/10 bg-white/5 pr-10 text-white placeholder:text-slate-500"
                       disabled={loading}
                       required
                     />
@@ -549,7 +754,7 @@ const handleVerify2FA = async (e: React.FormEvent) => {
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between text-xs text-slate-400 rounded-lg border border-slate-700 bg-slate-800/30 px-3 py-2">
+                <div className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 px-3 py-3 text-xs text-slate-400">
                   <span>2FA aktif hesaplarda ekstra doğrulama uygulanır.</span>
                   <Shield className="h-4 w-4 text-emerald-400" />
                 </div>
@@ -557,7 +762,7 @@ const handleVerify2FA = async (e: React.FormEvent) => {
                 <Button
                   type="submit"
                   disabled={loading}
-                  className="w-full h-11 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
+                  className="h-12 w-full rounded-2xl bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
                 >
                   {loading ? (
                     <>
@@ -583,7 +788,7 @@ const handleVerify2FA = async (e: React.FormEvent) => {
                   variant="outline"
                   disabled={loading}
                   onClick={() => void handleGoogleLogin()}
-                  className="h-11 w-full border-slate-700 bg-slate-950/70 text-white hover:bg-slate-800 hover:text-white"
+                  className="h-12 w-full rounded-2xl border-white/10 bg-slate-950/70 text-white hover:bg-slate-800 hover:text-white"
                 >
                   {loading ? (
                     <>
@@ -628,19 +833,19 @@ const handleVerify2FA = async (e: React.FormEvent) => {
               <div className="flex gap-2 bg-slate-800/50 p-1 rounded-lg mb-6">
                 <button
                   onClick={() => setMode("login")}
-                  className="flex-1 py-2 rounded-md font-medium text-sm text-slate-400 hover:text-white"
+                  className="flex-1 rounded-xl py-2.5 text-sm font-semibold text-slate-400 transition hover:text-white"
                 >
                   Giriş Yap
                 </button>
                 <button
                   onClick={() => setMode("register")}
-                  className="flex-1 py-2 rounded-md font-medium text-sm bg-gradient-to-r from-purple-600 to-blue-600 text-white"
+                  className="flex-1 rounded-xl py-2.5 text-sm font-semibold bg-gradient-to-r from-purple-600 to-blue-600 text-white shadow-lg shadow-purple-950/30"
                 >
                   Kayıt Ol
                 </button>
               </div>
 
-              <div className="mb-4 rounded-xl border border-blue-500/30 bg-gradient-to-r from-blue-500/10 to-purple-500/10 p-4">
+              <div className="mb-4 rounded-2xl border border-blue-500/25 bg-gradient-to-r from-blue-500/12 to-purple-500/12 p-4">
                 <h3 className="text-white font-semibold text-base">Yeni Hesap Oluştur</h3>
                 <p className="text-slate-300 text-sm mt-1">
                   Kurumsal hesabını oluştur, ekip üyelerini ekle ve tüm İSG süreçlerini tek panelden yönet.
@@ -658,7 +863,7 @@ const handleVerify2FA = async (e: React.FormEvent) => {
                     value={formData.fullName}
                     onChange={handleInputChange}
                     placeholder="Örn: Ahmet Yılmaz"
-                    className="bg-slate-800/70 border-slate-700 text-white"
+                    className="h-12 rounded-2xl border-white/10 bg-white/5 text-white placeholder:text-slate-500"
                     disabled={loading}
                     required
                   />
@@ -669,16 +874,86 @@ const handleVerify2FA = async (e: React.FormEvent) => {
                     <Building2 className="h-4 w-4 text-blue-400" />
                     Şirket / Organizasyon
                   </Label>
-                  <Input
-                    type="text"
-                    name="orgName"
-                    value={formData.orgName}
-                    onChange={handleInputChange}
-                    placeholder="Örn: İSGVizyon OSGB"
-                    className="bg-slate-800/70 border-slate-700 text-white"
-                    disabled={loading}
-                    required
-                  />
+                  <div className="relative">
+                    <Input
+                      type="text"
+                      name="orgName"
+                      value={formData.orgName}
+                      onChange={handleInputChange}
+                      placeholder="Örn: İSGVizyon OSGB"
+                      className="h-12 rounded-2xl border-white/10 bg-white/5 pr-28 text-white placeholder:text-slate-500"
+                      disabled={loading}
+                      required
+                    />
+                    {formData.orgName.trim() ? (
+                      <span
+                        className={`pointer-events-none absolute right-3 top-1/2 inline-flex -translate-y-1/2 items-center gap-1 rounded-full px-2.5 py-1 text-[11px] font-medium ${
+                          orgSlugStatus === "available"
+                            ? "border border-emerald-500/30 bg-emerald-500/15 text-emerald-200"
+                            : orgSlugStatus === "taken"
+                            ? "border border-amber-500/30 bg-amber-500/15 text-amber-200"
+                            : orgSlugStatus === "checking"
+                            ? "border border-blue-500/30 bg-blue-500/15 text-blue-200"
+                            : orgSlugStatus === "invalid"
+                            ? "border border-amber-500/30 bg-amber-500/15 text-amber-200"
+                            : orgSlugStatus === "error"
+                            ? "border border-rose-500/30 bg-rose-500/15 text-rose-200"
+                            : "border border-white/10 bg-white/10 text-slate-300"
+                        }`}
+                      >
+                        {orgSlugStatus === "checking" ? (
+                          <>
+                            <RefreshCw className="h-3 w-3 animate-spin" />
+                            Kontrol
+                          </>
+                        ) : orgSlugStatus === "available" ? (
+                          <>
+                            <CheckCircle2 className="h-3 w-3" />
+                            Uygun
+                          </>
+                        ) : orgSlugStatus === "taken" ? (
+                          "Dolu"
+                        ) : orgSlugStatus === "invalid" ? (
+                          "Geçersiz"
+                        ) : orgSlugStatus === "error" ? (
+                          "Belirsiz"
+                        ) : (
+                          "Taslak"
+                        )}
+                      </span>
+                    ) : null}
+                  </div>
+                  <div
+                    className={`rounded-xl border px-3 py-2 text-xs transition-colors ${
+                      orgSlugStatus === "available"
+                        ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
+                        : orgSlugStatus === "taken" || orgSlugStatus === "invalid"
+                        ? "border-amber-500/30 bg-amber-500/10 text-amber-200"
+                        : orgSlugStatus === "error"
+                        ? "border-rose-500/30 bg-rose-500/10 text-rose-200"
+                        : "border-white/10 bg-white/5 text-slate-400"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <span>
+                        {orgSlugPreview
+                          ? `Oluşacak organizasyon bağlantısı: ${orgSlugPreview}`
+                          : "Organizasyon adı yazıldığında sistem bir kurum kimliği oluşturur."}
+                      </span>
+                      <span className="shrink-0">
+                        {orgSlugStatus === "checking" ? (
+                          <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                        ) : orgSlugStatus === "available" ? (
+                          <CheckCircle2 className="h-3.5 w-3.5" />
+                        ) : (
+                          <Info className="h-3.5 w-3.5" />
+                        )}
+                      </span>
+                    </div>
+                    <div className="mt-2 text-[11px] leading-relaxed">
+                      {orgSlugMessage}
+                    </div>
+                  </div>
                 </div>
 
                 <div className="space-y-2">
@@ -692,7 +967,7 @@ const handleVerify2FA = async (e: React.FormEvent) => {
                     value={formData.email}
                     onChange={handleInputChange}
                     placeholder="ornek@firma.com"
-                    className="bg-slate-800/70 border-slate-700 text-white"
+                    className="h-12 rounded-2xl border-white/10 bg-white/5 text-white placeholder:text-slate-500"
                     disabled={loading}
                     required
                   />
@@ -709,7 +984,7 @@ const handleVerify2FA = async (e: React.FormEvent) => {
                       name="password"
                       value={formData.password}
                       onChange={handleInputChange}
-                      className="bg-slate-800/70 border-slate-700 text-white"
+                      className="h-12 rounded-2xl border-white/10 bg-white/5 text-white"
                       disabled={loading}
                       required
                     />
@@ -725,14 +1000,15 @@ const handleVerify2FA = async (e: React.FormEvent) => {
                       name="passwordConfirm"
                       value={formData.passwordConfirm}
                       onChange={handleInputChange}
-                      className="bg-slate-800/70 border-slate-700 text-white"
+                      className="h-12 rounded-2xl border-white/10 bg-white/5 text-white"
                       disabled={loading}
                       required
                     />
                   </div>
                 </div>
 
-                <div className="flex items-center space-x-2 rounded-lg border border-slate-700 bg-slate-800/40 p-3">
+                <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                  <div className="flex items-center space-x-2">
                   <Checkbox
                     id="show-register-password"
                     checked={showRegisterPassword}
@@ -741,12 +1017,23 @@ const handleVerify2FA = async (e: React.FormEvent) => {
                   <Label htmlFor="show-register-password" className="text-sm text-slate-200 cursor-pointer">
                     Şifreyi göster
                   </Label>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {registerPasswordChecks.map((check) => (
+                      <span
+                        key={check.label}
+                        className={`rounded-full px-2.5 py-1 text-[11px] font-medium ${check.ready ? "bg-emerald-500/10 text-emerald-300" : "bg-amber-500/10 text-amber-300"}`}
+                      >
+                        {check.label}
+                      </span>
+                    ))}
+                  </div>
                 </div>
 
                 <Button
                   type="submit"
                   disabled={loading}
-                  className="w-full h-11 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
+                  className="h-12 w-full rounded-2xl bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-700 hover:to-blue-700"
                 >
                   {loading ? (
                     <>
@@ -885,6 +1172,8 @@ const handleVerify2FA = async (e: React.FormEvent) => {
         <p className="text-center text-xs text-slate-500">
           © 2026 İSGVizyon. Tüm hakları saklıdır.
         </p>
+      </div>
+        </div>
       </div>
     </div>
   );

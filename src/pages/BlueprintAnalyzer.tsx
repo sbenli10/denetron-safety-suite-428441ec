@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { 
   Upload, Building2, Shield, AlertTriangle, CheckCircle2, Loader2, 
   FileImage, Trash2, Download, MapPin, Ruler, Layers, Eye, 
-  ZoomIn, ZoomOut, RotateCw, Share2, ChevronRight, ArrowRight,
+  ZoomIn, ZoomOut, RotateCw, Share2, ChevronRight, ChevronLeft, ArrowRight,
   Target, TrendingUp, Clock, Users, AlertCircle, CircleHelp, Info, Sparkles,
   Plus, Edit2, Save, X, CheckSquare, Square
 } from "lucide-react";
@@ -117,6 +117,11 @@ const LOADING_MESSAGES = [
   { text: "Sonuçlar hazırlanıyor...", progress: 95 }
 ];
 
+const EQUIPMENT_PAGE_SIZE = 4;
+const VIOLATION_PAGE_SIZE = 3;
+const HISTORY_PAGE_SIZE = 6;
+const SUGGESTION_PAGE_SIZE = 5;
+
 // ✅ Helper: Floor number parser
 const parseFloorNumber = (floor: any): number => {
   if (typeof floor === 'number') return floor;
@@ -168,6 +173,10 @@ export default function BlueprintAnalyzer() {
   const [manualNotes, setManualNotes] = useState("");
   const [projectName, setProjectName] = useState("");
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const [equipmentPage, setEquipmentPage] = useState(1);
+  const [violationPage, setViolationPage] = useState(1);
+  const [historyPage, setHistoryPage] = useState(1);
+  const [suggestionPage, setSuggestionPage] = useState(1);
 
    // ✅ Component mount olduğunda history'yi yükle
   useEffect(() => {
@@ -175,6 +184,16 @@ export default function BlueprintAnalyzer() {
       fetchHistory();
     }
   }, [user]); // user değiştiğinde yeniden fetch
+
+  useEffect(() => {
+    setEquipmentPage(1);
+    setViolationPage(1);
+    setSuggestionPage(1);
+  }, [analysisResult]);
+
+  useEffect(() => {
+    setHistoryPage(1);
+  }, [analysisHistory]);
   
   // ✅ Fetch history - Type-Safe Çözüm
   const fetchHistory = async () => {
@@ -880,25 +899,112 @@ export default function BlueprintAnalyzer() {
     }
   };
 
+  const equipmentTotalPages = analysisResult
+    ? Math.max(1, Math.ceil(analysisResult.equipment_inventory.length / EQUIPMENT_PAGE_SIZE))
+    : 1;
+  const violationTotalPages = analysisResult
+    ? Math.max(1, Math.ceil(analysisResult.safety_violations.length / VIOLATION_PAGE_SIZE))
+    : 1;
+  const suggestionTotalPages = analysisResult
+    ? Math.max(1, Math.ceil(analysisResult.expert_suggestions.length / SUGGESTION_PAGE_SIZE))
+    : 1;
+  const historyTotalPages = Math.max(1, Math.ceil(analysisHistory.length / HISTORY_PAGE_SIZE));
+
+  const pagedEquipment = analysisResult
+    ? analysisResult.equipment_inventory.slice(
+        (equipmentPage - 1) * EQUIPMENT_PAGE_SIZE,
+        equipmentPage * EQUIPMENT_PAGE_SIZE,
+      )
+    : [];
+  const pagedViolations = analysisResult
+    ? analysisResult.safety_violations.slice(
+        (violationPage - 1) * VIOLATION_PAGE_SIZE,
+        violationPage * VIOLATION_PAGE_SIZE,
+      )
+    : [];
+  const pagedSuggestions = analysisResult
+    ? analysisResult.expert_suggestions.slice(
+        (suggestionPage - 1) * SUGGESTION_PAGE_SIZE,
+        suggestionPage * SUGGESTION_PAGE_SIZE,
+      )
+    : [];
+  const pagedHistory = analysisHistory.slice(
+    (historyPage - 1) * HISTORY_PAGE_SIZE,
+    historyPage * HISTORY_PAGE_SIZE,
+  );
+
+  const renderPagination = (
+    currentPage: number,
+    totalPages: number,
+    onChange: React.Dispatch<React.SetStateAction<number>>,
+    itemLabel: string,
+  ) => {
+    if (totalPages <= 1) return null;
+
+    return (
+      <div className="mt-4 flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-slate-400">
+        <span>
+          Sayfa <span className="font-semibold text-slate-100">{currentPage}</span> /{" "}
+          <span className="font-semibold text-slate-100">{totalPages}</span>
+          <span className="mx-2 text-slate-600">•</span>
+          {itemLabel}
+        </span>
+        <div className="flex gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-2 rounded-xl border-white/10 bg-white/[0.03] text-slate-100 hover:bg-white/[0.08]"
+            onClick={() => onChange((page) => Math.max(1, page - 1))}
+            disabled={currentPage === 1}
+          >
+            <ChevronLeft className="h-4 w-4" />
+            Önceki
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-2 rounded-xl border-white/10 bg-white/[0.03] text-slate-100 hover:bg-white/[0.08]"
+            onClick={() => onChange((page) => Math.min(totalPages, page + 1))}
+            disabled={currentPage === totalPages}
+          >
+            Sonraki
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-8">
       {/* HEADER */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-4xl font-black text-foreground flex items-center gap-3">
-            <Building2 className="h-10 w-10 text-primary" />
-            AI Kroki Okuyucu
-          </h1>
-          <p className="text-muted-foreground mt-2 flex items-center gap-2">
-            <Sparkles className="h-4 w-4 text-yellow-500" />
-            Teknik çizimleri, kat planlarını ve tahliye krokilerini yapay zeka ile analiz edin
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
+      <div className="overflow-hidden rounded-[30px] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(59,130,246,0.18),transparent_32%),linear-gradient(180deg,rgba(15,23,42,0.98),rgba(2,6,23,0.96))] px-6 py-7 shadow-[0_24px_80px_rgba(2,6,23,0.42)] lg:px-8">
+        <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+          <div className="space-y-4">
+            <div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.24em] text-cyan-200">
+              <Sparkles className="h-3.5 w-3.5" />
+              AI Kroki Analiz Merkezi
+            </div>
+            <div>
+              <h1 className="flex items-center gap-3 text-3xl font-black tracking-tight text-white lg:text-4xl">
+                <Building2 className="h-9 w-9 text-cyan-300" />
+                Blueprint Analyzer
+              </h1>
+              <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-300 lg:text-base">
+                Teknik çizimleri, kat planlarını ve tahliye krokilerini daha sade bir ekranda analiz edin; ekipman, uygunsuzluk ve yol haritasını sayfalı görünümle inceleyin.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Badge className="border-white/10 bg-white/[0.04] text-slate-200">Yükle → Önizle → Sonuç</Badge>
+              <Badge className="border-white/10 bg-white/[0.04] text-slate-200">Daha sakin sonuç ekranı</Badge>
+              <Badge className="border-white/10 bg-white/[0.04] text-slate-200">Sayfalı liste görünümü</Badge>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
           <Button
             variant="outline"
             onClick={() => navigate("/blueprint-analyzer/how-to")}
-            className="gap-2"
+            className="gap-2 rounded-2xl border-white/10 bg-white/[0.04] text-slate-100 hover:bg-white/[0.08]"
           >
             <CircleHelp className="h-4 w-4" />
             Nasıl Kullanılır
@@ -906,17 +1012,18 @@ export default function BlueprintAnalyzer() {
           <Button
             variant="outline"
             onClick={() => navigate("/adep-wizard")}
-            className="gap-2"
+            className="gap-2 rounded-2xl border-cyan-400/20 bg-cyan-500/10 text-cyan-50 hover:bg-cyan-500/15"
           >
             <ArrowRight className="h-4 w-4" />
             ADEP Sihirbazı'na Git
           </Button>
         </div>
       </div>
+      </div>
 
       {/* TABS */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid h-auto w-full grid-cols-2 rounded-2xl border border-white/10 bg-slate-950/70 p-1 md:grid-cols-4">
           <TabsTrigger value="upload" className="gap-2">
             <Upload className="h-4 w-4" />
             Yükle
@@ -937,7 +1044,7 @@ export default function BlueprintAnalyzer() {
 
         {/* UPLOAD TAB */}
         <TabsContent value="upload" className="space-y-6">
-          <Card>
+          <Card className="border-white/10 bg-slate-950/70 shadow-[0_18px_40px_rgba(2,6,23,0.28)]">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <FileImage className="h-5 w-5 text-primary" />
@@ -986,11 +1093,11 @@ export default function BlueprintAnalyzer() {
                 
                 <label 
                   onClick={() => fileInputRef.current?.click()}
-                  className="flex flex-col items-center justify-center border-2 border-dashed border-primary/30 bg-primary/5 hover:bg-primary/10 rounded-xl p-16 cursor-pointer transition-all group"
+                  className="flex flex-col items-center justify-center rounded-[28px] border-2 border-dashed border-cyan-400/20 bg-cyan-500/[0.06] p-16 text-center transition-all group hover:bg-cyan-500/[0.10]"
                 >
-                  <FileImage className="h-20 w-20 text-primary mb-4 group-hover:scale-110 transition-transform" />
+                  <FileImage className="mb-4 h-20 w-20 text-cyan-300 transition-transform group-hover:scale-110" />
                   <span className="text-xl font-bold text-foreground">Kroki Görseli Seç veya Sürükle</span>
-                  <span className="text-sm text-muted-foreground mt-2">PNG, JPG, JPEG (Max 10MB)</span>
+                  <span className="mt-2 text-sm text-muted-foreground">PNG, JPG, JPEG (Max 10MB)</span>
                   <div className="flex items-center gap-4 mt-4">
                     <Badge variant="secondary">Sürükle & Bırak</Badge>
                     <Badge variant="secondary">AI Destekli</Badge>
@@ -1037,7 +1144,7 @@ export default function BlueprintAnalyzer() {
 
         {/* PREVIEW TAB */}
         <TabsContent value="preview" className="space-y-6">
-          <Card>
+          <Card className="border-white/10 bg-slate-950/70 shadow-[0_18px_40px_rgba(2,6,23,0.28)]">
             <CardHeader>
               <div className="flex items-center justify-between">
                 <CardTitle>Kroki Önizleme</CardTitle>
@@ -1080,7 +1187,7 @@ export default function BlueprintAnalyzer() {
               </div>
             </CardHeader>
             <CardContent>
-              <div className="relative w-full h-[600px] bg-slate-50 dark:bg-slate-900 rounded-xl overflow-hidden border-2 border-border">
+              <div className="relative h-[600px] w-full overflow-hidden rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.84),rgba(15,23,42,0.58))]">
                 <img 
                   src={blueprintPreview} 
                   alt="Kroki" 
@@ -1091,14 +1198,14 @@ export default function BlueprintAnalyzer() {
                 />
               </div>
 
-              <div className="mt-6 flex justify-between items-center">
+              <div className="mt-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                 <div className="text-sm text-muted-foreground">
                   Zoom: {Math.round(zoom * 100)}% | Rotasyon: {rotation}°
                 </div>
                 <Button
                   onClick={analyzeBlueprint}
                   disabled={loading}
-                  className="gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 h-12 px-8 text-base font-bold"
+                  className="h-12 gap-2 rounded-2xl bg-gradient-to-r from-cyan-500 to-indigo-500 px-8 text-base font-bold hover:from-cyan-400 hover:to-indigo-400"
                 >
                   {loading ? (
                     <>
@@ -1132,16 +1239,16 @@ export default function BlueprintAnalyzer() {
     <>
       {/* Header Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card className="border-2 border-primary/20">
+        <Card className="border-cyan-400/15 bg-slate-950/70">
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-xs text-muted-foreground">Uygunluk Skoru</p>
-                <p className="text-3xl font-black text-primary mt-1">
+                <p className="text-3xl font-black text-cyan-300 mt-1">
                   {formatCompliance(analysisResult.compliance_score)}
                 </p>
               </div>
-              <TrendingUp className="h-8 w-8 text-primary" />
+              <TrendingUp className="h-8 w-8 text-cyan-300" />
             </div>
             <Progress 
               value={complianceProgressValue(analysisResult.compliance_score)} 
@@ -1150,7 +1257,7 @@ export default function BlueprintAnalyzer() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="border-white/10 bg-slate-950/70">
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
@@ -1164,7 +1271,7 @@ export default function BlueprintAnalyzer() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="border-white/10 bg-slate-950/70">
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
@@ -1178,7 +1285,7 @@ export default function BlueprintAnalyzer() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="border-white/10 bg-slate-950/70">
           <CardContent className="pt-6">
             <div className="flex items-center justify-between">
               <div>
@@ -1194,15 +1301,15 @@ export default function BlueprintAnalyzer() {
       </div>
 
       {/* Action Buttons */}
-      <div className="flex gap-3">
-        <Button onClick={exportPDF} className="gap-2 flex-1">
+      <div className="flex flex-col gap-3 lg:flex-row">
+        <Button onClick={exportPDF} className="gap-2 flex-1 rounded-2xl bg-gradient-to-r from-cyan-500 to-indigo-500 hover:from-cyan-400 hover:to-indigo-400">
           <Download className="h-4 w-4" />
           PDF Rapor İndir
         </Button>
         <Button 
           onClick={shareAnalysis} 
           variant="outline" 
-          className="gap-2 flex-1"
+          className="gap-2 flex-1 rounded-2xl border-white/10 bg-white/[0.03] hover:bg-white/[0.08]"
         >
           <Share2 className="h-4 w-4" />
           Paylaş
@@ -1212,14 +1319,14 @@ export default function BlueprintAnalyzer() {
             state: { blueprintData: analysisResult } 
           })} 
           variant="outline"
-          className="gap-2 flex-1"
+          className="gap-2 flex-1 rounded-2xl border-white/10 bg-white/[0.03] hover:bg-white/[0.08]"
         >
           <ArrowRight className="h-4 w-4" />
           ADEP'e Aktar
         </Button>
         <Dialog open={saveDialogOpen} onOpenChange={setSaveDialogOpen}>
         <DialogTrigger asChild>
-          <Button variant="outline" className="gap-2">
+          <Button variant="outline" className="gap-2 rounded-2xl border-white/10 bg-white/[0.03] hover:bg-white/[0.08]">
             <Save className="h-4 w-4" />
             Kaydet
           </Button>
@@ -1271,7 +1378,7 @@ export default function BlueprintAnalyzer() {
       {/* Main Content Grid */}
       <div className="grid lg:grid-cols-2 gap-6">
         {/* Equipment Inventory */}
-        <Card className="border-success/20">
+        <Card className="border-emerald-400/15 bg-slate-950/70">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <CheckCircle2 className="h-5 w-5 text-success" />
@@ -1282,10 +1389,10 @@ export default function BlueprintAnalyzer() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
-            {analysisResult.equipment_inventory.map((eq, idx) => (
+            {pagedEquipment.map((eq, idx) => (
               <div 
-                key={idx}
-                className="p-4 bg-secondary/20 rounded-lg border border-border hover:border-success/50 transition-colors"
+                key={`${eq.type}-${idx}`}
+                className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 transition-colors hover:border-emerald-400/20"
               >
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center gap-3">
@@ -1351,11 +1458,17 @@ export default function BlueprintAnalyzer() {
                 </div>
               </div>
             ))}
+            {renderPagination(
+              equipmentPage,
+              equipmentTotalPages,
+              setEquipmentPage,
+              `${analysisResult.equipment_inventory.length} ekipman kaydı`,
+            )}
           </CardContent>
         </Card>
 
         {/* Violations */}
-        <Card className="border-destructive/20">
+        <Card className="border-red-400/15 bg-slate-950/70">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <AlertTriangle className="h-5 w-5 text-destructive" />
@@ -1377,10 +1490,10 @@ export default function BlueprintAnalyzer() {
                 </p>
               </div>
             ) : (
-              analysisResult.safety_violations.map((violation, idx) => (
+              pagedViolations.map((violation, idx) => (
                 <div 
-                  key={idx}
-                  className={`p-4 rounded-lg border-2 transition-all hover:shadow-md ${
+                  key={`${violation.issue}-${idx}`}
+                  className={`rounded-2xl border p-4 transition-all ${
                     violation.severity === 'critical' 
                       ? 'bg-destructive/10 border-destructive/30' :
                     violation.severity === 'warning' 
@@ -1433,13 +1546,20 @@ export default function BlueprintAnalyzer() {
                 </div>
               ))
             )}
+            {analysisResult.safety_violations.length > 0 &&
+              renderPagination(
+                violationPage,
+                violationTotalPages,
+                setViolationPage,
+                `${analysisResult.safety_violations.length} uyumsuzluk kaydı`,
+              )}
           </CardContent>
         </Card>
       </div>
 
       {/* Improvement Roadmap */}
       {analysisResult.improvement_roadmap && (
-        <Card className="border-primary/20">
+        <Card className="border-cyan-400/15 bg-slate-950/70">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Target className="h-5 w-5 text-primary" />
@@ -1517,7 +1637,7 @@ export default function BlueprintAnalyzer() {
 
       {/* Expert Suggestions */}
       {analysisResult.expert_suggestions.length > 0 && (
-        <Card className="border-blue-500/20 bg-blue-500/5">
+        <Card className="border-blue-400/15 bg-slate-950/70">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Sparkles className="h-5 w-5 text-blue-600" />
@@ -1526,13 +1646,19 @@ export default function BlueprintAnalyzer() {
           </CardHeader>
           <CardContent>
             <ul className="space-y-3">
-              {analysisResult.expert_suggestions.map((suggestion, idx) => (
+              {pagedSuggestions.map((suggestion, idx) => (
                 <li key={idx} className="flex items-start gap-3 text-sm">
                   <CheckSquare className="h-5 w-5 text-blue-600 shrink-0 mt-0.5" />
                   <span className="text-foreground">{suggestion}</span>
                 </li>
               ))}
             </ul>
+            {renderPagination(
+              suggestionPage,
+              suggestionTotalPages,
+              setSuggestionPage,
+              `${analysisResult.expert_suggestions.length} uzman önerisi`,
+            )}
           </CardContent>
         </Card>
       )}
@@ -1542,7 +1668,7 @@ export default function BlueprintAnalyzer() {
 
 {/* HISTORY TAB */}
 <TabsContent value="history" className="space-y-6">
-  <Card>
+  <Card className="border-white/10 bg-slate-950/70 shadow-[0_18px_40px_rgba(2,6,23,0.28)]">
     <CardHeader>
       <CardTitle className="flex items-center gap-2">
         <Clock className="h-5 w-5 text-primary" />
@@ -1560,10 +1686,10 @@ export default function BlueprintAnalyzer() {
         </div>
       ) : (
         <div className="space-y-3">
-          {analysisHistory.map((item) => (
+          {pagedHistory.map((item) => (
             <div 
               key={item.id}
-              className="flex items-center justify-between p-4 bg-secondary/20 rounded-lg border border-border hover:border-primary/50 transition-colors cursor-pointer"
+              className="flex cursor-pointer items-center justify-between rounded-2xl border border-white/10 bg-white/[0.03] p-4 transition-colors hover:border-cyan-400/20"
               onClick={() => loadPreviousAnalysis(item.id)}
             >
               <div className="flex items-center gap-4">
@@ -1598,6 +1724,12 @@ export default function BlueprintAnalyzer() {
             </div>
           ))}
         </div>
+      )}
+      {renderPagination(
+        historyPage,
+        historyTotalPages,
+        setHistoryPage,
+        `${analysisHistory.length} analiz kaydı`,
       )}
     </CardContent>
   </Card>

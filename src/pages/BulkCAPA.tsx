@@ -136,6 +136,30 @@ interface HistoricalFinding {
   is_resolved: boolean;
   assigned_to: string | null;
   similarity: number;
+  source: "inspection" | "bulk_session";
+}
+
+interface BulkSessionHistoryRow {
+  id: string;
+  company_name: string | null;
+  area_region: string | null;
+  department_name: string | null;
+  report_date: string | null;
+  updated_at: string | null;
+}
+
+interface BulkEntryHistoryRow {
+  id: string;
+  session_id: string;
+  description: string | null;
+  risk_definition: string | null;
+  corrective_action: string | null;
+  preventive_action: string | null;
+  priority: string | null;
+  due_date: string | null;
+  responsible_name: string | null;
+  responsible_role: string | null;
+  created_at: string | null;
 }
 
 interface BulkCAPATemplate {
@@ -2183,12 +2207,28 @@ function BulkCAPAContent() {
     toast.success(`${template.title} sablonu uygulandi`);
   };
 
+  const goToBulkGeneralStep = () => {
+    setPreviewOpen(false);
+    setCreateDialogOpen(true);
+    setCreateMode("bulk");
+    setCreateStep("general");
+  };
+
   const tokenizeForSimilarity = (value: string) =>
     value
       .toLocaleLowerCase("tr-TR")
       .replace(/[^\p{L}\p{N}\s]/gu, " ")
       .split(/\s+/)
       .filter((word) => word.length > 2);
+
+  const normalizeCompanyMatchValue = (value: string) =>
+    value
+      .toLocaleLowerCase("tr-TR")
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-z0-9\s]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
 
   const currentSimilarityBase = `${newEntry.description} ${newEntry.riskDefinition}`.trim();
   const currentWords = Array.from(new Set(tokenizeForSimilarity(currentSimilarityBase)));
@@ -2211,6 +2251,67 @@ function BulkCAPAContent() {
 
       setHistoricalLoading(true);
       try {
+        const normalizedCompanyName = normalizeCompanyMatchValue(reportCompanyName);
+        const nextHistoricalFindings: HistoricalFinding[] = [];
+
+        const { data: bulkSessionsData, error: bulkSessionsError } = await (supabase as any)
+          .from("bulk_capa_sessions")
+          .select("id, company_name, area_region, department_name, report_date, updated_at")
+          .eq("org_id", orgData.id)
+          .ilike("company_name", `%${reportCompanyName.trim()}%`)
+          .order("updated_at", { ascending: false })
+          .limit(20);
+
+        if (bulkSessionsError) {
+          throw bulkSessionsError;
+        }
+
+        const bulkSessions = ((bulkSessionsData || []) as BulkSessionHistoryRow[]).filter((session) => {
+          const companyName = normalizeCompanyMatchValue(String(session.company_name || ""));
+          return companyName && normalizedCompanyName ? companyName.includes(normalizedCompanyName) || normalizedCompanyName.includes(companyName) : true;
+        });
+
+        if (bulkSessions.length > 0) {
+          const bulkSessionMap = new Map<string, BulkSessionHistoryRow>(bulkSessions.map((session) => [session.id, session]));
+          const { data: bulkEntriesData, error: bulkEntriesError } = await (supabase as any)
+            .from("bulk_capa_entries")
+            .select("id, session_id, description, risk_definition, corrective_action, preventive_action, priority, due_date, responsible_name, responsible_role, created_at")
+            .in("session_id", bulkSessions.map((session) => session.id))
+            .order("created_at", { ascending: false })
+            .limit(80);
+
+          if (bulkEntriesError) {
+            throw bulkEntriesError;
+          }
+
+          nextHistoricalFindings.push(
+            ...((bulkEntriesData || []) as BulkEntryHistoryRow[]).map((entry) => {
+              const session = bulkSessionMap.get(entry.session_id);
+              const similarityBase = `${entry.description || ""} ${entry.risk_definition || ""}`.trim();
+              const candidateWords = Array.from(new Set(tokenizeForSimilarity(similarityBase)));
+              const overlap = candidateWords.filter((word) => currentWords.includes(word)).length;
+              const similarity = currentWords.length ? overlap / Math.max(currentWords.length, 1) : 0;
+
+              return {
+                id: entry.id,
+                inspection_id: entry.session_id,
+                location_name: session?.area_region || session?.company_name || reportCompanyName,
+                description: entry.description || "",
+                risk_definition: entry.risk_definition || "",
+                corrective_action: entry.corrective_action || "",
+                preventive_action: entry.preventive_action || "",
+                priority: normalizeFindingPriority(entry.priority),
+                due_date: entry.due_date || null,
+                created_at: entry.created_at || session?.updated_at || session?.report_date || new Date().toISOString(),
+                is_resolved: false,
+                assigned_to: entry.responsible_role || entry.responsible_name || session?.department_name || null,
+                similarity,
+                source: "bulk_session" as const,
+              };
+            })
+          );
+        }
+
         const { data: inspectionsData, error: inspectionsError } = await supabase
           .from("inspections")
           .select("id, location_name, created_at")
@@ -2249,7 +2350,7 @@ function BulkCAPAContent() {
           throw findingsError;
         }
 
-        const nextHistoricalFindings: HistoricalFinding[] = (findingsData || []).map((finding) => {
+        nextHistoricalFindings.push(...((findingsData || []).map((finding) => {
           const inspection = inspectionMap.get(finding.inspection_id);
           const similarityBase = `${finding.description || ""} ${finding.risk_definition || ""}`.trim();
           const candidateWords = Array.from(new Set(tokenizeForSimilarity(similarityBase)));
@@ -2270,10 +2371,22 @@ function BulkCAPAContent() {
             is_resolved: Boolean(finding.is_resolved),
             assigned_to: finding.assigned_to || null,
             similarity,
+            source: "inspection" as const,
           };
-        });
+        })) as HistoricalFinding[]);
 
-        setHistoricalFindings(nextHistoricalFindings);
+        const deduplicatedHistoricalFindings = nextHistoricalFindings.filter(
+          (entry, index, array) =>
+            array.findIndex(
+              (candidate) =>
+                candidate.source === entry.source &&
+                candidate.inspection_id === entry.inspection_id &&
+                candidate.description === entry.description &&
+                candidate.risk_definition === entry.risk_definition
+            ) === index
+        );
+
+        setHistoricalFindings(deduplicatedHistoricalFindings);
       } catch (error) {
         console.error("Historical findings could not be loaded:", error);
         setHistoricalFindings([]);
@@ -2438,6 +2551,29 @@ function BulkCAPAContent() {
 
   const qualityLabel =
     qualityScore >= 80 ? "Güçlü" : qualityScore >= 60 ? "Gelistirilebilir" : "Zayif";
+  const historicalPriorityDistribution = historicalSimilarEntries.reduce<Record<string, number>>((acc, entry) => {
+    if (!entry.priority) return acc;
+    acc[entry.priority] = (acc[entry.priority] || 0) + 1;
+    return acc;
+  }, {});
+  const historicalPriorityReference = Object.entries(historicalPriorityDistribution).sort((a, b) => b[1] - a[1])[0] || null;
+  const recommendedPriorityValue = (historicalPriorityReference?.[0] as HazardEntry["importance_level"] | undefined) || suggestedPriority;
+  const priorityUsesHistoricalData = Boolean(historicalPriorityReference);
+  const responsibleUsesHistoricalData = Boolean(historicalAssignedRole);
+  const dueUsesHistoricalData = Boolean(historicalDueSuggestion);
+  const hasMeaningfulHistoricalData = historicalFindings.length > 0;
+  const recommendationEvidenceSummary = reportCompanyName.trim()
+    ? [
+        `Firma: ${reportCompanyName}`,
+        hasMeaningfulHistoricalData ? `${historicalFindings.length} geçmiş kayıt tarandı` : "Bu firma için geçmiş kayıt bulunmadı",
+        currentWords.length ? `${currentWords.length} anahtar ifade karşılaştırıldı` : "Karşılaştırılacak bulgu metni henüz kısa",
+      ].join(" • ")
+    : "Firma seçildiğinde şirket geçmişi ve mevcut madde metni birlikte değerlendirilir.";
+  const similarityEvidenceSummary = reportCompanyName.trim()
+    ? `Bu liste, "${reportCompanyName}" adına yakın geçmiş kayıtlar içinden açıklama ve risk tanımı kelime örtüşmesine göre sıralanır.`
+    : "Firma seçildiğinde geçmiş DÖF kayıtları aynı şirket adı üzerinden taranır.";
+  const qualityEvidenceSummary =
+    "Bu değerlendirme gerçek denetim doğrulaması değildir; yalnızca form alanlarının doluluğu, metin netliği ve takip alanlarının tamamlanma durumuna göre hesaplanır.";
   const nextDofNumber = `DOF-${String(entries.length + 1).padStart(3, "0")}`;
 
   const imageToInlineDataPart = async (imageUrl: string) => {
@@ -4517,7 +4653,7 @@ const handleSaveAndExport = async () => {
                   </div>
                   <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
                     {createMode === "bulk" ? (
-                      <Button type="button" variant="outline" onClick={() => setCreateStep("general")} className="h-12 rounded-2xl border-white/10 bg-white/5 text-slate-200 hover:bg-white/10">
+                      <Button type="button" variant="outline" onClick={goToBulkGeneralStep} className="h-12 rounded-2xl border-white/10 bg-white/5 text-slate-200 hover:bg-white/10">
                         Genel Bilgilere Dön
                       </Button>
                     ) : null}
@@ -4621,135 +4757,240 @@ const handleSaveAndExport = async () => {
         </Dialog>
 
         <section className="grid grid-cols-1 gap-4 xl:grid-cols-12">
-          <ModuleCard eyebrow="AI öneri paneli" title="Kuruma göre ilk karar seti" className="min-h-[320px] border-primary/20 bg-[linear-gradient(180deg,rgba(59,130,246,0.08),rgba(15,23,42,0.88))] xl:col-span-6">
+          <ModuleCard
+            eyebrow="Kural tabanlı öneri"
+            title="Karar özeti ve şirket geçmişi"
+            badge={hasMeaningfulHistoricalData ? `${historicalFindings.length} kayıt` : "Canlı taslak"}
+            className="border-primary/20 bg-[linear-gradient(180deg,rgba(59,130,246,0.08),rgba(15,23,42,0.88))] xl:col-span-7"
+          >
             <div className="space-y-4">
-              <div className="rounded-2xl border border-border/60 bg-background/80 p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <span className="text-sm font-semibold text-foreground">Önerilen öncelik</span>
-                  <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${IMPORTANCE_LEVELS.find((level) => level.value === suggestedPriority)?.color}`}>
-                    {suggestedPriority}
-                  </span>
-                </div>
-                <p className="mt-2 text-xs leading-6 text-muted-foreground">
-                  {suggestedPriority === "Kritik"
-                    ? "Bulgu metni ve firma geçmişi kritik yaralanma veya ciddi teknik risk sinyali veriyor."
-                    : suggestedPriority === "Yüksek"
-                    ? "Bu kayıt hızlı aksiyon isteyen yüksek riskli bir kategoriye yakın görünüyor."
-                    : "Mevcut girdiye göre kontrollü ama takip edilmesi gereken bir kayıt yapısı var."}
+              <div className="rounded-2xl border border-border/60 bg-background/70 px-4 py-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.2em] text-primary/80">
+                  Bu öneri şu verilere göre üretildi
                 </p>
-                <p className="mt-2 text-xs leading-6 text-cyan-300">
-                  {reportCompanyName
-                    ? `"${reportCompanyName}" bağlamı ve geçmiş kayıtları bu öneri paneline dahil edildi.`
-                    : "Firma seçildiğinde öneriler şirket bağlamını daha net yansıtır."}
-                </p>
-              </div>
-
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div className="rounded-2xl border border-border/60 bg-background/80 p-4">
-                  <div className="flex items-center gap-2 text-foreground">
-                    <Users className="h-4 w-4 text-primary" />
-                    <span className="text-sm font-semibold">Önerilen sorumlu</span>
-                  </div>
-                  <p className="mt-3 text-sm font-semibold text-foreground">{suggestedDepartment}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">{suggestedRole}</p>
-                  <p className="mt-2 text-[11px] leading-5 text-muted-foreground">
-                    {reportCompanyName
-                      ? `${reportCompanyName} için seçilen bulgu diline göre en uygun ilk atama rolü.`
-                      : "Firma seçildiğinde rol önerisi daha güvenilir hale gelir."}
-                  </p>
-                </div>
-
-                <div className="rounded-2xl border border-border/60 bg-background/80 p-4">
-                  <div className="flex items-center gap-2 text-foreground">
-                    <Calendar className="h-4 w-4 text-primary" />
-                    <span className="text-sm font-semibold">Önerilen termin</span>
-                  </div>
-                  <p className="mt-3 text-sm font-semibold text-foreground">{suggestedDueDays} gün</p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {historicalDueSuggestion
-                      ? "Geçmiş firma kayıtlarındaki ortalama kapanış süresine göre önerildi"
-                      : "Risk düzeyine göre önerilen takip süresi"}
-                  </p>
-                  <Button type="button" variant="outline" size="sm" onClick={() => setQuickDueDate(suggestedDueDays)} className="mt-3">
-                    Önerilen termini uygula
-                  </Button>
-                </div>
+                <p className="mt-2 text-sm leading-6 text-muted-foreground">{recommendationEvidenceSummary}</p>
               </div>
 
               <div className="grid gap-3 sm:grid-cols-3">
-                <div className="rounded-2xl border border-border/60 bg-background/80 p-4">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">Firma geçmişi</p>
-                  <p className="mt-3 text-2xl font-bold text-foreground">{historicalFindings.length}</p>
-                  <p className="mt-2 text-xs leading-6 text-muted-foreground">Aynı firma için taranan geçmiş bulgu ve DÖF kaydı</p>
+                <div className="rounded-2xl border border-border/50 bg-background/40 px-4 py-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Firma geçmişi</p>
+                  <p className="mt-2 text-2xl font-bold text-foreground">{historicalFindings.length}</p>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">Aynı firma için taranan geçmiş bulgu ve DÖF kaydı</p>
                 </div>
-                <div className="rounded-2xl border border-border/60 bg-background/80 p-4">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">Açık kayıtlar</p>
-                  <p className="mt-3 text-2xl font-bold text-foreground">{historicalOpenCount}</p>
-                  <p className="mt-2 text-xs leading-6 text-muted-foreground">Aynı firmada halen kapanmamış takip gerektiren kayıt</p>
+                <div className="rounded-2xl border border-border/50 bg-background/40 px-4 py-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Açık kayıtlar</p>
+                  <p className="mt-2 text-2xl font-bold text-foreground">{historicalOpenCount}</p>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">Aynı şirkette halen kapanmamış takip gerektiren kayıt</p>
                 </div>
-                <div className="rounded-2xl border border-border/60 bg-background/80 p-4">
-                  <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">Tekrar sinyali</p>
-                  <p className="mt-3 text-2xl font-bold text-foreground">{repeatedIssueCount}</p>
-                  <p className="mt-2 text-xs leading-6 text-muted-foreground">Mevcut bulguya yakın içerikte geçmiş eşleşme</p>
+                <div className="rounded-2xl border border-border/50 bg-background/40 px-4 py-3">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">Tekrar sinyali</p>
+                  <p className="mt-2 text-2xl font-bold text-foreground">{repeatedIssueCount}</p>
+                  <p className="mt-1 text-xs leading-5 text-muted-foreground">Mevcut bulguya yakın içerikte bulunan geçmiş kayıt</p>
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-cyan-400/20 bg-cyan-400/10 p-4">
+              <div className="overflow-hidden rounded-2xl border border-border/60 bg-background/70">
+                <div className="flex items-center justify-between border-b border-border/60 px-4 py-3">
+                  <div>
+                    <p className="text-sm font-semibold text-foreground">Karar referansları</p>
+                    <p className="mt-1 text-xs text-muted-foreground">Önce geçmiş kayıtlar kullanılır; veri yetersizse tahmini fallback devreye girer.</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-1 text-[11px] font-semibold text-emerald-600">
+                      Kayıt tabanlı
+                    </span>
+                    {(!priorityUsesHistoricalData || !responsibleUsesHistoricalData || !dueUsesHistoricalData) ? (
+                      <span className="rounded-full border border-amber-500/20 bg-amber-500/10 px-2.5 py-1 text-[11px] font-semibold text-amber-600">
+                        Kısmen tahmini
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="divide-y divide-border/60">
+                  <div className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="flex items-start gap-3">
+                      <AlertTriangle className="mt-0.5 h-4 w-4 text-primary" />
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">Öncelik referansı</p>
+                        <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                          {priorityUsesHistoricalData
+                            ? `${historicalPriorityReference?.[1] || 0} benzer kayıtta en sık görülen öncelik bu seviyede.`
+                            : "Yeterli geçmiş eşleşme olmadığı için mevcut madde metni ve sektör sinyallerine göre tahmini üretildi."}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 sm:justify-end">
+                      {!priorityUsesHistoricalData ? (
+                        <span className="rounded-full border border-amber-500/20 bg-amber-500/10 px-2.5 py-1 text-[11px] font-semibold text-amber-600">
+                          Tahmini
+                        </span>
+                      ) : null}
+                      <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${IMPORTANCE_LEVELS.find((level) => level.value === recommendedPriorityValue)?.color}`}>
+                        {recommendedPriorityValue}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="flex items-start gap-3">
+                      <Users className="mt-0.5 h-4 w-4 text-primary" />
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">Sorumlu referansı</p>
+                        <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                          {responsibleUsesHistoricalData
+                            ? "Benzer geçmiş kayıtlarda görülen sorumlu ataması referans olarak gösteriliyor."
+                            : "Geçmiş atama verisi yetersiz olduğu için bölüm ve risk tipine göre ilk rol önerisi üretildi."}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 sm:justify-end">
+                      {!responsibleUsesHistoricalData ? (
+                        <span className="rounded-full border border-amber-500/20 bg-amber-500/10 px-2.5 py-1 text-[11px] font-semibold text-amber-600">
+                          Tahmini
+                        </span>
+                      ) : null}
+                      <div className="text-right">
+                        <p className="text-sm font-semibold text-foreground">{suggestedDepartment}</p>
+                        <p className="text-xs text-muted-foreground">{suggestedRole}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="flex items-start gap-3">
+                      <Calendar className="mt-0.5 h-4 w-4 text-primary" />
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">Termin referansı</p>
+                        <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                          {dueUsesHistoricalData
+                            ? "Benzer geçmiş kayıtlardaki ortalama kapanış süresine göre hesaplandı."
+                            : "Geçmiş termin verisi yok; öncelik seviyesine göre standart takip süresi öneriliyor."}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 sm:justify-end">
+                      {!dueUsesHistoricalData ? (
+                        <span className="rounded-full border border-amber-500/20 bg-amber-500/10 px-2.5 py-1 text-[11px] font-semibold text-amber-600">
+                          Tahmini
+                        </span>
+                      ) : null}
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setQuickDueDate(suggestedDueDays)}
+                        className="h-9 rounded-xl"
+                      >
+                        {suggestedDueDays} gün uygula
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-cyan-400/20 bg-cyan-400/10 px-4 py-3">
                 <div className="flex items-center gap-2 text-cyan-100">
                   <Building2 className="h-4 w-4" />
                   <span className="text-sm font-semibold">Aktif firma bağlamı</span>
                 </div>
-                <p className="mt-3 text-sm font-semibold text-white">{reportCompanyName || "Firma henüz seçilmedi"}</p>
-                <p className="mt-2 text-xs leading-6 text-cyan-50/90">{companyContextSummary}</p>
-              </div>
-            </div>
-          </ModuleCard>
-
-          <ModuleCard eyebrow="Benzer eski DÖF’ler" title="Tekrarlayan uygunsuzluk sinyali" badge={`${historicalSimilarEntries.length} eşleşme`} className="min-h-[320px] xl:col-span-3">
-            <div className="space-y-3">
-              {historicalLoading ? (
-                <div className="rounded-2xl border border-border/60 bg-secondary/10 p-4 text-sm text-muted-foreground">Firma geçmişi taranıyor...</div>
-              ) : historicalSimilarEntries.length > 0 ? (
-                historicalSimilarEntries.map((entry) => (
-                  <div key={entry.id} className="rounded-2xl border border-border/60 bg-secondary/20 p-4">
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="text-sm font-semibold text-foreground">{entry.location_name}</span>
-                      <span className="rounded-full bg-amber-500/10 px-2.5 py-1 text-[11px] font-semibold text-amber-600">%{Math.round(entry.similarity * 100)} benzer</span>
-                    </div>
-                    <p className="mt-2 text-xs leading-6 text-muted-foreground">{entry.description}</p>
-                    <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
-                      <span className="rounded-full bg-background px-2 py-1">{entry.priority}</span>
-                      <span className="rounded-full bg-background px-2 py-1">{new Date(entry.created_at).toLocaleDateString("tr-TR")}</span>
-                      <span className="rounded-full bg-background px-2 py-1">{entry.is_resolved ? "Kapatıldı" : "Açık"}</span>
-                    </div>
+                <p className="mt-2 text-sm font-semibold text-white">{reportCompanyName || "Firma henüz seçilmedi"}</p>
+                <p className="mt-1 text-xs leading-6 text-cyan-50/90">{companyContextSummary}</p>
+                {!reportCompanyName ? (
+                  <div className="mt-3 flex flex-wrap items-center gap-3">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={goToBulkGeneralStep}
+                      className="h-9 rounded-xl border-cyan-300/30 bg-cyan-400/10 text-cyan-50 hover:bg-cyan-400/15"
+                    >
+                      Genel bilgilere git
+                    </Button>
+                    <p className="text-xs text-cyan-50/80">
+                      Firma seçimi `Genel Bilgiler` adımındaki `Firma seç` alanından yapılıyor.
+                    </p>
                   </div>
-                ))
-              ) : (
-                <div className="rounded-2xl border border-dashed border-border/70 bg-secondary/10 p-4 text-sm text-muted-foreground">Bu firmaya ait güçlü benzerlikte geçmiş DÖF kaydı bulunmadı. Yeni kayıtlarla tekrar eden uygunsuzlukları burada göstereceğiz.</div>
-              )}
+                ) : null}
+              </div>
             </div>
           </ModuleCard>
 
-          <ModuleCard eyebrow="DÖF kalite skoru" title="Taslağın gücü ve eksikleri" badge={`${qualityScore}/100`} className="min-h-[320px] xl:col-span-3">
-            <div className="rounded-2xl border border-border/60 bg-secondary/20 p-4">
-              <div className="flex items-center justify-between gap-3">
-                <span className="text-sm font-semibold text-foreground">{qualityLabel}</span>
-                <div className="h-2 w-28 overflow-hidden rounded-full bg-secondary">
-                  <div className="h-full rounded-full bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-500" style={{ width: `${qualityScore}%` }} />
+          <div className="space-y-4 xl:col-span-5">
+            <ModuleCard eyebrow="Kural tabanlı öneri" title="Geçmiş eşleşmeler" badge={`${historicalSimilarEntries.length} kayıt`}>
+              <div className="space-y-3">
+                <div className="rounded-2xl border border-border/60 bg-background/70 px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-full border border-amber-500/20 bg-amber-500/10 px-2.5 py-1 text-[11px] font-semibold text-amber-600">
+                      Tahmini eşleşme
+                    </span>
+                  </div>
+                  <p className="mt-2 text-sm leading-6 text-muted-foreground">{similarityEvidenceSummary}</p>
                 </div>
+
+                {historicalLoading ? (
+                  <div className="rounded-2xl border border-border/60 bg-secondary/10 p-4 text-sm text-muted-foreground">Firma geçmişi taranıyor...</div>
+                ) : historicalSimilarEntries.length > 0 ? (
+                  historicalSimilarEntries.map((entry) => (
+                    <div key={entry.id} className="rounded-2xl border border-border/60 bg-background/60 px-4 py-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-sm font-semibold text-foreground">{entry.location_name}</p>
+                          <p className="mt-1 text-xs leading-6 text-muted-foreground">{entry.description}</p>
+                        </div>
+                        <span className="rounded-full bg-amber-500/10 px-2.5 py-1 text-[11px] font-semibold text-amber-600">
+                          %{Math.round(entry.similarity * 100)}
+                        </span>
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
+                        <span className="rounded-full bg-background px-2 py-1">{entry.priority}</span>
+                        <span className="rounded-full bg-background px-2 py-1">{new Date(entry.created_at).toLocaleDateString("tr-TR")}</span>
+                        <span className="rounded-full bg-background px-2 py-1">{entry.is_resolved ? "Kapatıldı" : "Açık"}</span>
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="rounded-2xl border border-dashed border-border/70 bg-secondary/10 p-4 text-sm text-muted-foreground">
+                    Bu firmaya ait güçlü eşleşen geçmiş kayıt bulunmadı. Yeni kayıtlar oluştukça burada daha anlamlı karşılaştırmalar görünecek.
+                  </div>
+                )}
               </div>
-              <p className="mt-3 text-xs leading-6 text-muted-foreground">Açıklama netliği, risk tanımı, faaliyetlerin uygulanabilirliği ve takip alanlarına göre hesaplanır.</p>
-            </div>
-            <div className="mt-4 space-y-2">
-              {qualityFeedback.length > 0 ? (
-                qualityFeedback.map((item) => (
-                  <div key={item} className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs leading-6 text-amber-700">{item}</div>
-                ))
-              ) : (
-                <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 text-xs leading-6 text-emerald-700">Taslak güçlü görünüyor. Şimdi maddeyi kaydedip toplu rapora ekleyebilirsiniz.</div>
-              )}
-            </div>
-          </ModuleCard>
+            </ModuleCard>
+
+            <ModuleCard eyebrow="Kural tabanlı öneri" title="Taslak tamlık kontrolü" badge={`${qualityScore}/100`}>
+              <div className="space-y-3">
+                <div className="rounded-2xl border border-border/60 bg-background/70 px-4 py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-foreground">{qualityLabel}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">Form tamlığı ve metin netliği kontrolü</p>
+                    </div>
+                    <span className="rounded-full border border-amber-500/20 bg-amber-500/10 px-2.5 py-1 text-[11px] font-semibold text-amber-600">
+                      Tahmini
+                    </span>
+                  </div>
+                  <div className="mt-3 h-2 overflow-hidden rounded-full bg-secondary">
+                    <div className="h-full rounded-full bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-500" style={{ width: `${qualityScore}%` }} />
+                  </div>
+                  <p className="mt-3 text-sm leading-6 text-muted-foreground">{qualityEvidenceSummary}</p>
+                </div>
+
+                {qualityFeedback.length > 0 ? (
+                  <div className="space-y-2">
+                    {qualityFeedback.map((item) => (
+                      <div key={item} className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs leading-6 text-amber-700">
+                        {item}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-3 py-2 text-xs leading-6 text-emerald-700">
+                    Taslak şu an yeterince güçlü görünüyor. Maddeyi kaydedip toplu rapora ekleyebilirsiniz.
+                  </div>
+                )}
+              </div>
+            </ModuleCard>
+          </div>
         </section>
 
         {entries.length > 0 && (

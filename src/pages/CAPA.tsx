@@ -1244,6 +1244,7 @@ export default function CAPA() {
           eventName: "capa.created",
           organizationId: orgId || null,
           userId: user?.id || null,
+          userEmail: user?.email || null,
           entityType: "capa",
           entityId: createdRecord.id,
           source: "capa",

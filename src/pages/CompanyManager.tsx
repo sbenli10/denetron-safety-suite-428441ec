@@ -843,6 +843,7 @@ export default function CompanyManager() {
         eventName: "company.created",
         organizationId: null,
         userId: user?.id || null,
+        userEmail: user?.email || null,
         entityType: "company",
         entityId: result.company_id || null,
         source: "company_manager",
